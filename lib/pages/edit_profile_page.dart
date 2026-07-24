@@ -36,7 +36,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   void initState() {
     super.initState();
     final profile = widget.initialProfile;
-    _nicknameController = TextEditingController(text: profile.nickname);
+    _nicknameController = TextEditingController(text: profile.peiCallName);
     _birthdayController = TextEditingController(text: profile.birthday);
     _identityController = TextEditingController(text: profile.identity);
     _workController = TextEditingController(text: profile.workAndSchedule);
@@ -85,16 +85,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
-    final profile = UserProfile(
-      nickname: _nicknameController.text.trim(),
-      peiCallName: widget.initialProfile.peiCallName,
+    final profile = widget.initialProfile.copyWith(
+      peiCallName: _nicknameController.text.trim(),
       birthday: _birthdayController.text.trim(),
       identity: _identityController.text.trim(),
       workAndSchedule: _workController.text.trim(),
       likes: _likesController.text.trim(),
       dislikes: _dislikesController.text.trim(),
       interactionPreference: _preferenceController.text.trim(),
-      avatarPath: _avatarPath,
     );
 
     try {
@@ -120,7 +118,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
           backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
           elevation: 0,
-          title: const Text('编辑我的资料'),
+          title: const Text('我的人设'),
           actions: [
             TextButton(
               onPressed: _saving ? null : _save,
@@ -136,18 +134,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(18, 10, 18, 36),
                 children: [
-                  _AvatarEditor(
-                    avatarPath: _avatarPath,
-                    onPick: _pickAvatar,
-                    onRemove: _avatarPath.isEmpty ? null : _removeAvatar,
-                  ),
-                  const SizedBox(height: 18),
                   _SectionCard(
-                    title: '基本资料',
+                    title: '角色眼中的你',
                     children: [
                       _ProfileField(
                         controller: _nicknameController,
-                        label: '昵称',
+                        label: '角色对你的称呼',
                         hint: '例如：念念',
                         maxLength: 20,
                         requiredField: true,
@@ -209,7 +201,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    '资料只保存在当前设备中。保存后，新的聊天会自动读取这些内容。',
+                    '这些内容只保存在当前设备中。保存后，新的聊天会自动读取。',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.48),

@@ -6,16 +6,18 @@ class ChatInputBar extends StatelessWidget {
     required this.controller,
     required this.isLoading,
     required this.onSend,
+    required this.onPickImage,
   });
 
   final TextEditingController controller;
   final bool isLoading;
   final VoidCallback onSend;
+  final VoidCallback onPickImage;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      padding: const EdgeInsets.fromLTRB(8, 8, 10, 10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFE8E8E8))),
@@ -23,6 +25,12 @@ class ChatInputBar extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          IconButton(
+            tooltip: '发送图片',
+            onPressed: isLoading ? null : onPickImage,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            color: Colors.blueGrey.shade700,
+          ),
           Expanded(
             child: TextField(
               controller: controller,

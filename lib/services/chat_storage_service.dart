@@ -30,7 +30,16 @@ class ChatStorageService {
       return decoded
           .whereType<Map>()
           .map(ChatMessage.fromJson)
-          .where((message) => message.content.trim().isNotEmpty)
+          .where(
+            (message) =>
+                message.content.trim().isNotEmpty ||
+                (message.type == MessageType.image &&
+                    (message.metadata['imagePath']
+                            ?.toString()
+                            .trim()
+                            .isNotEmpty ??
+                        false)),
+          )
           .toList();
     } catch (_) {
       return [];

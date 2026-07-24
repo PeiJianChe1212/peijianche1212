@@ -14,6 +14,7 @@ import '../../services/echo_storage_service.dart';
 import '../../services/user_profile_storage_service.dart';
 import 'echo_compose_page.dart';
 import 'echo_cover_editor_page.dart';
+import 'echo_cover_preview_page.dart';
 import 'echo_ai_draft_page.dart';
 import 'echo_comments_page.dart';
 
@@ -188,6 +189,22 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
     }
   }
 
+
+  Future<void> _openCoverPreview() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EchoCoverPreviewPage(
+          coverPath: _echoProfile.coverPath,
+          onChangeCover: _changeCover,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    final profile = await EchoProfileStorageService(ownerId: _ownerId).loadProfile();
+    if (mounted) setState(() => _echoProfile = profile);
+  }
+
   Future<void> _toggleLike(EchoItem item) async {
     final liked = !item.isLiked;
     await _replaceItem(
@@ -343,7 +360,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                         signature: _signature,
                         onBack: () => Navigator.maybePop(context),
                         onCreate: _showCreateMenu,
-                        onChangeCover: _changeCover,
+                        onOpenCover: _openCoverPreview,
                       ),
                     ),
                     if (_items.isEmpty)
@@ -384,7 +401,7 @@ class _EchoLifeHeader extends StatelessWidget {
     required this.signature,
     required this.onBack,
     required this.onCreate,
-    required this.onChangeCover,
+    required this.onOpenCover,
   });
 
   final Widget cover;
@@ -393,39 +410,30 @@ class _EchoLifeHeader extends StatelessWidget {
   final String signature;
   final VoidCallback onBack;
   final VoidCallback onCreate;
-  final VoidCallback onChangeCover;
+  final VoidCallback onOpenCover;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         SizedBox(
-          height: 330,
+          height: 350,
           child: Stack(
             fit: StackFit.expand,
             clipBehavior: Clip.none,
             children: [
-              cover,
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black38,
-                      Colors.transparent,
-                      Colors.black45,
-                    ],
-                  ),
-                ),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(onTap: onOpenCover, child: cover),
               ),
-              Positioned.fill(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: onChangeCover,
-                    splashColor: Colors.white10,
-                    highlightColor: Colors.transparent,
+              const IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black38, Colors.transparent, Colors.black38],
+                    ),
                   ),
                 ),
               ),
@@ -439,10 +447,10 @@ class _EchoLifeHeader extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: MediaQuery.paddingOf(context).top + 2,
-                right: 8,
+                top: MediaQuery.paddingOf(context).top + 4,
+                right: 6,
                 child: IconButton(
-                  tooltip: '记录 Echo',
+                  tooltip: '发布 Echo',
                   onPressed: onCreate,
                   icon: const Icon(Icons.camera_alt_rounded),
                   color: Colors.white,
@@ -450,20 +458,7 @@ class _EchoLifeHeader extends StatelessWidget {
               ),
               Positioned(
                 right: 18,
-                bottom: 18,
-                child: Text(
-                  displayName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 18,
-                bottom: -34,
+                bottom: -42,
                 child: Container(
                   width: 76,
                   height: 76,
@@ -472,9 +467,25 @@ class _EchoLifeHeader extends StatelessWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
-                    child: avatar,
+                  child: ClipRRect(borderRadius: BorderRadius.circular(5), child: avatar),
+                ),
+              ),
+              Positioned(
+                right: 106,
+                bottom: 12,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
+                  child: Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
+                    ),
                   ),
                 ),
               ),
@@ -482,16 +493,18 @@ class _EchoLifeHeader extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(22, 45, 104, 18),
+          padding: const EdgeInsets.fromLTRB(22, 54, 106, 18),
           child: Align(
             alignment: Alignment.centerRight,
             child: Text(
               signature,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
               style: const TextStyle(
                 color: Color(0xFF6E7780),
-                fontSize: 13,
-                height: 1.45,
+                fontSize: 14,
+                height: 1.4,
               ),
             ),
           ),

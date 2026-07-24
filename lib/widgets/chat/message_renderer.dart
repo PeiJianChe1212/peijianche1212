@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/chat_message.dart';
 import 'message_bubble.dart';
+import 'renderers/image_message_renderer.dart';
 import 'renderers/text_message_renderer.dart';
 
 /// 聊天消息的统一渲染入口。
@@ -95,7 +96,9 @@ class MessageRenderer extends StatelessWidget {
   Widget _buildMessageContent() {
     switch (message.type) {
       case MessageType.text:
+        return TextMessageRenderer(message: message);
       case MessageType.image:
+        return ImageMessageRenderer(message: message);
       case MessageType.voice:
       case MessageType.system:
       case MessageType.card:

@@ -2,64 +2,77 @@ import 'package:http/http.dart' as http;
 
 import '../ai/model_hub.dart';
 import '../models/ai_character.dart';
-import '../models/chat_message.dart';
 import '../models/character_settings.dart';
-import '../models/memory_item.dart';
+import '../models/echo_draft.dart';
+import '../models/life_moment.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
-import 'chat_storage_service.dart';
-import 'memory_storage_service.dart';
+import 'life_event_pool_service.dart';
+import 'moment_engine_service.dart';
 
 class EchoGenerationService {
   EchoGenerationService({
     required this.character,
     http.Client? client,
-  }) : _client = client ?? http.Client(),
-       _ownsClient = client == null {
+  })  : _client = client ?? http.Client(),
+        _ownsClient = client == null {
     _modelHub = ModelHub(client: _client);
+    _lifeEventPool = LifeEventPoolService(
+      character: character,
+      client: _client,
+    );
+    _momentEngine = MomentEngineService(character: character, client: _client);
   }
 
   final AiCharacter character;
   final http.Client _client;
   final bool _ownsClient;
   late final ModelHub _modelHub;
+  late final LifeEventPoolService _lifeEventPool;
+  late final MomentEngineService _momentEngine;
 
   final ApiSettingsStorageService _apiStorage = ApiSettingsStorageService();
 
-  Future<String> generateDraft() async {
+  EchoMomentDecision? _lastDecision;
+
+  EchoMomentDecision? get lastDecision => _lastDecision;
+
+  Future<EchoDraft> generateDraft() async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
       throw StateError('请先在“设置 → 模型与 API”中填写并保存接口配置。');
     }
 
-    final characterId = character.id;
-    final settings = await CharacterSettingsStorageService(
-      characterId: characterId,
-    ).loadSettings();
-    final messages = await ChatStorageService(
-      characterId: characterId,
-    ).loadMessages();
-    final memories = await MemoryStorageService(
-      characterId: characterId,
-    ).loadItems();
+    final previousId = _lastDecision?.candidate.id;
+    final candidates = await _lifeEventPool.getCandidates(
+      count: 4,
+      excludeIds: previousId == null ? <String>{} : {previousId},
+    );
+    final decision = await _momentEngine.chooseMoment(
+      candidates,
+      manualRequest: true,
+    );
+    _lastDecision = decision;
 
+    final settings = await CharacterSettingsStorageService(
+      characterId: character.id,
+    ).loadSettings();
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
       messages: [
         {
           'role': 'system',
-          'content': _buildSystemPrompt(
+          'content': _buildDraftPrompt(
             settings: settings,
-            messages: messages,
-            memories: memories,
+            decision: decision,
           ),
         },
         {
           'role': 'user',
-          'content': '请以${settings.characterName}本人的口吻，生成一条现在适合发布在 Echo 的生活动态草稿。',
+          'content': '把选中的生活瞬间写成一条 Echo。只输出正文。',
         },
       ],
-      temperature: settings.temperature.clamp(0.62, 0.86).toDouble(),
+      temperature: settings.temperature.clamp(0.64, 0.84).toDouble(),
       maxTokens: 420,
       topP: 0.9,
     );
@@ -68,46 +81,31 @@ class EchoGenerationService {
     if (cleaned.isEmpty) {
       throw const FormatException('模型没有生成有效的 Echo 内容。');
     }
-    return cleaned;
+
+    final moment = decision.candidate;
+    final imageScene = _buildImageScene(moment);
+
+    return EchoDraft(
+      content: cleaned,
+      momentSummary: decision.reason.trim().isEmpty
+          ? moment.shareHook.trim()
+          : decision.reason.trim(),
+      shouldAttachImage: imageScene.isNotEmpty,
+      imageScene: imageScene,
+    );
   }
 
-  String _buildSystemPrompt({
+  String _buildDraftPrompt({
     required CharacterSettings settings,
-    required List<ChatMessage> messages,
-    required List<MemoryItem> memories,
+    required EchoMomentDecision decision,
   }) {
-    final now = DateTime.now();
-    final weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
-    final recentMessages = messages
-        .where((item) => item.role == 'user' || item.role == 'assistant')
-        .toList();
-    final selectedMessages = recentMessages.length > 24
-        ? recentMessages.sublist(recentMessages.length - 24)
-        : recentMessages;
-    final selectedMemories = memories
-        .where((item) => !item.isArchived && item.category != '收藏回复')
-        .take(20)
-        .toList();
-
-    final conversationText = selectedMessages.isEmpty
-        ? '暂无可参考的近期聊天。'
-        : selectedMessages
-              .map((item) {
-                final speaker = item.role == 'user'
-                    ? settings.userCallName
-                    : settings.characterName;
-                return '$speaker：${_truncate(item.content.trim(), 280)}';
-              })
-              .join('\n');
-
-    final memoryText = selectedMemories.isEmpty
-        ? '暂无已确认记忆。'
-        : selectedMemories
-              .map((item) => '- ${_truncate(item.content.trim(), 220)}')
-              .join('\n');
+    final moment = decision.candidate;
+    final related = moment.relatedCharacterNames.isEmpty
+        ? '无'
+        : moment.relatedCharacterNames.join('、');
 
     return '''
-你正在为 PeiLink 的 Echo 生成一条角色生活动态。
+你正在为 PeiLink 的 Echo 写一条角色动态。生活片段已经由 Life Engine 产生，并由 Moment Engine 选中。你只负责把它写成自然正文。
 
 【角色身份】
 ${settings.coreProfile}
@@ -118,32 +116,47 @@ ${settings.behaviorStyle}
 【角色禁用规则】
 ${settings.forbiddenRules}
 
-【当前时间】
-${now.year}年${now.month}月${now.day}日，${weekDays[now.weekday - 1]}，${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}。
+【选中的生活瞬间】
+场景：${moment.scene}
+发生的事：${moment.event}
+具体细节：${moment.detail}
+当时感受：${moment.feeling}
+值得分享的原因：${moment.shareHook}
+可自然提及的人：$related
+Moment 评分：${decision.score.toStringAsFixed(0)}
 
-【近期聊天】
-$conversationText
-
-【已确认 Memory】
-$memoryText
-
-【Echo 的定位】
-Echo 不是聊天回复，也不是给用户写的情书。
-它是${settings.characterName}自己的生活主页，用来记录本人此刻的观察、工作、琐事、兴趣、吐槽、偶发情绪或生活片段。
-可以偶尔自然提到${settings.userCallName}，但不能每条都围着对方转。
-
-【生成规则】
-1. 只输出动态正文，不要标题、引号、标签、解释或 Markdown。
-2. 不要称呼用户后继续聊天，不要提问，不要邀请用户回复。
-3. 不要写“我会一直陪着你”“宝宝辛苦了”等陪伴模板。
-4. 不使用括号动作、小说旁白、舞台指令或心理活动标注。
-5. 不虚构具体天气、新闻、地点、节日或已经发生但资料中没有依据的事件。
-6. 可以从近期聊天和 Memory 获得灵感，但不要逐字复述聊天，也不要泄露“我读取了记忆”。
-7. 内容应符合当前角色，像本人随手发出的生活记录。
-8. 控制在 20 至 180 个汉字，一到三小段；允许简短，但不要长篇总结。
-9. 不必煽情，不必每次浪漫，不必每次提关系。
-10. 如果资料不足，就生成不依赖外部事实的普通生活观察或个人想法。
+【写作原则】
+1. Echo 是角色自己的生活主页，不是聊天回复，也不是写给用户的情书。
+2. 把重点放在“具体细节和余味”上，不要流水账复述整个事件。
+3. 可以有轻微吐槽、停顿、反差和普通人的不完美。
+4. 不要用“今天我去了……然后……”的作文腔，不要总结人生道理。
+5. 不要机械提当前时间，不要为了生活感硬写早中晚。
+6. 不要称呼${settings.userCallName}，不要提问，不要邀请对方回复。
+7. 不使用括号动作、小说旁白、舞台指令、标题、标签或 Markdown。
+8. 只输出动态正文，20 至 180 个汉字，一到三小段。
+9. “可自然提及的人”不为“无”时，也只有在这条动态读起来确实自然时才可 @ 一次；格式必须是“@名字”。不要句句都 @，也不要在正文末尾单独挂一个名字。
+10. “可自然提及的人”为“无”时，绝对不要自行创造 @ 对象。
+11. 不要虚构片段之外的真实地点、天气、新闻和品牌。
 ''';
+  }
+
+  String _buildImageScene(LifeMomentCandidate moment) {
+    final parts = <String>[
+      moment.scene.trim(),
+      moment.event.trim(),
+      moment.detail.trim(),
+    ].where((value) => value.isNotEmpty).toList();
+
+    if (parts.isEmpty) return '';
+
+    final combined = parts.join('，');
+    final unsuitable = RegExp(
+      r'纯想法|回忆|梦|抽象|情绪|争吵|危险|受伤|事故',
+      caseSensitive: false,
+    ).hasMatch(combined);
+    if (unsuitable) return '';
+
+    return '$combined。像角色本人用手机随手拍下的生活照片，自然真实，不过度精修，无文字排版。';
   }
 
   String _clean(String raw) {
@@ -163,12 +176,14 @@ Echo 不是聊天回复，也不是给用户写的情书。
     return value;
   }
 
-  String _truncate(String value, int maxLength) {
-    if (value.length <= maxLength) return value;
-    return '${value.substring(0, maxLength)}…';
+  Future<void> markLastMomentUsed() async {
+    final id = _lastDecision?.candidate.id;
+    if (id == null || id.trim().isEmpty) return;
+    await _lifeEventPool.markUsed(id);
   }
 
   void dispose() {
+    _lifeEventPool.dispose();
     if (_ownsClient) _client.close();
   }
 }

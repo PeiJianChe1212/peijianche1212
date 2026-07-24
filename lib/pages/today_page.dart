@@ -6,16 +6,23 @@ import '../services/today_service.dart';
 import 'chat_page.dart';
 
 class TodayPage extends StatefulWidget {
-  const TodayPage({required this.currentActivity, super.key});
+  const TodayPage({
+    required this.currentActivity,
+    required this.characterId,
+    super.key,
+  });
 
   final ActivityStatus currentActivity;
+  final String characterId;
 
   @override
   State<TodayPage> createState() => _TodayPageState();
 }
 
 class _TodayPageState extends State<TodayPage> {
-  final TodayService _todayService = TodayService();
+  late final TodayService _todayService = TodayService(
+    characterId: widget.characterId,
+  );
   List<TodayEvent> _events = const [];
   bool _loading = true;
 

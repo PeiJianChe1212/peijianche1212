@@ -6,9 +6,10 @@ import '../ai/model_hub.dart';
 import '../conversation/conversation_engine.dart';
 import '../models/chat_message.dart';
 import '../models/pending_memory.dart';
-import 'activity_service.dart';
+import 'activity_context_service.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
+import 'echo_chat_context_service.dart';
 import 'memory_storage_service.dart';
 import 'prompt_builder.dart';
 import 'user_profile_storage_service.dart';
@@ -20,7 +21,6 @@ class DeepSeekService {
 
   final http.Client _client;
   late final ModelHub _modelHub;
-  final ActivityService _activityService = const ActivityService();
   final UserProfileStorageService _profileStorage = UserProfileStorageService();
   final ApiSettingsStorageService _apiStorage = ApiSettingsStorageService();
   final MemoryStorageService _memoryStorage = MemoryStorageService();
@@ -40,6 +40,7 @@ class DeepSeekService {
     required double initiative,
     required double intimacy,
     required double tsundere,
+    String? characterId,
   }) async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
@@ -56,45 +57,65 @@ class DeepSeekService {
         : validConversation;
 
     final userProfile = await _profileStorage.loadProfile();
-    final memoryPrompt = await _memoryStorage.buildPromptSection();
-    final characterSettings = await _characterStorage.loadSettings();
+    final memoryPrompt = await MemoryStorageService(
+      characterId: characterId,
+    ).buildPromptSection();
+    final characterSettings = await CharacterSettingsStorageService(
+      characterId: characterId,
+    ).loadSettings();
+    final activity = await ActivityContextService(
+      characterId: characterId ?? 'default',
+    ).resolve();
+    final echoContextPrompt = characterId == null || characterId.trim().isEmpty
+        ? ''
+        : await EchoChatContextService(
+            characterId: characterId,
+          ).buildPromptSection();
 
     final conversationEngine = ConversationEngine.build(
       messages: validConversation,
       conversationMode: conversationMode,
     );
 
+    final systemPrompt = '''
+${PromptBuilder.buildSystemPrompt(
+      characterSettings: characterSettings,
+      userProfile: userProfile,
+      timeContext: _buildTimeContext(),
+      conversationEnginePrompt: conversationEngine.prompt,
+      personalityPrompt: _buildPersonalityPrompt(
+        initiative: initiative,
+        intimacy: intimacy,
+        tsundere: tsundere,
+      ),
+      replyLengthPrompt: _buildReplyLengthPrompt(replyLength),
+      memoryPrompt: memoryPrompt,
+      activityPrompt:
+          validConversation.where((message) => message.role == 'user').length <= 1
+          ? activity.toPromptSection()
+          : '',
+      styleExamplesPrompt: PromptBuilder.buildStyleExamplesPrompt(
+        characterSettings,
+      ),
+    )}
+
+$echoContextPrompt
+
+【真实媒体规则】
+你不能靠文字假装已经发送照片、图片、语音或视频。
+除非聊天记录中真的存在一条由角色发送的 image 类型消息，否则禁止说“我拍了”“发给你了”“照片给你”“刚发过去”，也禁止用括号写“拍了一张发过去”“发送图片”。
+当用户索要图片但系统尚未真正插入图片消息时，不要虚构已发送成功。
+''';
+
     final requestMessages = <Map<String, dynamic>>[
       {
         'role': 'system',
-        'content': PromptBuilder.buildSystemPrompt(
-          characterSettings: characterSettings,
-          userProfile: userProfile,
-          timeContext: _buildTimeContext(),
-          conversationEnginePrompt: conversationEngine.prompt,
-          personalityPrompt: _buildPersonalityPrompt(
-            initiative: initiative,
-            intimacy: intimacy,
-            tsundere: tsundere,
-          ),
-          replyLengthPrompt: _buildReplyLengthPrompt(replyLength),
-          memoryPrompt: memoryPrompt,
-          activityPrompt:
-              validConversation
-                      .where((message) => message.role == 'user')
-                      .length <=
-                  1
-              ? _activityService.current().toPromptSection()
-              : '',
-          styleExamplesPrompt: PromptBuilder.buildStyleExamplesPrompt(
-            characterSettings,
-          ),
-        ),
+        'content': systemPrompt,
       },
       ...recentConversation.map<Map<String, dynamic>>(
         (message) => <String, dynamic>{
           'role': message.role,
-          'content': message.content,
+          'content': _messageContentForModel(message),
         },
       ),
     ];
@@ -107,6 +128,68 @@ class DeepSeekService {
       topP: _getTopP(temperature),
     );
     return _cleanReply(content);
+  }
+
+
+  String _messageContentForModel(ChatMessage message) {
+    if (message.type != MessageType.image) return message.content;
+
+    final caption = message.content.trim();
+    if (message.role == 'assistant') {
+      final prompt =
+          message.metadata['generationPrompt']?.toString().trim() ?? '';
+      final parts = <String>['[角色刚刚发送了一张图片]'];
+      if (prompt.isNotEmpty) parts.add('图片场景：$prompt');
+      if (caption.isNotEmpty) parts.add('角色随图说：$caption');
+      return parts.join('\n');
+    }
+
+    final description =
+        message.metadata['visionDescription']?.toString().trim() ?? '';
+    final parts = <String>['[用户发送了一张图片]'];
+    if (description.isNotEmpty) {
+      parts.add('图片内容：$description');
+    } else {
+      parts.add('图片内容暂时无法识别。不要假装看清了具体画面。');
+    }
+    if (caption.isNotEmpty) parts.add('用户随图片说：$caption');
+    parts.add('请按照当前角色的说话方式自然回应图片和用户的话，不要复述识图报告。');
+    return parts.join('\n');
+  }
+
+  Future<String> composeImageMessage({
+    required String userRequest,
+  }) async {
+    final apiSettings = await _apiStorage.loadSettings();
+    if (!apiSettings.isConfigured) {
+      return '给你。';
+    }
+
+    final characterSettings = await _characterStorage.loadSettings();
+    final provider = await _modelHub.chatProvider();
+    final raw = await provider.complete(
+      messages: [
+        {
+          'role': 'system',
+          'content': '''
+${characterSettings.toPromptSection()}
+
+你刚刚按照用户的要求生成并发送了一张图片。
+现在只写一句自然的随图消息，像聊天里把照片发过去时顺口说的话。
+不要解释生成过程，不要说“AI绘图”“模型”“提示词”，不要复述完整画面描述。
+通常 4 到 24 个字，最多两句。
+''',
+        },
+        {'role': 'user', 'content': '用户原话：$userRequest'},
+      ],
+      temperature: 0.72,
+      maxTokens: 80,
+      topP: 0.86,
+    );
+    final cleaned = _cleanReply(raw)
+        .replaceAll(RegExp(r'[\r\n]+'), ' ')
+        .trim();
+    return cleaned.isEmpty ? '给你。' : cleaned;
   }
 
   Future<List<PendingMemory>> extractMemories({

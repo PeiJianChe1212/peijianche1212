@@ -4,6 +4,7 @@ class InitiativeState {
     required this.sentCount,
     required this.unreadCount,
     required this.usedSlots,
+    this.usedLifeMomentIds = const [],
     this.lastSentAt,
   });
 
@@ -11,6 +12,7 @@ class InitiativeState {
   final int sentCount;
   final int unreadCount;
   final List<String> usedSlots;
+  final List<String> usedLifeMomentIds;
   final DateTime? lastSentAt;
 
   factory InitiativeState.empty([DateTime? now]) {
@@ -20,6 +22,7 @@ class InitiativeState {
       sentCount: 0,
       unreadCount: 0,
       usedSlots: const [],
+      usedLifeMomentIds: const [],
     );
   }
 
@@ -33,6 +36,7 @@ class InitiativeState {
     int? sentCount,
     int? unreadCount,
     List<String>? usedSlots,
+    List<String>? usedLifeMomentIds,
     DateTime? lastSentAt,
     bool clearLastSentAt = false,
   }) {
@@ -41,25 +45,30 @@ class InitiativeState {
       sentCount: sentCount ?? this.sentCount,
       unreadCount: unreadCount ?? this.unreadCount,
       usedSlots: usedSlots ?? this.usedSlots,
+      usedLifeMomentIds: usedLifeMomentIds ?? this.usedLifeMomentIds,
       lastSentAt: clearLastSentAt ? null : (lastSentAt ?? this.lastSentAt),
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'dateKey': dateKey,
-    'sentCount': sentCount,
-    'unreadCount': unreadCount,
-    'usedSlots': usedSlots,
-    'lastSentAt': lastSentAt?.toIso8601String(),
-  };
+        'dateKey': dateKey,
+        'sentCount': sentCount,
+        'unreadCount': unreadCount,
+        'usedSlots': usedSlots,
+        'usedLifeMomentIds': usedLifeMomentIds,
+        'lastSentAt': lastSentAt?.toIso8601String(),
+      };
 
   factory InitiativeState.fromJson(Map<dynamic, dynamic> json) {
     return InitiativeState(
       dateKey: json['dateKey']?.toString() ?? '',
       sentCount: (json['sentCount'] as num?)?.toInt() ?? 0,
       unreadCount: (json['unreadCount'] as num?)?.toInt() ?? 0,
-      usedSlots:
-          (json['usedSlots'] as List?)
+      usedSlots: (json['usedSlots'] as List?)
+              ?.map((item) => item.toString())
+              .toList() ??
+          const [],
+      usedLifeMomentIds: (json['usedLifeMomentIds'] as List?)
               ?.map((item) => item.toString())
               .toList() ??
           const [],

@@ -1,21 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 
-
 import '../models/activity_status.dart';
 import '../models/chat_message.dart';
 import '../models/initiative_state.dart';
-import 'activity_service.dart';
+import 'activity_context_service.dart';
 import 'chat_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'character_scope_service.dart';
+import 'initiative_life_context_service.dart';
 import 'life_trace_service.dart';
 
 class InitiativeService {
   InitiativeService({
     ChatStorageService? chatStorage,
     CharacterSettingsStorageService? characterStorage,
-    ActivityService? activityService,
     LifeTraceService? lifeTraceService,
     String? characterId,
   }) : _characterId = characterId,
@@ -23,14 +22,12 @@ class InitiativeService {
            chatStorage ?? ChatStorageService(characterId: characterId),
        _characterStorage = characterStorage ??
            CharacterSettingsStorageService(characterId: characterId),
-       _activityService = activityService ?? const ActivityService(),
        _lifeTraceService =
            lifeTraceService ?? LifeTraceService(characterId: characterId);
 
   final String? _characterId;
   final ChatStorageService _chatStorage;
   final CharacterSettingsStorageService _characterStorage;
-  final ActivityService _activityService;
   final LifeTraceService _lifeTraceService;
 
   Future<File> _stateFile() {
@@ -93,10 +90,25 @@ class InitiativeService {
       return false;
     }
 
-    final activity = _activityService.current(now: time);
-    final content = _messageFor(activity: activity, now: time, slot: slot);
+    final activity = await ActivityContextService(
+      characterId: _characterId ?? 'default',
+    ).resolve(now: time);
+    final lifeContext = await InitiativeLifeContextService(
+      characterId: _characterId ?? 'default',
+    ).build(
+      now: time,
+      excludedMomentIds: state.usedLifeMomentIds.toSet(),
+    );
+    final content = lifeContext?.message ??
+        _messageFor(activity: activity, now: time, slot: slot);
     final nextMessages = List<ChatMessage>.from(messages)
-      ..add(ChatMessage(role: 'assistant', content: content, source: 'initiative'));
+      ..add(
+        ChatMessage(
+          role: 'assistant',
+          content: content,
+          source: 'initiative',
+        ),
+      );
     await _chatStorage.saveMessages(nextMessages);
     await _lifeTraceService.recordInitiative(now: time);
     await saveState(
@@ -104,6 +116,9 @@ class InitiativeService {
         sentCount: state.sentCount + 1,
         unreadCount: state.unreadCount + 1,
         usedSlots: [...state.usedSlots, slot],
+        usedLifeMomentIds: lifeContext == null
+            ? state.usedLifeMomentIds
+            : [...state.usedLifeMomentIds, lifeContext.momentId],
         lastSentAt: time,
       ),
     );

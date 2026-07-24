@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/user_profile.dart';
 import '../services/user_profile_storage_service.dart';
+import 'edit_profile_page.dart';
 import 'profile_field_edit_page.dart';
+import 'profile_region_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -96,6 +98,28 @@ class _ProfilePageState extends State<ProfilePage> {
     await _save(_profile.copyWith(gender: result));
   }
 
+  Future<void> _editRegion() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileRegionPage(initialValue: _profile.region),
+      ),
+    );
+    if (result == null) return;
+    await _save(_profile.copyWith(region: result));
+  }
+
+  Future<void> _editPersona() async {
+    final result = await Navigator.push<UserProfile>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditProfilePage(initialProfile: _profile),
+      ),
+    );
+    if (result == null) return;
+    await _save(result);
+  }
+
   String _show(String value, {String fallback = '未填写'}) {
     final text = value.trim();
     return text.isEmpty ? fallback : text;
@@ -146,13 +170,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       _ProfileTile(
                         title: '地区',
                         value: _show(_profile.region),
-                        onTap: () => _editText(
-                          title: '设置地区',
-                          value: _profile.region,
-                          hint: '现实地区或自定义地点都可以',
-                          maxLength: 40,
-                          update: (value) => _profile.copyWith(region: value),
-                        ),
+                        onTap: _editRegion,
                       ),
                       const _InsetDivider(),
                       _ProfileTile(
@@ -175,8 +193,8 @@ class _ProfilePageState extends State<ProfilePage> {
                           title: '设置签名',
                           value: _profile.signature,
                           hint: '写一句属于你的话',
-                          maxLength: 80,
-                          maxLines: 4,
+                          maxLength: 30,
+                          maxLines: 2,
                           update: (value) => _profile.copyWith(signature: value),
                         ),
                       ),
@@ -184,9 +202,28 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
                 const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  padding: EdgeInsets.fromLTRB(20, 16, 20, 14),
                   child: Text(
                     '这里是你的个人展示资料，不会自动加入角色聊天所读取的资料。',
+                    style: TextStyle(
+                      color: Color(0xFF999999),
+                      fontSize: 12,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+                Container(
+                  color: Colors.white,
+                  child: _ProfileTile(
+                    title: '我的人设',
+                    value: '给角色了解的你',
+                    onTap: _editPersona,
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 10, 20, 28),
+                  child: Text(
+                    '这里填写的称呼、作息、喜好与相处偏好，会加入角色聊天所读取的资料。',
                     style: TextStyle(
                       color: Color(0xFF999999),
                       fontSize: 12,

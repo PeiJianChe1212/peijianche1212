@@ -1,12 +1,26 @@
 import '../models/activity_status.dart';
+import '../models/life_moment.dart';
 
 class ActivityService {
-  const ActivityService();
+  const ActivityService({this.characterId});
 
-  ActivityStatus current({DateTime? now}) {
+  final String? characterId;
+
+  ActivityStatus current({
+    DateTime? now,
+    String? characterId,
+    LifeMomentCandidate? recentMoment,
+  }) {
     final time = now ?? DateTime.now();
+    final momentStatus = _statusFromMoment(recentMoment, time);
+    if (momentStatus != null) return momentStatus;
     final hour = time.hour;
-    final variant = (time.year + time.month + time.day + hour) % 3;
+    final resolvedCharacterId = characterId ?? this.characterId ?? '';
+    final roleSeed = resolvedCharacterId.codeUnits.fold<int>(
+      0,
+      (sum, value) => sum + value,
+    );
+    final variant = (time.year + time.month + time.day + hour + roleSeed) % 3;
 
     if (hour >= 2 && hour < 7) {
       return const ActivityStatus(
@@ -180,4 +194,97 @@ class ActivityService {
       promptGuidance: '保持自然日常的聊天状态。',
     );
   }
+
+  ActivityStatus? _statusFromMoment(
+    LifeMomentCandidate? moment,
+    DateTime now,
+  ) {
+    if (moment == null) return null;
+    final age = now.difference(moment.occurredAt);
+    if (age.isNegative || age > const Duration(hours: 8)) return null;
+
+    final text = '${moment.scene} ${moment.event} ${moment.detail}'.toLowerCase();
+
+    ActivityStatus status({
+      required String id,
+      required String label,
+      required String emoji,
+      required String detail,
+      required String guidance,
+    }) {
+      return ActivityStatus(
+        id: id,
+        label: label,
+        emoji: emoji,
+        detail: detail,
+        promptGuidance: guidance,
+      );
+    }
+
+    if (RegExp(r'回家|回去|地铁|公交|开车|路上|车站').hasMatch(text)) {
+      return status(
+        id: 'life_going_home',
+        label: '回家路上',
+        emoji: '🌆',
+        detail: moment.detail.isEmpty ? moment.event : moment.detail,
+        guidance: '角色正在回去的路上，回复可以稍短、带一点路途中的松弛感，但优先回应用户当前的话题。',
+      );
+    }
+    if (RegExp(r'吃饭|午饭|晚饭|早餐|面|牛排|餐厅|咖啡|甜品|做饭').hasMatch(text)) {
+      return status(
+        id: 'life_eating',
+        label: '吃东西',
+        emoji: '🥢',
+        detail: moment.detail.isEmpty ? moment.event : moment.detail,
+        guidance: '角色刚好在吃东西或处理一顿饭，可以自然带出这个生活背景，但不要强行把所有话题拐到吃饭。',
+      );
+    }
+    if (RegExp(r'工作|会议|文件|办公室|加班|客户|项目|资料').hasMatch(text)) {
+      return status(
+        id: 'life_working',
+        label: '忙工作',
+        emoji: '📎',
+        detail: moment.detail.isEmpty ? moment.event : moment.detail,
+        guidance: '角色正处在工作间隙，回复可以简洁一些，但不能敷衍，也不要反复强调自己很忙。',
+      );
+    }
+    if (RegExp(r'书|阅读|笔记|图书馆').hasMatch(text)) {
+      return status(
+        id: 'life_reading',
+        label: '看书中',
+        emoji: '📖',
+        detail: moment.detail.isEmpty ? moment.event : moment.detail,
+        guidance: '角色正在安静阅读，语气可以沉静一些，但状态只是背景，不要写成小说旁白。',
+      );
+    }
+    if (RegExp(r'音乐|耳机|歌|演出').hasMatch(text)) {
+      return status(
+        id: 'life_music',
+        label: '听歌中',
+        emoji: '🎧',
+        detail: moment.detail.isEmpty ? moment.event : moment.detail,
+        guidance: '角色正在听歌，回复可以轻松一点，但不要虚构具体歌名或歌词。',
+      );
+    }
+    if (RegExp(r'散步|公园|街边|逛|商场|超市|便利店|外出').hasMatch(text)) {
+      return status(
+        id: 'life_outside',
+        label: '在外面',
+        emoji: '🍃',
+        detail: moment.detail.isEmpty ? moment.event : moment.detail,
+        guidance: '角色此刻在外面活动，回复可带一点现场生活感，但不要每句都描述环境。',
+      );
+    }
+    if (RegExp(r'滑雪|滑翔|运动|健身|跑步|球').hasMatch(text)) {
+      return status(
+        id: 'life_activity',
+        label: '活动中',
+        emoji: '🏃',
+        detail: moment.detail.isEmpty ? moment.event : moment.detail,
+        guidance: '角色刚经历一段活动，语气可以有一点余兴或轻微疲惫，但仍然先回应用户。',
+      );
+    }
+    return null;
+  }
+
 }

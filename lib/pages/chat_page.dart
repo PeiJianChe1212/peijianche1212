@@ -3,17 +3,25 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/activity_status.dart';
+import '../models/ai_character.dart';
 import '../models/chat_message.dart';
 import '../models/character_settings.dart';
 import '../models/user_profile.dart';
+import '../services/activity_context_service.dart';
 import '../services/activity_service.dart';
+import '../services/character_registry_service.dart';
+import '../services/chat_image_generation_service.dart';
+import '../services/chat_image_request_router_service.dart';
+import '../services/chat_image_storage_service.dart';
 import '../services/chat_storage_service.dart';
 import '../services/deepseek_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
 import '../services/memory_storage_service.dart';
+import '../services/multimodal_service.dart';
 import '../services/character_settings_storage_service.dart';
 import '../services/today_service.dart';
 import '../services/user_profile_storage_service.dart';
@@ -34,6 +42,14 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ChatStorageService _chatStorage = ChatStorageService();
+  final ChatImageStorageService _chatImageStorage =
+      const ChatImageStorageService();
+  final ChatImageGenerationService _chatImageGenerationService =
+      ChatImageGenerationService();
+  final ChatImageRequestRouterService _chatImageRequestRouter =
+      ChatImageRequestRouterService();
+  final ImagePicker _imagePicker = ImagePicker();
+  final MultimodalService _multimodalService = MultimodalService();
   final CharacterSettingsStorageService _characterStorage =
       CharacterSettingsStorageService();
   final UserProfileStorageService _profileStorage = UserProfileStorageService();
@@ -42,17 +58,21 @@ class _ChatPageState extends State<ChatPage> {
   final TodayService _todayService = TodayService();
   final InitiativeService _initiativeService = InitiativeService();
   final LifeTraceService _lifeTraceService = LifeTraceService();
+  final CharacterRegistryService _characterRegistry = CharacterRegistryService();
 
   Timer? _activityTimer;
   Timer? _activityVisibilityTimer;
   DateTime _now = DateTime.now();
+  ActivityStatus? _resolvedActivity;
 
   bool _isLoading = false;
+  bool _isGeneratingImage = false;
   bool _showActivitySubtitle = true;
   bool _isRegenerating = false;
   DateTime? _previousSeenAt;
   bool _conversationTraceRecorded = false;
   UserProfile _profile = const UserProfile();
+  AiCharacter _activeCharacter = AiCharacter.peiJianChe();
   CharacterSettings _characterSettings = CharacterSettings.defaults();
   String _conversationMode = 'basic';
   double _temperature = 0.72;
@@ -84,6 +104,9 @@ class _ChatPageState extends State<ChatPage> {
     _controller.dispose();
     _scrollController.dispose();
     _deepSeekService.dispose();
+    _multimodalService.dispose();
+    _chatImageGenerationService.dispose();
+    _chatImageRequestRouter.dispose();
     super.dispose();
   }
 
@@ -91,9 +114,11 @@ class _ChatPageState extends State<ChatPage> {
     await Future.wait([
       _loadChatSettings(),
       _loadProfile(),
+      _loadActiveCharacter(),
       _initiativeService.markAllRead(),
       _loadPreviousSeen(),
     ]);
+    await _refreshActivity();
     await _loadMessages();
   }
 
@@ -104,6 +129,20 @@ class _ChatPageState extends State<ChatPage> {
       setState(() => _previousSeenAt = previous);
     } catch (error) {
       debugPrint('记录上次见面失败：$error');
+    }
+  }
+
+
+  Future<void> _loadActiveCharacter() async {
+    try {
+      final character = await _characterRegistry.loadActiveCharacter();
+      if (!mounted) return;
+      setState(() {
+        _activeCharacter = character;
+        _resolvedActivity = null;
+      });
+    } catch (error) {
+      debugPrint('加载当前角色失败：$error');
     }
   }
 
@@ -146,7 +185,7 @@ class _ChatPageState extends State<ChatPage> {
       setState(() {
         _messages
           ..clear()
-          ..addAll(loaded);
+          ..addAll(loaded.where((message) => message.role != 'error'));
       });
       _scrollToBottom();
     } catch (error) {
@@ -184,6 +223,7 @@ class _ChatPageState extends State<ChatPage> {
         );
       _controller.clear();
       _isLoading = false;
+      _isGeneratingImage = false;
       _isRegenerating = false;
       _conversationTraceRecorded = false;
     });
@@ -195,7 +235,7 @@ class _ChatPageState extends State<ChatPage> {
     final userMessage = _controller.text.trim();
     if (userMessage.isEmpty || _isLoading) return;
     if (!await _deepSeekService.hasApiKey) {
-      _addErrorMessage('还没有配置模型与 API，请先到设置中填写。');
+      _showSnack('还没有配置模型与 API，请先到设置中填写。');
       return;
     }
 
@@ -208,7 +248,151 @@ class _ChatPageState extends State<ChatPage> {
     });
     await _saveMessages();
     _scrollToBottom();
+
+    final decision = await _chatImageRequestRouter.decide(
+      userText: userMessage,
+      recentMessages: List<ChatMessage>.from(_messages),
+    );
+    if (decision.shouldGenerateImage) {
+      await _requestGeneratedImage(userMessage);
+    } else {
+      await _requestReply();
+    }
+  }
+
+  Future<void> _requestGeneratedImage(String userRequest) async {
+    if (!mounted) return;
+    setState(() => _isGeneratingImage = true);
+
+    try {
+      final generated = await _chatImageGenerationService.generate(
+        userRequest: userRequest,
+        characterSettings: _characterSettings,
+        recentMessages: List<ChatMessage>.from(_messages),
+      );
+      final caption = await _deepSeekService.composeImageMessage(
+        userRequest: userRequest,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _messages.add(
+          ChatMessage(
+            role: 'assistant',
+            type: MessageType.image,
+            content: caption,
+            source: 'generated_image',
+            metadata: {
+              'imagePath': generated.imagePath,
+              'generationPrompt': generated.prompt,
+              'generatedBy': 'doubao_image',
+            },
+          ),
+        );
+        _isLoading = false;
+        _isGeneratingImage = false;
+        _isRegenerating = false;
+      });
+      await _saveMessages();
+      if (!_conversationTraceRecorded) {
+        _conversationTraceRecorded = true;
+        await _lifeTraceService.recordConversation();
+      }
+      _scrollToBottom();
+    } on TimeoutException {
+      await _handleImageGenerationError('图片生成超时了，这次先不发图。');
+    } on SocketException {
+      await _handleImageGenerationError('当前网络连不上图片模型，这次先不发图。');
+    } catch (error) {
+      await _handleImageGenerationError('图片没有生成成功：$error');
+    }
+  }
+
+  Future<void> _handleImageGenerationError(String message) async {
+    if (!mounted) return;
+    setState(() => _isGeneratingImage = false);
+    _showSnack(message);
     await _requestReply();
+  }
+
+  Future<void> _pickAndSendImage() async {
+    if (_isLoading) return;
+    if (!await _deepSeekService.hasApiKey) {
+      _showSnack('还没有配置日常聊天模型与 API，请先到设置中填写。');
+      return;
+    }
+
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 88,
+        maxWidth: 2048,
+      );
+      if (picked == null || !mounted) return;
+
+      final caption = _controller.text.trim();
+      final message = ChatMessage(
+        role: 'user',
+        type: MessageType.image,
+        content: caption,
+      );
+      final savedPath = await _chatImageStorage.saveImage(
+        sourcePath: picked.path,
+        messageId: message.id,
+      );
+
+      _hideActivitySubtitle();
+      setState(() {
+        _messages.add(
+          message.copyWith(
+            metadata: {
+              'imagePath': savedPath,
+              'visionStatus': 'recognizing',
+            },
+          ),
+        );
+        _controller.clear();
+        _isLoading = true;
+        _isRegenerating = false;
+      });
+      await _saveMessages();
+      _scrollToBottom();
+
+      String description;
+      try {
+        final result = await _multimodalService.understandForChat(
+          imagePath: savedPath,
+          userText: caption,
+        );
+        description = result.description;
+      } catch (error) {
+        description = '';
+        debugPrint('识图失败：$error');
+        if (mounted) {
+          _showSnack('图片已经发出，但识图失败了。这次会按看不清图片来回复。');
+        }
+      }
+
+      if (!mounted) return;
+      final index = _messages.indexWhere((item) => item.id == message.id);
+      if (index >= 0) {
+        final current = _messages[index];
+        setState(() {
+          _messages[index] = current.copyWith(
+            metadata: {
+              ...current.metadata,
+              'visionDescription': description,
+              'visionStatus': description.isEmpty ? 'failed' : 'completed',
+            },
+          );
+        });
+        await _saveMessages();
+      }
+
+      await _requestReply();
+    } catch (error) {
+      await _handleRequestError('发送图片失败：$error');
+    }
   }
 
   Future<void> _requestReply() async {
@@ -221,6 +405,7 @@ class _ChatPageState extends State<ChatPage> {
         initiative: _initiative,
         intimacy: _intimacy,
         tsundere: _tsundere,
+        characterId: _activeCharacter.id,
       );
       final readingDelay = Duration(
         milliseconds: (350 + reply.length * 7).clamp(650, 1800).toInt(),
@@ -251,30 +436,35 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _handleRequestError(String message) async {
     if (!mounted) return;
     setState(() {
-      _messages.add(ChatMessage(role: 'error', content: message));
       _isLoading = false;
+      _isGeneratingImage = false;
       _isRegenerating = false;
     });
-    await _saveMessages();
-    _scrollToBottom();
+    _showSnack(message);
   }
 
-  void _addErrorMessage(String message) {
-    if (!mounted) return;
-    setState(() {
-      _messages.add(ChatMessage(role: 'error', content: message));
-    });
-    _saveMessages();
-    _scrollToBottom();
+  Future<ActivityStatus> _refreshActivity({DateTime? now}) async {
+    final time = now ?? DateTime.now();
+    try {
+      final activity = await ActivityContextService(
+        characterId: _activeCharacter.id,
+      ).resolve(now: time);
+      if (mounted) setState(() => _resolvedActivity = activity);
+      return activity;
+    } catch (error) {
+      debugPrint('刷新生活状态失败：$error');
+      return _activityService.current(
+        now: time,
+        characterId: _activeCharacter.id,
+      );
+    }
   }
 
   Future<void> _recordCurrentActivity({DateTime? now}) async {
     try {
       final time = now ?? DateTime.now();
-      await _todayService.recordActivity(
-        _activityService.current(now: time),
-        now: time,
-      );
+      final activity = await _refreshActivity(now: time);
+      await _todayService.recordActivity(activity, now: time);
     } catch (error) {
       debugPrint('记录 Today 失败：$error');
     }
@@ -291,6 +481,8 @@ class _ChatPageState extends State<ChatPage> {
       MaterialPageRoute(builder: (_) => const CharacterManagementPage()),
     );
     await _loadChatSettings();
+    await _loadActiveCharacter();
+    await _refreshActivity();
   }
 
   Future<void> _showMessageActions(int index) async {
@@ -364,7 +556,7 @@ class _ChatPageState extends State<ChatPage> {
     if (_isLoading || index < 0 || index >= _messages.length) return;
     if (_messages[index].role != 'assistant') return;
     if (!await _deepSeekService.hasApiKey) {
-      _addErrorMessage('还没有配置模型与 API，请先到设置中填写。');
+      _showSnack('还没有配置模型与 API，请先到设置中填写。');
       return;
     }
 
@@ -465,11 +657,19 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildAvatar({required bool isUser, double size = 40}) {
     if (!isUser) {
-      return _SquareAvatar(
-        size: size,
-        image: const AssetImage('assets/images/pei_avatar.jpg'),
-        alignment: const Alignment(0, -0.15),
-      );
+      final path = _activeCharacter.avatarPath.trim();
+      final file = path.isEmpty ? null : File(path);
+      if (file != null && file.existsSync()) {
+        return _SquareAvatar(size: size, image: FileImage(file));
+      }
+      if (_activeCharacter.isBuiltIn) {
+        return _SquareAvatar(
+          size: size,
+          image: const AssetImage('assets/images/pei_avatar.jpg'),
+          alignment: const Alignment(0, -0.15),
+        );
+      }
+      return _AvatarPlaceholder(size: size);
     }
 
     final avatarPath = _profile.avatarPath.trim();
@@ -484,7 +684,12 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  ActivityStatus get _activity => _activityService.current(now: _now);
+  ActivityStatus get _activity =>
+      _resolvedActivity ??
+      _activityService.current(
+        now: _now,
+        characterId: _activeCharacter.id,
+      );
 
   Future<void> _showActivityDetails() async {
     final activity = _activity;
@@ -628,12 +833,17 @@ class _ChatPageState extends State<ChatPage> {
             if (_isLoading)
               Padding(
                 padding: const EdgeInsets.fromLTRB(11, 3, 11, 8),
-                child: _TypingIndicator(isRegenerating: _isRegenerating),
+                child: _TypingIndicator(
+                  isRegenerating: _isRegenerating,
+                  isGeneratingImage: _isGeneratingImage,
+                  avatar: _buildAvatar(isUser: false, size: 38),
+                ),
               ),
             ChatInputBar(
               controller: _controller,
               isLoading: _isLoading,
               onSend: _sendMessage,
+              onPickImage: _pickAndSendImage,
             ),
           ],
         ),
@@ -646,7 +856,7 @@ class _SquareAvatar extends StatelessWidget {
   const _SquareAvatar({
     required this.size,
     required this.image,
-    required this.alignment,
+    this.alignment = Alignment.center,
   });
 
   final double size;
@@ -679,10 +889,32 @@ class _SquareAvatar extends StatelessWidget {
   }
 }
 
+class _AvatarPlaceholder extends StatelessWidget {
+  const _AvatarPlaceholder({required this.size});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: const Color(0xFFE5EBEE),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Icon(Icons.auto_awesome_rounded, size: size * 0.5, color: const Color(0xFF647C8B)),
+  );
+}
+
 class _TypingIndicator extends StatefulWidget {
-  const _TypingIndicator({required this.isRegenerating});
+  const _TypingIndicator({
+    required this.isRegenerating,
+    required this.isGeneratingImage,
+    required this.avatar,
+  });
 
   final bool isRegenerating;
+  final bool isGeneratingImage;
+  final Widget avatar;
 
   @override
   State<_TypingIndicator> createState() => _TypingIndicatorState();
@@ -714,11 +946,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          const _SquareAvatar(
-            size: 38,
-            image: AssetImage('assets/images/pei_avatar.jpg'),
-            alignment: Alignment(0, -0.15),
-          ),
+          widget.avatar,
           const SizedBox(width: 7),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
@@ -761,7 +989,11 @@ class _TypingIndicatorState extends State<_TypingIndicator>
           Padding(
             padding: const EdgeInsets.only(bottom: 7),
             child: Text(
-              widget.isRegenerating ? '重新组织语言…' : '裴简澈正在输入',
+              widget.isGeneratingImage
+                  ? '正在准备图片…'
+                  : widget.isRegenerating
+                  ? '重新组织语言…'
+                  : '裴简澈正在输入',
               style: const TextStyle(fontSize: 12, color: Colors.black38),
             ),
           ),

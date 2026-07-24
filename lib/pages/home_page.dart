@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../models/activity_status.dart';
 import '../models/ai_character.dart';
 import '../models/life_trace.dart';
+import '../services/activity_context_service.dart';
 import '../services/activity_service.dart';
 import '../services/character_registry_service.dart';
 import '../services/home_character_storage_service.dart';
@@ -29,15 +30,13 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final ActivityService _activityService = const ActivityService();
   final PresenceService _presenceService = const PresenceService();
-  final TodayService _todayService = TodayService();
-  final InitiativeService _initiativeService = InitiativeService();
-  final LifeTraceService _lifeTraceService = LifeTraceService();
   final CharacterRegistryService _characterRegistry = CharacterRegistryService();
   final HomeCharacterStorageService _homeCharacterStorage =
       HomeCharacterStorageService();
 
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
+  ActivityStatus? _resolvedActivity;
   int _unreadCount = 0;
   List<LifeTrace> _recentTraces = const [];
   AiCharacter _homeCharacter = AiCharacter.peiJianChe();
@@ -72,8 +71,12 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _homeCharacter = character;
+        _resolvedActivity = null;
         _homeCharacterLoading = false;
       });
+      await _recordCurrentActivity();
+      await _refreshInitiative();
+      await _loadRecentTraces();
     } catch (error) {
       debugPrint('加载首页展示角色失败：$error');
       if (!mounted) return;
@@ -109,7 +112,13 @@ class _HomePageState extends State<HomePage> {
 
     await _homeCharacterStorage.saveCharacterId(selected.id);
     if (!mounted) return;
-    setState(() => _homeCharacter = selected);
+    setState(() {
+      _homeCharacter = selected;
+      _resolvedActivity = null;
+    });
+    await _recordCurrentActivity();
+    await _refreshInitiative();
+    await _loadRecentTraces();
   }
 
   Future<void> _openPeiLink() async {
@@ -131,8 +140,9 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _refreshInitiative({DateTime? now}) async {
     try {
-      await _initiativeService.maybeLeaveMessage(now: now);
-      final unread = await _initiativeService.unreadCount();
+      final service = InitiativeService(characterId: _homeCharacter.id);
+      await service.maybeLeaveMessage(now: now);
+      final unread = await service.unreadCount();
       if (!mounted) return;
       setState(() => _unreadCount = unread);
       await _loadRecentTraces();
@@ -143,7 +153,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadRecentTraces() async {
     try {
-      final traces = await _lifeTraceService.loadRecent(limit: 3);
+      final traces = await LifeTraceService(characterId: _homeCharacter.id).loadRecent(limit: 3);
       if (!mounted) return;
       setState(() => _recentTraces = traces);
     } catch (error) {
@@ -162,16 +172,39 @@ class _HomePageState extends State<HomePage> {
     return '${_now.month}月${_now.day}日  ${weekdays[_now.weekday - 1]}';
   }
 
-  ActivityStatus get _activity => _activityService.current(now: _now);
+  ActivityStatus get _activity =>
+      _resolvedActivity ??
+      _activityService.current(
+        now: _now,
+        characterId: _homeCharacter.id,
+      );
 
   String get _greeting =>
       _presenceService.homeGreeting(now: _now, activity: _activity);
 
+  Future<ActivityStatus> _refreshActivity({DateTime? now}) async {
+    final time = now ?? DateTime.now();
+    try {
+      final activity = await ActivityContextService(
+        characterId: _homeCharacter.id,
+      ).resolve(now: time);
+      if (mounted) setState(() => _resolvedActivity = activity);
+      return activity;
+    } catch (error) {
+      debugPrint('刷新首页生活状态失败：$error');
+      return _activityService.current(
+        now: time,
+        characterId: _homeCharacter.id,
+      );
+    }
+  }
+
   Future<void> _recordCurrentActivity({DateTime? now}) async {
     try {
       final time = now ?? DateTime.now();
-      await _todayService.recordActivity(
-        _activityService.current(now: time),
+      final activity = await _refreshActivity(now: time);
+      await TodayService(characterId: _homeCharacter.id).recordActivity(
+        activity,
         now: time,
       );
     } catch (error) {
@@ -181,11 +214,17 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _showActivityDetails() async {
     final activity = _activity;
-    await _todayService.recordActivity(activity, now: _now);
+    await TodayService(characterId: _homeCharacter.id)
+        .recordActivity(activity, now: _now);
     if (!mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => TodayPage(currentActivity: activity)),
+      MaterialPageRoute(
+        builder: (_) => TodayPage(
+          currentActivity: activity,
+          characterId: _homeCharacter.id,
+        ),
+      ),
     );
     if (!mounted) return;
     setState(() => _now = DateTime.now());
