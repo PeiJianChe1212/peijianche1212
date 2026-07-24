@@ -11,16 +11,15 @@ import 'providers/openai_compatible_chat_provider.dart';
 class ModelHub {
   ModelHub({
     ApiSettingsStorageService? storage,
-    http.Client? client,
-  }) : _storage = storage ?? ApiSettingsStorageService(),
-       _client = client;
+    this.client,
+  }) : _storage = storage ?? ApiSettingsStorageService();
 
   final ApiSettingsStorageService _storage;
-  final http.Client? _client;
+  final http.Client? client;
 
   Future<ChatModelProvider> chatProvider() async {
     final settings = await _storage.loadSettings();
-    return OpenAiCompatibleChatProvider(settings: settings, client: _client);
+    return OpenAiCompatibleChatProvider(settings: settings, client: client);
   }
 
   Future<ImageModelProvider?> imageProvider() async => null;

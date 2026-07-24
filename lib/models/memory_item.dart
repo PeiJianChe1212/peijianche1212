@@ -47,10 +47,12 @@ class MemoryItem {
   };
 
   factory MemoryItem.fromJson(Map<dynamic, dynamic> json) {
+    final rawCategory = json['category']?.toString() ?? '关于我';
+
     return MemoryItem(
       id: json['id']?.toString(),
       content: json['content']?.toString() ?? '',
-      category: json['category']?.toString() ?? '关于念念',
+      category: rawCategory == '关于念念' ? '关于我' : rawCategory,
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
       isPinned: json['isPinned'] == true,
       isArchived: json['isArchived'] == true,

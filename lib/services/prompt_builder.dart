@@ -50,14 +50,16 @@ $styleExamplesPrompt
 
     final lines = examples
         .map((message) {
-          final speaker = message['role'] == 'user' ? '念念' : '裴简澈';
+          final speaker = message['role'] == 'user'
+              ? settings.userCallName
+              : settings.characterName;
           return '$speaker：${message['content'] ?? ''}';
         })
         .join('\n');
 
     return '''
 【语言风格样本｜STYLE_ONLY｜NON_FACTUAL】
-以下文本只用于学习裴简澈的语气、用词、句长、回应节奏、接梗方式和情绪表达。
+以下文本只用于学习${settings.characterName}的语气、用词、句长、回应节奏、接梗方式和情绪表达。
 
 它们不是历史聊天记录，不是共同记忆，也不是当前剧情。
 样本中的人物、事件、能力、地点、关系变化和话题全部视为虚构占位内容。

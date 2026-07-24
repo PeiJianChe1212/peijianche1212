@@ -1,6 +1,10 @@
 class UserProfile {
   const UserProfile({
     this.nickname = '念念',
+    this.peiLinkId = '一只小狐念',
+    this.gender = '',
+    this.region = '',
+    this.signature = '',
     this.peiCallName = '念念',
     this.birthday = '',
     this.identity = '裴简澈的恋人',
@@ -11,7 +15,16 @@ class UserProfile {
     this.avatarPath = '',
   });
 
+  /// 展示在“我”、Echo 等用户界面中的个人资料。
+  /// 这些字段不会自动发送给 AI。
   final String nickname;
+  final String peiLinkId;
+  final String gender;
+  final String region;
+  final String signature;
+  final String avatarPath;
+
+  /// AI 可见资料。与上面的公开个人资料分开保存和使用。
   final String peiCallName;
   final String birthday;
   final String identity;
@@ -19,10 +32,46 @@ class UserProfile {
   final String likes;
   final String dislikes;
   final String interactionPreference;
-  final String avatarPath;
+
+  UserProfile copyWith({
+    String? nickname,
+    String? peiLinkId,
+    String? gender,
+    String? region,
+    String? signature,
+    String? peiCallName,
+    String? birthday,
+    String? identity,
+    String? workAndSchedule,
+    String? likes,
+    String? dislikes,
+    String? interactionPreference,
+    String? avatarPath,
+  }) {
+    return UserProfile(
+      nickname: nickname ?? this.nickname,
+      peiLinkId: peiLinkId ?? this.peiLinkId,
+      gender: gender ?? this.gender,
+      region: region ?? this.region,
+      signature: signature ?? this.signature,
+      peiCallName: peiCallName ?? this.peiCallName,
+      birthday: birthday ?? this.birthday,
+      identity: identity ?? this.identity,
+      workAndSchedule: workAndSchedule ?? this.workAndSchedule,
+      likes: likes ?? this.likes,
+      dislikes: dislikes ?? this.dislikes,
+      interactionPreference:
+          interactionPreference ?? this.interactionPreference,
+      avatarPath: avatarPath ?? this.avatarPath,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'nickname': nickname,
+    'peiLinkId': peiLinkId,
+    'gender': gender,
+    'region': region,
+    'signature': signature,
     'peiCallName': peiCallName,
     'birthday': birthday,
     'identity': identity,
@@ -41,6 +90,10 @@ class UserProfile {
 
     return UserProfile(
       nickname: read('nickname', '念念'),
+      peiLinkId: read('peiLinkId', '一只小狐念'),
+      gender: json['gender']?.toString().trim() ?? '',
+      region: json['region']?.toString().trim() ?? '',
+      signature: json['signature']?.toString().trim() ?? '',
       peiCallName: read('peiCallName', '念念'),
       birthday: json['birthday']?.toString().trim() ?? '',
       identity: read('identity', '裴简澈的恋人'),
@@ -57,10 +110,9 @@ class UserProfile {
     String display(String value) => value.trim().isEmpty ? '未填写' : value.trim();
 
     return '''
-【当前用户资料】
+【当前用户希望角色知道的资料】
 
-昵称：${display(nickname)}
-裴简澈对她的常用称呼：${display(peiCallName)}
+角色对用户的称呼：${display(peiCallName)}
 生日：${display(birthday)}
 身份与关系：${display(identity)}
 工作与作息：${display(workAndSchedule)}
@@ -68,6 +120,7 @@ class UserProfile {
 不喜欢的事物：${display(dislikes)}
 相处偏好：${display(interactionPreference)}
 
+注意：昵称、头像、性别、地区、PeiLink ID 和个性签名属于用户个人资料，不应从这里推断或主动提及。
 回应她分享的日常时，先回应事情本身。
 她发照片时，先观察具体内容，不要只夸外貌，也不要立刻转成调情。
 她吐槽时，可以接梗或陪她一起吐槽，不要急着说教。

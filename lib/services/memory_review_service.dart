@@ -1,18 +1,24 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
-
 import '../models/memory_item.dart';
 import '../models/pending_memory.dart';
+import 'character_scope_service.dart';
 import 'memory_storage_service.dart';
 
 class MemoryReviewService {
-  final MemoryStorageService _memoryStorage = MemoryStorageService();
+  MemoryReviewService({String? characterId})
+      : _characterId = characterId,
+        _memoryStorage = MemoryStorageService(characterId: characterId);
 
-  Future<File> _pendingFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    return File('${directory.path}/pending_memories.json');
+  final String? _characterId;
+  final MemoryStorageService _memoryStorage;
+
+  Future<File> _pendingFile() {
+    return CharacterScopeService(_characterId).dataFile(
+      'pending_memories.json',
+      legacyDefaultFileName: 'pending_memories.json',
+    );
   }
 
   Future<List<PendingMemory>> loadItems() async {

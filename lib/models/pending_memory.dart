@@ -33,11 +33,13 @@ class PendingMemory {
   };
 
   factory PendingMemory.fromJson(Map<dynamic, dynamic> json) {
+    final rawCategory = json['category']?.toString() ?? '关于我';
+
     return PendingMemory(
       id: json['id']?.toString(),
       content: json['content']?.toString() ?? '',
       reason: json['reason']?.toString() ?? '可能长期有效',
-      category: json['category']?.toString() ?? '关于念念',
+      category: rawCategory == '关于念念' ? '关于我' : rawCategory,
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
     );
   }

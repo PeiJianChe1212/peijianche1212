@@ -1,35 +1,43 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
 
 import '../models/activity_status.dart';
 import '../models/chat_message.dart';
 import '../models/initiative_state.dart';
 import 'activity_service.dart';
 import 'chat_storage_service.dart';
-import 'settings_storage_service.dart';
+import 'character_settings_storage_service.dart';
+import 'character_scope_service.dart';
 import 'life_trace_service.dart';
 
 class InitiativeService {
   InitiativeService({
     ChatStorageService? chatStorage,
-    SettingsStorageService? settingsStorage,
+    CharacterSettingsStorageService? characterStorage,
     ActivityService? activityService,
     LifeTraceService? lifeTraceService,
-  }) : _chatStorage = chatStorage ?? ChatStorageService(),
-       _settingsStorage = settingsStorage ?? SettingsStorageService(),
+    String? characterId,
+  }) : _characterId = characterId,
+       _chatStorage =
+           chatStorage ?? ChatStorageService(characterId: characterId),
+       _characterStorage = characterStorage ??
+           CharacterSettingsStorageService(characterId: characterId),
        _activityService = activityService ?? const ActivityService(),
-       _lifeTraceService = lifeTraceService ?? LifeTraceService();
+       _lifeTraceService =
+           lifeTraceService ?? LifeTraceService(characterId: characterId);
 
+  final String? _characterId;
   final ChatStorageService _chatStorage;
-  final SettingsStorageService _settingsStorage;
+  final CharacterSettingsStorageService _characterStorage;
   final ActivityService _activityService;
   final LifeTraceService _lifeTraceService;
 
-  Future<File> _stateFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    return File('${directory.path}/initiative_state.json');
+  Future<File> _stateFile() {
+    return CharacterScopeService(_characterId).dataFile(
+      'initiative_state.json',
+      legacyDefaultFileName: 'initiative_state.json',
+    );
   }
 
   Future<InitiativeState> loadState({DateTime? now}) async {
@@ -60,7 +68,7 @@ class InitiativeService {
 
   Future<bool> maybeLeaveMessage({DateTime? now}) async {
     final time = now ?? DateTime.now();
-    final settings = await _settingsStorage.loadSettings();
+    final settings = await _characterStorage.loadSettings();
     if (!settings.proactiveEnabled || settings.maxProactivePerDay <= 0) {
       return false;
     }

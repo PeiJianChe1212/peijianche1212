@@ -1,20 +1,24 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
 
 import '../models/life_trace.dart';
+import 'character_scope_service.dart';
 import 'today_service.dart';
 
 class LifeTraceService {
-  LifeTraceService({TodayService? todayService})
-      : _todayService = todayService ?? TodayService();
+  LifeTraceService({TodayService? todayService, String? characterId})
+      : _characterId = characterId,
+        _todayService = todayService ?? TodayService(characterId: characterId);
 
+  final String? _characterId;
   final TodayService _todayService;
 
-  Future<File> _file() async {
-    final directory = await getApplicationDocumentsDirectory();
-    return File('${directory.path}/life_traces.json');
+  Future<File> _file() {
+    return CharacterScopeService(_characterId).dataFile(
+      'life_traces.json',
+      legacyDefaultFileName: 'life_traces.json',
+    );
   }
 
   String _dayKey(DateTime value) =>

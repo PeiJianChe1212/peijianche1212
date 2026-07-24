@@ -1,14 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
-
 import '../models/memory_item.dart';
+import 'character_scope_service.dart';
 
 class MemoryStorageService {
-  Future<File> _memoryFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    return File('${directory.path}/memories.json');
+  MemoryStorageService({this.characterId});
+
+  final String? characterId;
+
+  Future<File> _memoryFile() {
+    return CharacterScopeService(characterId).dataFile(
+      'memories.json',
+      legacyDefaultFileName: 'memories.json',
+    );
   }
 
   Future<List<MemoryItem>> loadItems() async {
@@ -70,8 +75,7 @@ class MemoryStorageService {
 
     if (items.isEmpty) return '';
 
-    const maxItems = 30;
-    final selected = items.take(maxItems).toList();
+    final selected = items.take(30).toList();
     final buffer = StringBuffer('【已确认记忆】\n');
     for (final item in selected) {
       buffer.writeln('- ${item.content.trim()}');

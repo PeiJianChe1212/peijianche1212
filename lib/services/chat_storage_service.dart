@@ -1,31 +1,40 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
-
 import '../models/chat_message.dart';
+import 'character_scope_service.dart';
 
 class ChatStorageService {
-  Future<File> _historyFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    return File('${directory.path}/chat_history.json');
+  ChatStorageService({this.characterId});
+
+  final String? characterId;
+
+  Future<File> _historyFile() {
+    return CharacterScopeService(characterId).dataFile(
+      'chat_history.json',
+      legacyDefaultFileName: 'chat_history.json',
+    );
   }
 
   Future<List<ChatMessage>> loadMessages() async {
     final file = await _historyFile();
     if (!await file.exists()) return [];
 
-    final raw = await file.readAsString();
-    if (raw.trim().isEmpty) return [];
+    try {
+      final raw = await file.readAsString();
+      if (raw.trim().isEmpty) return [];
 
-    final decoded = jsonDecode(raw);
-    if (decoded is! List) return [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return [];
 
-    return decoded
-        .whereType<Map>()
-        .map(ChatMessage.fromJson)
-        .where((message) => message.content.trim().isNotEmpty)
-        .toList();
+      return decoded
+          .whereType<Map>()
+          .map(ChatMessage.fromJson)
+          .where((message) => message.content.trim().isNotEmpty)
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> saveMessages(List<ChatMessage> messages) async {
@@ -38,6 +47,8 @@ class ChatStorageService {
 
   Future<void> clearMessages() async {
     final file = await _historyFile();
-    if (await file.exists()) await file.delete();
+    if (await file.exists()) {
+      await file.delete();
+    }
   }
 }

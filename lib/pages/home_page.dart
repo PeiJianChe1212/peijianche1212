@@ -1,19 +1,21 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/activity_status.dart';
+import '../models/ai_character.dart';
 import '../models/life_trace.dart';
 import '../services/activity_service.dart';
+import '../services/character_registry_service.dart';
+import '../services/home_character_storage_service.dart';
 import '../services/presence_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
-import '../services/settings_storage_service.dart';
 import '../services/today_service.dart';
-import 'chat_page.dart';
-import 'memory_page.dart';
-import 'profile_page.dart';
+import 'peilink/character_detail_page.dart';
+import 'peilink/peilink_home_page.dart';
 import 'settings_page.dart';
 import 'today_page.dart';
 
@@ -25,37 +27,28 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final SettingsStorageService _settingsStorage = SettingsStorageService();
   final ActivityService _activityService = const ActivityService();
   final PresenceService _presenceService = const PresenceService();
   final TodayService _todayService = TodayService();
   final InitiativeService _initiativeService = InitiativeService();
   final LifeTraceService _lifeTraceService = LifeTraceService();
+  final CharacterRegistryService _characterRegistry = CharacterRegistryService();
+  final HomeCharacterStorageService _homeCharacterStorage =
+      HomeCharacterStorageService();
 
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
   int _unreadCount = 0;
   List<LifeTrace> _recentTraces = const [];
-  ChatSettings _settings = const ChatSettings(
-    openingMessage: '回来了？今天过得怎么样。',
-    conversationMode: 'basic',
-    temperature: 0.72,
-    replyLength: 'standard',
-    initiative: 0.58,
-    intimacy: 0.52,
-    tsundere: 0.62,
-    proactiveEnabled: true,
-    lateNightMessages: true,
-    maxProactivePerDay: 2,
-  );
-
+  AiCharacter _homeCharacter = AiCharacter.peiJianChe();
+  bool _homeCharacterLoading = true;
   @override
   void initState() {
     super.initState();
-    _loadSettings();
     _refreshInitiative();
     _recordCurrentActivity();
     _loadRecentTraces();
+    _loadHomeCharacter();
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (!mounted) return;
       final now = DateTime.now();
@@ -72,92 +65,69 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  Future<void> _loadSettings() async {
+
+  Future<void> _loadHomeCharacter() async {
     try {
-      final settings = await _settingsStorage.loadSettings();
+      final character = await _homeCharacterStorage.loadCharacter();
       if (!mounted) return;
-      setState(() => _settings = settings);
+      setState(() {
+        _homeCharacter = character;
+        _homeCharacterLoading = false;
+      });
     } catch (error) {
-      debugPrint('桌面加载设置失败：$error');
+      debugPrint('加载首页展示角色失败：$error');
+      if (!mounted) return;
+      setState(() => _homeCharacterLoading = false);
     }
   }
 
-  Future<void> _saveSettings({
-    required String openingMessage,
-    required String conversationMode,
-    required double temperature,
-    required String replyLength,
-    required double initiative,
-    required double intimacy,
-    required double tsundere,
-    required bool proactiveEnabled,
-    required bool lateNightMessages,
-    required int maxProactivePerDay,
-  }) async {
-    final settings = ChatSettings(
-      openingMessage: openingMessage.trim().isEmpty
-          ? '回来了？今天过得怎么样。'
-          : openingMessage.trim(),
-      conversationMode: conversationMode,
-      temperature: temperature.clamp(0.55, 0.90).toDouble(),
-      replyLength: replyLength,
-      initiative: initiative.clamp(0, 1).toDouble(),
-      intimacy: intimacy.clamp(0, 1).toDouble(),
-      tsundere: tsundere.clamp(0, 1).toDouble(),
-      proactiveEnabled: proactiveEnabled,
-      lateNightMessages: lateNightMessages,
-      maxProactivePerDay: maxProactivePerDay.clamp(0, 4).toInt(),
-    );
-    await _settingsStorage.saveSettings(settings);
+  Future<void> _openHomeCharacter() async {
+    await _characterRegistry.setActiveCharacter(_homeCharacter.id);
     if (!mounted) return;
-    setState(() => _settings = settings);
-  }
-
-  Future<void> _openChat() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const ChatPage()),
+      MaterialPageRoute(builder: (_) => const CharacterDetailPage()),
     );
-    await _loadSettings();
-    await _refreshInitiative();
+    await _loadHomeCharacter();
     await _loadRecentTraces();
   }
 
-  Future<void> _openMemory() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const MemoryPage()),
+  Future<void> _chooseHomeCharacter() async {
+    final characters = await _characterRegistry.loadCharacters();
+    if (!mounted) return;
+
+    final selected = await showModalBottomSheet<AiCharacter>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => _HomeCharacterPicker(
+        characters: characters,
+        selectedId: _homeCharacter.id,
+      ),
     );
+    if (selected == null) return;
+
+    await _homeCharacterStorage.saveCharacterId(selected.id);
+    if (!mounted) return;
+    setState(() => _homeCharacter = selected);
   }
 
-  Future<void> _openProfile() async {
+  Future<void> _openPeiLink() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const ProfilePage()),
+      MaterialPageRoute(builder: (_) => const PeiLinkHomePage()),
     );
+    await _refreshInitiative();
+    await _loadRecentTraces();
   }
 
   Future<void> _openSettings() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => SettingsPage(
-          openingMessage: _settings.openingMessage,
-          conversationMode: _settings.conversationMode,
-          temperature: _settings.temperature,
-          replyLength: _settings.replyLength,
-          initiative: _settings.initiative,
-          intimacy: _settings.intimacy,
-          tsundere: _settings.tsundere,
-          proactiveEnabled: _settings.proactiveEnabled,
-          lateNightMessages: _settings.lateNightMessages,
-          maxProactivePerDay: _settings.maxProactivePerDay,
-          onSaveSettings: _saveSettings,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => const SettingsPage()),
     );
-    await _loadSettings();
   }
+
 
   Future<void> _refreshInitiative({DateTime? now}) async {
     try {
@@ -242,9 +212,12 @@ class _HomePageState extends State<HomePage> {
                     _DateHeader(time: _timeText, date: _dateText),
                     const SizedBox(height: 18),
                     _PeiHeroCard(
+                      character: _homeCharacter,
+                      loading: _homeCharacterLoading,
                       greeting: _greeting,
                       activity: _activity,
-                      onChat: _openChat,
+                      onOpenCharacter: _openHomeCharacter,
+                      onChooseCharacter: _chooseHomeCharacter,
                       onActivityTap: _showActivityDetails,
                     ),
                     const SizedBox(height: 18),
@@ -253,9 +226,7 @@ class _HomePageState extends State<HomePage> {
                     _RecentTracePanel(traces: _recentTraces),
                     const SizedBox(height: 22),
                     _AppGrid(
-                      onChat: _openChat,
-                      onProfile: _openProfile,
-                      onMemory: _openMemory,
+                      onChat: _openPeiLink,
                       onSettings: _openSettings,
                       unreadCount: _unreadCount,
                     ),
@@ -382,15 +353,21 @@ class _DateHeader extends StatelessWidget {
 
 class _PeiHeroCard extends StatefulWidget {
   const _PeiHeroCard({
+    required this.character,
+    required this.loading,
     required this.greeting,
     required this.activity,
-    required this.onChat,
+    required this.onOpenCharacter,
+    required this.onChooseCharacter,
     required this.onActivityTap,
   });
 
+  final AiCharacter character;
+  final bool loading;
   final String greeting;
   final ActivityStatus activity;
-  final VoidCallback onChat;
+  final VoidCallback onOpenCharacter;
+  final VoidCallback onChooseCharacter;
   final VoidCallback onActivityTap;
 
   @override
@@ -410,10 +387,9 @@ class _PeiHeroCardState extends State<_PeiHeroCard>
       vsync: this,
       duration: const Duration(milliseconds: 1100),
     );
-    _imageScale = Tween<double>(
-      begin: 1.025,
-      end: 1,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _imageScale = Tween<double>(begin: 1.025, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
     _contentFade = CurvedAnimation(
       parent: _controller,
       curve: const Interval(0.2, 1, curve: Curves.easeOut),
@@ -427,6 +403,45 @@ class _PeiHeroCardState extends State<_PeiHeroCard>
     super.dispose();
   }
 
+  Widget _characterImage() {
+    final path = widget.character.avatarPath.trim();
+    if (path.isNotEmpty && File(path).existsSync()) {
+      return Image.file(
+        File(path),
+        fit: BoxFit.cover,
+        alignment: const Alignment(0, -0.12),
+      );
+    }
+    if (widget.character.isBuiltIn) {
+      return Image.asset(
+        'assets/images/pei_hero_flower.jpg',
+        fit: BoxFit.cover,
+        alignment: const Alignment(0, -0.12),
+        errorBuilder: (_, _, _) => _fallbackImage(),
+      );
+    }
+    return _fallbackImage();
+  }
+
+  Widget _fallbackImage() {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFDDE4E9), Color(0xFF536675), Color(0xFF18232D)],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.auto_awesome_rounded,
+          color: Colors.white70,
+          size: 72,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
@@ -436,31 +451,11 @@ class _PeiHeroCardState extends State<_PeiHeroCard>
         child: Material(
           color: const Color(0xFFE9E7E3),
           child: InkWell(
-            onTap: widget.onChat,
+            onTap: widget.loading ? null : widget.onOpenCharacter,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                ScaleTransition(
-                  scale: _imageScale,
-                  child: Image.asset(
-                    'assets/images/pei_hero_flower.jpg',
-                    fit: BoxFit.cover,
-                    alignment: const Alignment(0, -0.12),
-                    errorBuilder: (_, _, _) => const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xFFDDE4E9),
-                            Color(0xFF536675),
-                            Color(0xFF18232D),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                ScaleTransition(scale: _imageScale, child: _characterImage()),
                 const DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -473,6 +468,36 @@ class _PeiHeroCardState extends State<_PeiHeroCard>
                         Color(0xE80A1118),
                       ],
                       stops: [0, 0.38, 0.62, 1],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 18,
+                  left: 18,
+                  child: FadeTransition(
+                    opacity: _contentFade,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(22),
+                        onTap: widget.loading ? null : widget.onChooseCharacter,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.24),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.tune_rounded,
+                            color: Colors.white,
+                            size: 19,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -525,15 +550,15 @@ class _PeiHeroCardState extends State<_PeiHeroCard>
                 Positioned(
                   left: 22,
                   right: 22,
-                  bottom: 22,
+                  bottom: 25,
                   child: FadeTransition(
                     opacity: _contentFade,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '裴简澈',
-                          style: TextStyle(
+                        Text(
+                          widget.character.characterName,
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 28,
                             fontWeight: FontWeight.w700,
@@ -549,51 +574,6 @@ class _PeiHeroCardState extends State<_PeiHeroCard>
                             height: 1.4,
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 11,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.20),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.12),
-                                blurRadius: 16,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.chat_bubble_outline_rounded,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                '继续聊天',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              SizedBox(width: 5),
-                              Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                color: Colors.white,
-                                size: 13,
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -601,6 +581,124 @@ class _PeiHeroCardState extends State<_PeiHeroCard>
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeCharacterPicker extends StatelessWidget {
+  const _HomeCharacterPicker({
+    required this.characters,
+    required this.selectedId,
+  });
+
+  final List<AiCharacter> characters;
+  final String selectedId;
+
+  Widget _avatar(AiCharacter character) {
+    final path = character.avatarPath.trim();
+    if (path.isNotEmpty && File(path).existsSync()) {
+      return Image.file(File(path), fit: BoxFit.cover);
+    }
+    if (character.isBuiltIn) {
+      return Image.asset(
+        'assets/images/pei_avatar.jpg',
+        fit: BoxFit.cover,
+        alignment: const Alignment(0, -0.15),
+      );
+    }
+    return const ColoredBox(
+      color: Color(0xFFE5EBEE),
+      child: Icon(Icons.auto_awesome_rounded, color: Color(0xFF647C8B)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+        ),
+        decoration: const BoxDecoration(
+          color: Color(0xFFF7F7F7),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD0D0D0),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '选择首页展示角色',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+                itemCount: characters.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final character = characters[index];
+                  final selected = character.id == selectedId;
+                  return Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => Navigator.pop(context, character),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(11),
+                              child: SizedBox(
+                                width: 52,
+                                height: 52,
+                                child: _avatar(character),
+                              ),
+                            ),
+                            const SizedBox(width: 13),
+                            Expanded(
+                              child: Text(
+                                character.characterName,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (selected)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: Color(0xFF4D788B),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -803,15 +901,11 @@ class _TodayItem extends StatelessWidget {
 class _AppGrid extends StatelessWidget {
   const _AppGrid({
     required this.onChat,
-    required this.onProfile,
-    required this.onMemory,
     required this.onSettings,
     required this.unreadCount,
   });
 
   final VoidCallback onChat;
-  final VoidCallback onProfile;
-  final VoidCallback onMemory;
   final VoidCallback onSettings;
   final int unreadCount;
 
@@ -827,28 +921,12 @@ class _AppGrid extends StatelessWidget {
       children: [
         _DesktopAppIcon(
           icon: Icons.chat_bubble_rounded,
-          label: '聊天',
+          label: 'PeiLink',
           background: const LinearGradient(
             colors: [Color(0xFF80B4D0), Color(0xFF426F89)],
           ),
           onTap: onChat,
           badgeCount: unreadCount,
-        ),
-        _DesktopAppIcon(
-          icon: Icons.person_rounded,
-          label: '我',
-          background: const LinearGradient(
-            colors: [Color(0xFFD6A6B8), Color(0xFF8B6074)],
-          ),
-          onTap: onProfile,
-        ),
-        _DesktopAppIcon(
-          icon: Icons.memory_rounded,
-          label: '记忆',
-          background: const LinearGradient(
-            colors: [Color(0xFF9E91C5), Color(0xFF62557E)],
-          ),
-          onTap: onMemory,
         ),
         const _DesktopAppIcon(
           icon: Icons.photo_library_outlined,
@@ -859,7 +937,7 @@ class _AppGrid extends StatelessWidget {
         ),
         const _DesktopAppIcon(
           icon: Icons.camera_alt_outlined,
-          label: 'Moments',
+          label: 'Echo',
           background: LinearGradient(
             colors: [Color(0xFF8FB7AA), Color(0xFF4F786D)],
           ),

@@ -12,13 +12,14 @@ class MemoryReviewPage extends StatefulWidget {
 
 class _MemoryReviewPageState extends State<MemoryReviewPage> {
   static const _categories = [
-    '关于念念',
+    '关于我',
     '兴趣偏好',
     '生活习惯',
     '害怕与禁忌',
     '重要关系',
     '经历过的事',
     '我们的约定',
+    '共同纪念',
   ];
   final MemoryReviewService _service = MemoryReviewService();
   List<PendingMemory> _items = [];
@@ -31,7 +32,19 @@ class _MemoryReviewPageState extends State<MemoryReviewPage> {
   }
 
   Future<void> _load() async {
-    final items = await _service.loadItems();
+    final loadedItems = await _service.loadItems();
+    final items = <PendingMemory>[];
+
+    for (final item in loadedItems) {
+      if (item.category == '关于念念') {
+        final migrated = item.copyWith(category: '关于我');
+        items.add(migrated);
+        await _service.update(migrated);
+      } else {
+        items.add(item);
+      }
+    }
+
     if (!mounted) return;
     setState(() {
       _items = items..sort((a, b) => b.createdAt.compareTo(a.createdAt));

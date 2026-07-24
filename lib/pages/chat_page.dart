@@ -6,18 +6,20 @@ import 'package:flutter/services.dart';
 
 import '../models/activity_status.dart';
 import '../models/chat_message.dart';
+import '../models/character_settings.dart';
 import '../models/user_profile.dart';
 import '../services/activity_service.dart';
 import '../services/chat_storage_service.dart';
 import '../services/deepseek_service.dart';
-import '../services/memory_storage_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
-import '../services/memory_review_service.dart';
-import '../services/settings_storage_service.dart';
-import '../services/session_reset_service.dart';
+import '../services/memory_storage_service.dart';
+import '../services/character_settings_storage_service.dart';
 import '../services/today_service.dart';
 import '../services/user_profile_storage_service.dart';
+import 'peilink/character_management_page.dart';
+import '../widgets/chat/chat_input_bar.dart';
+import '../widgets/chat/message_renderer.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -32,13 +34,12 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ChatStorageService _chatStorage = ChatStorageService();
-  final SettingsStorageService _settingsStorage = SettingsStorageService();
+  final CharacterSettingsStorageService _characterStorage =
+      CharacterSettingsStorageService();
   final UserProfileStorageService _profileStorage = UserProfileStorageService();
   final MemoryStorageService _memoryStorage = MemoryStorageService();
-  final MemoryReviewService _memoryReview = MemoryReviewService();
   final DeepSeekService _deepSeekService = DeepSeekService();
   final TodayService _todayService = TodayService();
-  final SessionResetService _sessionReset = SessionResetService();
   final InitiativeService _initiativeService = InitiativeService();
   final LifeTraceService _lifeTraceService = LifeTraceService();
 
@@ -49,11 +50,10 @@ class _ChatPageState extends State<ChatPage> {
   bool _isLoading = false;
   bool _showActivitySubtitle = true;
   bool _isRegenerating = false;
-  bool _isAnalyzingMemory = false;
   DateTime? _previousSeenAt;
   bool _conversationTraceRecorded = false;
   UserProfile _profile = const UserProfile();
-  String _openingMessage = '回来了？今天过得怎么样。';
+  CharacterSettings _characterSettings = CharacterSettings.defaults();
   String _conversationMode = 'basic';
   double _temperature = 0.72;
   String _replyLength = 'standard';
@@ -119,10 +119,10 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _loadChatSettings() async {
     try {
-      final settings = await _settingsStorage.loadSettings();
+      final settings = await _characterStorage.loadSettings();
       if (!mounted) return;
       setState(() {
-        _openingMessage = settings.openingMessage;
+        _characterSettings = settings;
         _conversationMode = settings.conversationMode;
         _temperature = settings.temperature;
         _replyLength = settings.replyLength;
@@ -131,7 +131,7 @@ class _ChatPageState extends State<ChatPage> {
         _tsundere = settings.tsundere;
       });
     } catch (error) {
-      debugPrint('加载聊天设置失败：$error');
+      debugPrint('加载角色聊天设置失败：$error');
     }
   }
 
@@ -168,7 +168,20 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       _messages
         ..clear()
-        ..add(ChatMessage(role: 'assistant', content: _openingMessage));
+        ..add(
+          ChatMessage(
+            role: 'assistant',
+            content: '我是${_characterSettings.characterName}。',
+          ),
+        )
+        ..add(
+          ChatMessage(
+            role: 'system',
+            type: MessageType.system,
+            content:
+                '你已与${_characterSettings.characterName}建立羁绊，开始聊天吧。',
+          ),
+        );
       _controller.clear();
       _isLoading = false;
       _isRegenerating = false;
@@ -273,174 +286,11 @@ class _ChatPageState extends State<ChatPage> {
     setState(() => _showActivitySubtitle = false);
   }
 
-  Future<void> _showCleanupOptions() async {
-    if (_isLoading) {
-      _showSnack('等这条回复结束后再整理吧');
-      return;
-    }
-
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 2, 18, 22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '清理与重置',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '选择你真正想清空的范围。',
-                style: TextStyle(color: Colors.black54),
-              ),
-              const SizedBox(height: 14),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const CircleAvatar(
-                  child: Icon(Icons.chat_bubble_outline_rounded),
-                ),
-                title: const Text('仅清空聊天'),
-                subtitle: const Text('删除消息，但保留长期记忆、待审核记忆和今天。'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmClearChatOnly();
-                },
-              ),
-              const Divider(),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  backgroundColor: Colors.red.withValues(alpha: 0.10),
-                  child: const Icon(
-                    Icons.restart_alt_rounded,
-                    color: Colors.red,
-                  ),
-                ),
-                title: const Text('重新开始', style: TextStyle(color: Colors.red)),
-                subtitle: const Text(
-                  '清空聊天、长期记忆、待审核记忆和 Today。用户资料、人设与 API 会保留。',
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmResetStory();
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+  Future<void> _openCharacterSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CharacterManagementPage()),
     );
-  }
-
-  Future<void> _confirmClearChatOnly() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('仅清空聊天？'),
-        content: const Text('全部消息会被删除，但裴简澈已经确认的记忆和今天的生活记录会保留。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('清空聊天'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await _sessionReset.clearChatOnly();
-      await _loadChatSettings();
-      await _createNewConversation();
-      _showSnack('聊天已经重新开始，记忆仍然保留');
-    } catch (error) {
-      _showSnack('清空失败：$error');
-    }
-  }
-
-  Future<void> _confirmResetStory() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('重新开始这段故事？'),
-        content: const Text(
-          '这会永久清空聊天记录、长期记忆、待审核记忆和今天的生活时间线。\n\n用户资料、裴简澈人设、头像、壁纸与 API 配置不会受到影响。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('先不重置'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('确认重新开始'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await _sessionReset.resetSharedStory();
-      await _loadChatSettings();
-      await _createNewConversation();
-      await _recordCurrentActivity();
-      _showSnack('已经重新开始');
-    } catch (error) {
-      _showSnack('重置失败：$error');
-    }
-  }
-
-  void _handleChatMenu(String value) {
-    if (value == 'clear') _showCleanupOptions();
-    if (value == 'analyze_memory') _analyzeMemory();
-  }
-
-  Future<void> _analyzeMemory() async {
-    if (_isLoading || _isAnalyzingMemory) {
-      _showSnack('等当前回复结束后再整理记忆吧');
-      return;
-    }
-    if (!await _deepSeekService.hasApiKey) {
-      _showSnack('请先配置模型与 API');
-      return;
-    }
-    if (!_messages.any((message) => message.role == 'user')) {
-      _showSnack('还没有足够的聊天内容');
-      return;
-    }
-
-    setState(() => _isAnalyzingMemory = true);
-    try {
-      final candidates = await _deepSeekService.extractMemories(
-        messages: List<ChatMessage>.from(_messages),
-      );
-      final added = await _memoryReview.addCandidates(candidates);
-      if (!mounted) return;
-      if (candidates.isEmpty) {
-        _showSnack('这段聊天里没有适合长期保存的内容');
-      } else if (added == 0) {
-        _showSnack('候选记忆已经存在，没有重复添加');
-      } else {
-        _showSnack('发现 $added 条候选记忆，已送去审核');
-      }
-    } on TimeoutException {
-      _showSnack('记忆分析超时了，稍后再试');
-    } on SocketException {
-      _showSnack('当前无法连接网络');
-    } catch (error) {
-      _showSnack('记忆分析失败：$error');
-    } finally {
-      if (mounted) setState(() => _isAnalyzingMemory = false);
-    }
+    await _loadChatSettings();
   }
 
   Future<void> _showMessageActions(int index) async {
@@ -613,26 +463,6 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Color _getBubbleColor(String role) {
-    if (role == 'user') return const Color(0xFF9DD1F4);
-    if (role == 'error') return Colors.red.shade50;
-    return Colors.grey.shade200;
-  }
-
-  Color _getTextColor(String role) {
-    if (role == 'error') return Colors.red.shade700;
-    return Colors.black87;
-  }
-
-  BorderRadius _getBubbleBorderRadius(bool isUser) {
-    return BorderRadius.only(
-      topLeft: const Radius.circular(17),
-      topRight: const Radius.circular(17),
-      bottomLeft: Radius.circular(isUser ? 17 : 5),
-      bottomRight: Radius.circular(isUser ? 5 : 17),
-    );
-  }
-
   Widget _buildAvatar({required bool isUser, double size = 40}) {
     if (!isUser) {
       return _SquareAvatar(
@@ -651,102 +481,6 @@ class _ChatPageState extends State<ChatPage> {
           ? FileImage(avatarFile)
           : const AssetImage('assets/images/user_avatar_default.jpg'),
       alignment: const Alignment(0, -0.05),
-    );
-  }
-
-  Widget _buildMessageBubble(
-    BuildContext context,
-    ChatMessage message,
-    int index,
-  ) {
-    final isUser = message.role == 'user';
-    final isAssistant = message.role == 'assistant';
-
-    final bubble = GestureDetector(
-      onLongPress: () => _showMessageActions(index),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.68,
-        ),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: _getBubbleColor(message.role),
-            borderRadius: _getBubbleBorderRadius(isUser),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.035),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (message.source == 'initiative') ...[
-                Text(
-                  '他主动发来的',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: _getTextColor(message.role).withValues(alpha: 0.48),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-              ],
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: Text(
-                      message.content,
-                      style: TextStyle(
-                        fontSize: 16,
-                        height: 1.42,
-                        color: _getTextColor(message.role),
-                      ),
-                    ),
-                  ),
-                  if (message.isFavorite) ...[
-                    const SizedBox(width: 7),
-                    const Icon(
-                      Icons.favorite_rounded,
-                      size: 13,
-                      color: Color(0xFFCB718E),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (!isAssistant && !isUser) {
-      return Align(alignment: Alignment.centerLeft, child: bubble);
-    }
-
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Row(
-        mainAxisAlignment: isUser
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isUser) ...[
-            _buildAvatar(isUser: false),
-            const SizedBox(width: 7),
-          ],
-          Flexible(child: bubble),
-          if (isUser) ...[const SizedBox(width: 7), _buildAvatar(isUser: true)],
-        ],
-      ),
     );
   }
 
@@ -795,55 +529,6 @@ class _ChatPageState extends State<ChatPage> {
     return '上次见你：${previous.month}月${previous.day}日';
   }
 
-  Widget _buildInputArea() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFE8E8E8))),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              minLines: 1,
-              maxLines: 5,
-              textInputAction: TextInputAction.send,
-              decoration: InputDecoration(
-                hintText: '输入消息…',
-                filled: true,
-                fillColor: const Color(0xFFF1F1F1),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 17,
-                  vertical: 11,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(22),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onSubmitted: (_) => _sendMessage(),
-            ),
-          ),
-          const SizedBox(width: 8),
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: _isLoading
-                ? Colors.grey.shade400
-                : Colors.blueGrey.shade600,
-            child: IconButton(
-              tooltip: '发送',
-              icon: const Icon(Icons.arrow_upward_rounded, color: Colors.white),
-              onPressed: _isLoading ? null : _sendMessage,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -858,9 +543,12 @@ class _ChatPageState extends State<ChatPage> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
             child: Column(
               children: [
-                const Text(
-                  '裴简澈',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                Text(
+                  _characterSettings.displayName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
                 ),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 220),
@@ -885,7 +573,9 @@ class _ChatPageState extends State<ChatPage> {
                                     _lastSeenText!,
                                     style: TextStyle(
                                       fontSize: 9.5,
-                                      color: Colors.black.withValues(alpha: 0.48),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.48,
+                                      ),
                                     ),
                                   ),
                               ],
@@ -904,38 +594,10 @@ class _ChatPageState extends State<ChatPage> {
         centerTitle: true,
         systemOverlayStyle: SystemUiOverlayStyle.dark,
         actions: [
-          PopupMenuButton<String>(
-            tooltip: '聊天菜单',
+          IconButton(
+            tooltip: '角色设置',
             icon: const Icon(Icons.more_horiz_rounded),
-            onSelected: _handleChatMenu,
-            itemBuilder: (context) => [
-              PopupMenuItem<String>(
-                value: 'analyze_memory',
-                enabled: !_isAnalyzingMemory,
-                child: Row(
-                  children: [
-                    Icon(
-                      _isAnalyzingMemory
-                          ? Icons.hourglass_top_rounded
-                          : Icons.psychology_alt_outlined,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(_isAnalyzingMemory ? '正在分析记忆…' : '分析记忆'),
-                  ],
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem<String>(
-                value: 'clear',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline_rounded, color: Colors.red),
-                    SizedBox(width: 10),
-                    Text('清理与重置'),
-                  ],
-                ),
-              ),
-            ],
+            onPressed: _openCharacterSettings,
           ),
           const SizedBox(width: 4),
         ],
@@ -955,8 +617,12 @@ class _ChatPageState extends State<ChatPage> {
                       controller: _scrollController,
                       padding: const EdgeInsets.fromLTRB(11, 15, 11, 10),
                       itemCount: _messages.length,
-                      itemBuilder: (context, index) =>
-                          _buildMessageBubble(context, _messages[index], index),
+                      itemBuilder: (context, index) => MessageRenderer(
+                        message: _messages[index],
+                        onLongPress: () => _showMessageActions(index),
+                        assistantAvatar: _buildAvatar(isUser: false),
+                        userAvatar: _buildAvatar(isUser: true),
+                      ),
                     ),
             ),
             if (_isLoading)
@@ -964,7 +630,11 @@ class _ChatPageState extends State<ChatPage> {
                 padding: const EdgeInsets.fromLTRB(11, 3, 11, 8),
                 child: _TypingIndicator(isRegenerating: _isRegenerating),
               ),
-            _buildInputArea(),
+            ChatInputBar(
+              controller: _controller,
+              isLoading: _isLoading,
+              onSend: _sendMessage,
+            ),
           ],
         ),
       ),

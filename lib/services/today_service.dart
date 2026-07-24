@@ -1,15 +1,21 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
 
 import '../models/activity_status.dart';
 import '../models/today_event.dart';
+import 'character_scope_service.dart';
 
 class TodayService {
-  Future<File> _timelineFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    return File('${directory.path}/today_timeline.json');
+  TodayService({this.characterId});
+
+  final String? characterId;
+
+  Future<File> _timelineFile() {
+    return CharacterScopeService(characterId).dataFile(
+      'today_timeline.json',
+      legacyDefaultFileName: 'today_timeline.json',
+    );
   }
 
   String _dayKey(DateTime value) {

@@ -1,3 +1,11 @@
+enum MessageType {
+  text,
+  image,
+  voice,
+  system,
+  card,
+}
+
 class ChatMessage {
   ChatMessage({
     required this.role,
@@ -6,6 +14,8 @@ class ChatMessage {
     DateTime? createdAt,
     this.isFavorite = false,
     this.source = 'normal',
+    this.type = MessageType.text,
+    this.metadata = const {},
   }) : id = id ?? _createId(),
        createdAt = createdAt ?? DateTime.now();
 
@@ -15,6 +25,8 @@ class ChatMessage {
   final DateTime createdAt;
   final bool isFavorite;
   final String source;
+  final MessageType type;
+  final Map<String, dynamic> metadata;
 
   ChatMessage copyWith({
     String? role,
@@ -22,6 +34,8 @@ class ChatMessage {
     DateTime? createdAt,
     bool? isFavorite,
     String? source,
+    MessageType? type,
+    Map<String, dynamic>? metadata,
   }) {
     return ChatMessage(
       id: id,
@@ -30,6 +44,8 @@ class ChatMessage {
       createdAt: createdAt ?? this.createdAt,
       isFavorite: isFavorite ?? this.isFavorite,
       source: source ?? this.source,
+      type: type ?? this.type,
+      metadata: metadata ?? this.metadata,
     );
   }
 
@@ -40,6 +56,8 @@ class ChatMessage {
     'createdAt': createdAt.toIso8601String(),
     'isFavorite': isFavorite,
     'source': source,
+    'type': type.name,
+    'metadata': metadata,
   };
 
   factory ChatMessage.fromJson(Map<dynamic, dynamic> json) {
@@ -51,6 +69,24 @@ class ChatMessage {
       createdAt: createdAt,
       isFavorite: json['isFavorite'] == true,
       source: json['source']?.toString() ?? 'normal',
+      type: _messageTypeFromJson(json['type']),
+      metadata: _metadataFromJson(json['metadata']),
+    );
+  }
+
+  static MessageType _messageTypeFromJson(dynamic value) {
+    final typeName = value?.toString();
+    return MessageType.values.firstWhere(
+      (type) => type.name == typeName,
+      orElse: () => MessageType.text,
+    );
+  }
+
+  static Map<String, dynamic> _metadataFromJson(dynamic value) {
+    if (value is! Map) return const {};
+
+    return value.map(
+      (key, item) => MapEntry(key.toString(), item),
     );
   }
 

@@ -7,19 +7,16 @@ import '../../models/api_settings.dart';
 import '../chat_model_provider.dart';
 
 class OpenAiCompatibleChatProvider extends ChatModelProvider {
-  OpenAiCompatibleChatProvider({
-    required ApiSettings settings,
-    http.Client? client,
-  }) : _settings = settings,
-       _client = client ?? http.Client(),
-       _ownsClient = client == null;
+  OpenAiCompatibleChatProvider({required this.settings, http.Client? client})
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null;
 
-  final ApiSettings _settings;
+  final ApiSettings settings;
   final http.Client _client;
   final bool _ownsClient;
 
   @override
-  String get providerName => _settings.provider;
+  String get providerName => settings.provider;
 
   @override
   Set<AiCapability> get capabilities => const {AiCapability.chat};
@@ -31,25 +28,25 @@ class OpenAiCompatibleChatProvider extends ChatModelProvider {
     required int maxTokens,
     double? topP,
   }) async {
-    if (!_settings.isConfigured) {
+    if (!settings.isConfigured) {
       throw StateError('请先在“设置 → 模型与 API”中填写并保存聊天模型配置。');
     }
 
     final body = <String, dynamic>{
-      'model': _settings.model,
+      'model': settings.model,
       'messages': messages,
       'stream': false,
       'max_tokens': maxTokens,
       'temperature': temperature,
-      if (topP != null) 'top_p': topP,
+      'top_p': ?topP,
     };
 
     final response = await _client
         .post(
-          Uri.parse(_settings.baseUrl),
+          Uri.parse(settings.baseUrl),
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
-            'Authorization': 'Bearer ${_settings.apiKey}',
+            'Authorization': 'Bearer ${settings.apiKey}',
           },
           body: jsonEncode(body),
         )

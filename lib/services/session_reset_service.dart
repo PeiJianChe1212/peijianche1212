@@ -1,25 +1,32 @@
 import 'chat_storage_service.dart';
+import 'initiative_service.dart';
+import 'life_trace_service.dart';
 import 'memory_review_service.dart';
 import 'memory_storage_service.dart';
-import 'initiative_service.dart';
 import 'today_service.dart';
-import 'life_trace_service.dart';
 
 class SessionResetService {
   SessionResetService({
+    this.characterId,
     ChatStorageService? chatStorage,
     MemoryStorageService? memoryStorage,
     MemoryReviewService? memoryReview,
     TodayService? todayService,
     InitiativeService? initiativeService,
     LifeTraceService? lifeTraceService,
-  }) : _chatStorage = chatStorage ?? ChatStorageService(),
-       _memoryStorage = memoryStorage ?? MemoryStorageService(),
-       _memoryReview = memoryReview ?? MemoryReviewService(),
-       _todayService = todayService ?? TodayService(),
-       _initiativeService = initiativeService ?? InitiativeService(),
-       _lifeTraceService = lifeTraceService ?? LifeTraceService();
+  }) : _chatStorage =
+           chatStorage ?? ChatStorageService(characterId: characterId),
+       _memoryStorage =
+           memoryStorage ?? MemoryStorageService(characterId: characterId),
+       _memoryReview =
+           memoryReview ?? MemoryReviewService(characterId: characterId),
+       _todayService = todayService ?? TodayService(characterId: characterId),
+       _initiativeService =
+           initiativeService ?? InitiativeService(characterId: characterId),
+       _lifeTraceService =
+           lifeTraceService ?? LifeTraceService(characterId: characterId);
 
+  final String? characterId;
   final ChatStorageService _chatStorage;
   final MemoryStorageService _memoryStorage;
   final MemoryReviewService _memoryReview;

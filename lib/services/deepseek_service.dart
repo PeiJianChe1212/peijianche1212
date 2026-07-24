@@ -147,7 +147,7 @@ class DeepSeekService {
 
 只返回 JSON 数组，不要 Markdown，不要解释。最多 5 条。
 格式：
-[{"content":"用户……","reason":"说明未来聊天为什么有用","category":"关于念念/兴趣偏好/生活习惯/害怕与禁忌/重要关系/经历过的事/我们的约定"}]
+[{"content":"用户……","reason":"说明未来聊天为什么有用","category":"关于我/兴趣偏好/生活习惯/害怕与禁忌/重要关系/经历过的事/我们的约定/共同纪念"}]
 没有值得保存的内容时返回 []。
 ''',
         },
@@ -171,17 +171,31 @@ class DeepSeekService {
     if (start < 0 || end < start) return [];
     final decoded = jsonDecode(cleaned.substring(start, end + 1));
     if (decoded is! List) return [];
-    const allowed = {'关于念念', '兴趣偏好', '生活习惯', '害怕与禁忌', '重要关系', '经历过的事', '我们的约定'};
+    const allowed = {
+      '关于我',
+      '兴趣偏好',
+      '生活习惯',
+      '害怕与禁忌',
+      '重要关系',
+      '经历过的事',
+      '我们的约定',
+      '共同纪念',
+    };
     return decoded
         .whereType<Map>()
         .map((json) {
           final content = json['content']?.toString().trim() ?? '';
           final reason = json['reason']?.toString().trim() ?? '可能长期有效';
-          final rawCategory = json['category']?.toString().trim() ?? '关于念念';
+          final rawCategory = json['category']?.toString().trim() ?? '关于我';
+          final normalizedCategory = rawCategory == '关于念念'
+              ? '关于我'
+              : rawCategory;
           return PendingMemory(
             content: content,
             reason: reason,
-            category: allowed.contains(rawCategory) ? rawCategory : '关于念念',
+            category: allowed.contains(normalizedCategory)
+                ? normalizedCategory
+                : '关于我',
           );
         })
         .where((item) => item.content.isNotEmpty)

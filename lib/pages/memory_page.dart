@@ -1,7 +1,13 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/chat_message.dart';
 import '../models/memory_item.dart';
+import '../services/chat_storage_service.dart';
+import '../services/deepseek_service.dart';
 import '../services/memory_review_service.dart';
 import '../services/memory_storage_service.dart';
 import 'memory_review_page.dart';
@@ -17,23 +23,27 @@ enum _MemorySort { newest, oldest, alphabetical }
 
 class _MemoryPageState extends State<MemoryPage> {
   static const _categories = [
-    '关于念念',
+    '关于我',
     '兴趣偏好',
     '生活习惯',
     '害怕与禁忌',
     '重要关系',
     '经历过的事',
     '我们的约定',
+    '共同纪念',
     '收藏回复',
   ];
 
   final MemoryStorageService _storage = MemoryStorageService();
   final MemoryReviewService _reviewStorage = MemoryReviewService();
   final TextEditingController _searchController = TextEditingController();
+  final ChatStorageService _chatStorage = ChatStorageService();
+  final DeepSeekService _deepSeekService = DeepSeekService();
 
   List<MemoryItem> _items = [];
   bool _loading = true;
   bool _showArchived = false;
+  bool _isAnalyzing = false;
   int _pendingCount = 0;
   String _query = '';
   String? _selectedCategory;
@@ -48,6 +58,7 @@ class _MemoryPageState extends State<MemoryPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _deepSeekService.dispose();
     super.dispose();
   }
 
@@ -57,14 +68,68 @@ class _MemoryPageState extends State<MemoryPage> {
       _reviewStorage.loadItems(),
     ]);
     if (!mounted) return;
+
+    final loadedItems = results[0] as List<MemoryItem>;
+    var needsMigration = false;
+    final migratedItems = loadedItems.map((item) {
+      if (item.category != '关于念念') return item;
+      needsMigration = true;
+      return item.copyWith(category: '关于我');
+    }).toList();
+
+    if (needsMigration) {
+      await _storage.saveItems(migratedItems);
+    }
+    if (!mounted) return;
     setState(() {
-      _items = results[0] as List<MemoryItem>;
+      _items = migratedItems;
       _pendingCount = (results[1] as List).length;
       _loading = false;
     });
   }
 
   Future<void> _save() => _storage.saveItems(_items);
+
+  void _showSnack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _analyzeMemory() async {
+    if (_isAnalyzing) return;
+    if (!await _deepSeekService.hasApiKey) {
+      _showSnack('请先配置模型与 API');
+      return;
+    }
+    final messages = await _chatStorage.loadMessages();
+    if (!messages.any((message) => message.role == 'user')) {
+      _showSnack('还没有足够的聊天内容');
+      return;
+    }
+    setState(() => _isAnalyzing = true);
+    try {
+      final candidates = await _deepSeekService.extractMemories(
+        messages: List<ChatMessage>.from(messages),
+      );
+      final added = await _reviewStorage.addCandidates(candidates);
+      await _load();
+      if (candidates.isEmpty) {
+        _showSnack('这段聊天里没有适合长期保存的内容');
+      } else if (added == 0) {
+        _showSnack('候选记忆已经存在，没有重复添加');
+      } else {
+        _showSnack('发现 $added 条候选记忆，已送去审核');
+      }
+    } on TimeoutException {
+      _showSnack('记忆分析超时了，稍后再试');
+    } on SocketException {
+      _showSnack('当前无法连接网络');
+    } catch (error) {
+      _showSnack('记忆分析失败：$error');
+    } finally {
+      if (mounted) setState(() => _isAnalyzing = false);
+    }
+  }
 
   Future<void> _openEditor({MemoryItem? item, String? initialCategory}) async {
     final result = await showDialog<_MemoryDraft>(
@@ -272,6 +337,16 @@ class _MemoryPageState extends State<MemoryPage> {
                         showArchived: _showArchived,
                         count: _currentMemoryCount,
                         pendingCount: _pendingCount,
+                      ),
+                      const SizedBox(height: 14),
+
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.psychology_alt_outlined),
+                          title: Text(_isAnalyzing ? '正在分析记忆…' : '分析当前聊天'),
+                          subtitle: const Text('提取候选记忆，送入待审核列表'),
+                          onTap: _isAnalyzing ? null : _analyzeMemory,
+                        ),
                       ),
                       const SizedBox(height: 14),
                       TextField(

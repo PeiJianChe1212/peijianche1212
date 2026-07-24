@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/user_profile.dart';
 import '../services/user_profile_storage_service.dart';
-import 'edit_profile_page.dart';
+import 'profile_field_edit_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -16,6 +16,7 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final _storage = UserProfileStorageService();
+  final _picker = ImagePicker();
   UserProfile _profile = const UserProfile();
   bool _loading = true;
 
@@ -34,276 +35,239 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
-  Future<void> _editProfile() async {
-    final result = await Navigator.push<UserProfile>(
+  Future<void> _save(UserProfile profile) async {
+    await _storage.saveProfile(profile);
+    if (!mounted) return;
+    setState(() => _profile = profile);
+  }
+
+  Future<void> _editText({
+    required String title,
+    required String value,
+    required UserProfile Function(String value) update,
+    String hint = '',
+    int maxLength = 40,
+    int maxLines = 1,
+    bool allowEmpty = true,
+  }) async {
+    final result = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => EditProfilePage(initialProfile: _profile),
+        builder: (_) => ProfileTextEditPage(
+          title: title,
+          initialValue: value,
+          hintText: hint,
+          maxLength: maxLength,
+          maxLines: maxLines,
+          allowEmpty: allowEmpty,
+        ),
       ),
     );
-    if (!mounted || result == null) return;
-    setState(() => _profile = result);
-    ScaffoldMessenger.of(
+    if (result == null) return;
+    await _save(update(result));
+  }
+
+  Future<void> _pickAvatar() async {
+    try {
+      final picked = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 92,
+      );
+      if (picked == null) return;
+      final path = await _storage.saveAvatarCopy(picked.path);
+      if (path.isEmpty) return;
+      await _save(_profile.copyWith(avatarPath: path));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('选择头像失败：$error')),
+      );
+    }
+  }
+
+  Future<void> _editGender() async {
+    final result = await Navigator.push<String>(
       context,
-    ).showSnackBar(const SnackBar(content: Text('资料已经保存，下一次聊天会自动读取。')));
-  }
-
-  String _show(String value) => value.trim().isEmpty ? '未填写' : value.trim();
-
-  @override
-  Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF10151D),
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          title: const Text('我'),
-          actions: [
-            IconButton(
-              onPressed: _loading ? null : _editProfile,
-              tooltip: '编辑资料',
-              icon: const Icon(Icons.edit_outlined),
-            ),
-          ],
-        ),
-        body: Stack(
-          children: [
-            const Positioned.fill(child: _ProfileBackground()),
-            if (_loading)
-              const Center(child: CircularProgressIndicator())
-            else
-              SafeArea(
-                top: false,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
-                  children: [
-                    _ProfileHeader(profile: _profile),
-                    const SizedBox(height: 18),
-                    _ProfileSection(
-                      title: '基本资料',
-                      children: [
-                        _ProfileRow(label: '昵称', value: _profile.nickname),
-                        _ProfileRow(
-                          label: '裴简澈对你的称呼',
-                          value: _profile.peiCallName,
-                        ),
-                        _ProfileRow(
-                          label: '生日',
-                          value: _show(_profile.birthday),
-                        ),
-                        _ProfileRow(label: '身份', value: _profile.identity),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _ProfileSection(
-                      title: '他需要知道的你',
-                      children: [
-                        _ProfileRow(
-                          label: '工作与作息',
-                          value: _show(_profile.workAndSchedule),
-                        ),
-                        _ProfileRow(
-                          label: '喜欢的事物',
-                          value: _show(_profile.likes),
-                        ),
-                        _ProfileRow(
-                          label: '不喜欢的事物',
-                          value: _show(_profile.dislikes),
-                        ),
-                        _ProfileRow(
-                          label: '相处偏好',
-                          value: _show(_profile.interactionPreference),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    FilledButton.icon(
-                      onPressed: _editProfile,
-                      icon: const Icon(Icons.edit_outlined),
-                      label: const Text('编辑我的资料'),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '这些内容只保存在当前设备中，并会在发送消息时自动加入裴简澈看到的资料。',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.48),
-                        fontSize: 12,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
+      MaterialPageRoute(
+        builder: (_) => ProfileGenderEditPage(initialValue: _profile.gender),
       ),
     );
+    if (result == null) return;
+    await _save(_profile.copyWith(gender: result));
   }
-}
 
-class _ProfileBackground extends StatelessWidget {
-  const _ProfileBackground();
+  String _show(String value, {String fallback = '未填写'}) {
+    final text = value.trim();
+    return text.isEmpty ? fallback : text;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF273748), Color(0xFF151D27), Color(0xFF090D13)],
-        ),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF2F2F2),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF2F2F2),
+        surfaceTintColor: Colors.transparent,
+        title: const Text('个人资料'),
+        centerTitle: true,
       ),
-    );
-  }
-}
-
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.profile});
-
-  final UserProfile profile;
-
-  @override
-  Widget build(BuildContext context) {
-    final avatarFile = profile.avatarPath.isEmpty
-        ? null
-        : File(profile.avatarPath);
-    final hasAvatar = avatarFile != null && avatarFile.existsSync();
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 82,
-            height: 82,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.18),
-                width: 1.5,
-              ),
-              image: DecorationImage(
-                image: hasAvatar
-                    ? FileImage(avatarFile)
-                    : const AssetImage('assets/images/user_avatar_default.jpg'),
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-          const SizedBox(width: 17),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
               children: [
-                Text(
-                  profile.nickname,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 25,
-                    fontWeight: FontWeight.w700,
+                Container(
+                  color: Colors.white,
+                  child: Column(
+                    children: [
+                      _ProfileTile(
+                        title: '头像',
+                        trailing: _Avatar(path: _profile.avatarPath),
+                        onTap: _pickAvatar,
+                      ),
+                      const _InsetDivider(),
+                      _ProfileTile(
+                        title: '名字',
+                        value: _profile.nickname,
+                        onTap: () => _editText(
+                          title: '设置名字',
+                          value: _profile.nickname,
+                          allowEmpty: false,
+                          maxLength: 20,
+                          update: (value) => _profile.copyWith(nickname: value),
+                        ),
+                      ),
+                      const _InsetDivider(),
+                      _ProfileTile(
+                        title: '性别',
+                        value: _show(_profile.gender),
+                        onTap: _editGender,
+                      ),
+                      const _InsetDivider(),
+                      _ProfileTile(
+                        title: '地区',
+                        value: _show(_profile.region),
+                        onTap: () => _editText(
+                          title: '设置地区',
+                          value: _profile.region,
+                          hint: '现实地区或自定义地点都可以',
+                          maxLength: 40,
+                          update: (value) => _profile.copyWith(region: value),
+                        ),
+                      ),
+                      const _InsetDivider(),
+                      _ProfileTile(
+                        title: 'PeiLink ID',
+                        value: _profile.peiLinkId,
+                        onTap: () => _editText(
+                          title: '设置 PeiLink ID',
+                          value: _profile.peiLinkId,
+                          hint: '用于展示的个人 ID',
+                          allowEmpty: false,
+                          maxLength: 30,
+                          update: (value) => _profile.copyWith(peiLinkId: value),
+                        ),
+                      ),
+                      const _InsetDivider(),
+                      _ProfileTile(
+                        title: '签名',
+                        value: _show(_profile.signature),
+                        onTap: () => _editText(
+                          title: '设置签名',
+                          value: _profile.signature,
+                          hint: '写一句属于你的话',
+                          maxLength: 80,
+                          maxLines: 4,
+                          update: (value) => _profile.copyWith(signature: value),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  '这一次，手机里也有属于你的位置。',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.64),
-                    fontSize: 13,
-                    height: 1.45,
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: Text(
+                    '这里是你的个人展示资料，不会自动加入角色聊天所读取的资料。',
+                    style: TextStyle(
+                      color: Color(0xFF999999),
+                      fontSize: 12,
+                      height: 1.45,
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+    );
+  }
+}
+
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.path});
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    final file = path.isEmpty ? null : File(path);
+    final hasImage = file != null && file.existsSync();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 54,
+        height: 54,
+        color: const Color(0xFFEDEDED),
+        child: hasImage
+            ? Image.file(file, fit: BoxFit.cover)
+            : const Icon(Icons.person_rounded, color: Color(0xFF999999), size: 32),
       ),
     );
   }
 }
 
-class _ProfileSection extends StatelessWidget {
-  const _ProfileSection({required this.title, required this.children});
+class _ProfileTile extends StatelessWidget {
+  const _ProfileTile({
+    required this.title,
+    required this.onTap,
+    this.value,
+    this.trailing,
+  });
 
   final String title;
-  final List<Widget> children;
+  final String? value;
+  final Widget? trailing;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return ListTile(
+      minTileHeight: 72,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      title: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 17, 18, 10),
-            child: Text(
-              title,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.58),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+          if (trailing != null) trailing!,
+          if (value != null)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 210),
+              child: Text(
+                value!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF777777), fontSize: 16),
               ),
             ),
-          ),
-          ...children,
-          const SizedBox(height: 8),
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right_rounded, color: Color(0xFFB6B6B6)),
         ],
       ),
+      onTap: onTap,
     );
   }
 }
 
-class _ProfileRow extends StatelessWidget {
-  const _ProfileRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
+class _InsetDivider extends StatelessWidget {
+  const _InsetDivider();
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 118,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.78),
-                fontSize: 14,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.56),
-                fontSize: 14,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return const Divider(height: 1, indent: 20, color: Color(0xFFEAEAEA));
   }
 }

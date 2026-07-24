@@ -22,7 +22,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _picker = ImagePicker();
 
   late final TextEditingController _nicknameController;
-  late final TextEditingController _callNameController;
   late final TextEditingController _birthdayController;
   late final TextEditingController _identityController;
   late final TextEditingController _workController;
@@ -38,7 +37,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
     super.initState();
     final profile = widget.initialProfile;
     _nicknameController = TextEditingController(text: profile.nickname);
-    _callNameController = TextEditingController(text: profile.peiCallName);
     _birthdayController = TextEditingController(text: profile.birthday);
     _identityController = TextEditingController(text: profile.identity);
     _workController = TextEditingController(text: profile.workAndSchedule);
@@ -53,7 +51,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   void dispose() {
     _nicknameController.dispose();
-    _callNameController.dispose();
     _birthdayController.dispose();
     _identityController.dispose();
     _workController.dispose();
@@ -90,7 +87,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     final profile = UserProfile(
       nickname: _nicknameController.text.trim(),
-      peiCallName: _callNameController.text.trim(),
+      peiCallName: widget.initialProfile.peiCallName,
       birthday: _birthdayController.text.trim(),
       identity: _identityController.text.trim(),
       workAndSchedule: _workController.text.trim(),
@@ -153,13 +150,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         label: '昵称',
                         hint: '例如：念念',
                         maxLength: 20,
-                        requiredField: true,
-                      ),
-                      _ProfileField(
-                        controller: _callNameController,
-                        label: '裴简澈对你的称呼',
-                        hint: '例如：念念、老婆',
-                        maxLength: 30,
                         requiredField: true,
                       ),
                       _ProfileField(

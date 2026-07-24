@@ -5,8 +5,8 @@ import '../models/character_settings.dart';
 import '../services/character_settings_storage_service.dart';
 import '../services/memory_storage_service.dart';
 import '../services/prompt_builder.dart';
-import '../services/settings_storage_service.dart';
 import '../services/user_profile_storage_service.dart';
+import 'memory_page.dart';
 
 class CharacterSettingsPage extends StatefulWidget {
   const CharacterSettingsPage({super.key});
@@ -19,24 +19,60 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
   final _storage = CharacterSettingsStorageService();
   final _profileStorage = UserProfileStorageService();
   final _memoryStorage = MemoryStorageService();
-  final _chatSettingsStorage = SettingsStorageService();
 
+  final _callNameController = TextEditingController();
   final _coreController = TextEditingController();
   final _behaviorController = TextEditingController();
   final _forbiddenController = TextEditingController();
   final _examplesController = TextEditingController();
 
+  CharacterSettings _loadedSettings = CharacterSettings.defaults();
+
   bool _loading = true;
   bool _saving = false;
+
+  late String _conversationMode;
+  late double _temperature;
+  late String _replyLength;
+  late double _initiative;
+  late double _intimacy;
+  late double _tsundere;
+  late bool _proactiveEnabled;
+  late bool _lateNightMessages;
+  late int _maxProactivePerDay;
+
+  static const Map<String, String> _modeTitles = {
+    'basic': '日常模式',
+    'heart': '心动模式',
+    'delicate': '细腻模式',
+    'long': '长聊模式',
+    'deep': '认真模式',
+  };
+
+  static const Map<String, String> _modeDescriptions = {
+    'basic': '像平时私聊一样自然，稳定又生活化',
+    'heart': '亲密感更明显，但不强行撒糖',
+    'delicate': '更留意措辞、情绪和微小变化',
+    'long': '更愿意把话题接下去，适合沉浸聊天',
+    'deep': '讨论复杂问题时更认真、更有条理',
+  };
+
+  static const Map<String, String> _lengthTitles = {
+    'short': '简短',
+    'standard': '适中',
+    'long': '偏长',
+  };
 
   @override
   void initState() {
     super.initState();
+    _apply(CharacterSettings.defaults());
     _load();
   }
 
   @override
   void dispose() {
+    _callNameController.dispose();
     _coreController.dispose();
     _behaviorController.dispose();
     _forbiddenController.dispose();
@@ -52,48 +88,153 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
   }
 
   void _apply(CharacterSettings settings) {
+    _loadedSettings = settings;
+    _callNameController.text = settings.userCallName;
     _coreController.text = settings.coreProfile;
     _behaviorController.text = settings.behaviorStyle;
     _forbiddenController.text = settings.forbiddenRules;
     _examplesController.text = settings.exampleDialogues;
+    _conversationMode = settings.conversationMode;
+    _temperature = settings.temperature;
+    _replyLength = settings.replyLength;
+    _initiative = settings.initiative;
+    _intimacy = settings.intimacy;
+    _tsundere = settings.tsundere;
+    _proactiveEnabled = settings.proactiveEnabled;
+    _lateNightMessages = settings.lateNightMessages;
+    _maxProactivePerDay = settings.maxProactivePerDay;
   }
 
-  CharacterSettings _currentSettings() => CharacterSettings(
+  CharacterSettings _currentSettings() => _loadedSettings.copyWith(
+    userCallName: _callNameController.text.trim(),
     coreProfile: _coreController.text.trim(),
     behaviorStyle: _behaviorController.text.trim(),
     forbiddenRules: _forbiddenController.text.trim(),
     exampleDialogues: _examplesController.text.trim(),
+    conversationMode: _conversationMode,
+    temperature: _temperature,
+    replyLength: _replyLength,
+    initiative: _initiative,
+    intimacy: _intimacy,
+    tsundere: _tsundere,
+    proactiveEnabled: _proactiveEnabled,
+    lateNightMessages: _lateNightMessages,
+    maxProactivePerDay: _maxProactivePerDay,
   );
 
   Future<void> _save() async {
     if (_saving) return;
     final settings = _currentSettings();
-    if (settings.coreProfile.isEmpty ||
+
+    if (settings.userCallName.isEmpty ||
+        settings.coreProfile.isEmpty ||
         settings.behaviorStyle.isEmpty ||
         settings.forbiddenRules.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('核心人设、行为规则和禁止事项不能为空')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('对你的称呼、核心人设、行为规则和禁止事项不能为空')),
+      );
       return;
     }
 
     setState(() => _saving = true);
     try {
       await _storage.saveSettings(settings);
+      _loadedSettings = settings;
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('裴简澈的人设已保存，从下一条回复开始生效')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${settings.characterName}的角色设置已保存，从下一条回复开始生效')),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _applyModePreset(String mode) {
+    setState(() {
+      _conversationMode = mode;
+      switch (mode) {
+        case 'heart':
+          _temperature = 0.74;
+          _replyLength = 'standard';
+          _initiative = 0.72;
+          _intimacy = 0.72;
+          _tsundere = 0.58;
+          break;
+        case 'delicate':
+          _temperature = 0.70;
+          _replyLength = 'standard';
+          _initiative = 0.62;
+          _intimacy = 0.60;
+          _tsundere = 0.48;
+          break;
+        case 'long':
+          _temperature = 0.72;
+          _replyLength = 'long';
+          _initiative = 0.72;
+          _intimacy = 0.55;
+          _tsundere = 0.58;
+          break;
+        case 'deep':
+          _temperature = 0.62;
+          _replyLength = 'long';
+          _initiative = 0.55;
+          _intimacy = 0.42;
+          _tsundere = 0.35;
+          break;
+        default:
+          _temperature = 0.70;
+          _replyLength = 'standard';
+          _initiative = 0.58;
+          _intimacy = 0.50;
+          _tsundere = 0.62;
+      }
+    });
+  }
+
+  Future<void> _showModeDialog() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Text(
+                '相处模式',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+            ),
+            RadioGroup<String>(
+              groupValue: _conversationMode,
+              onChanged: (value) => Navigator.pop(sheetContext, value),
+              child: Column(
+                children: _modeTitles.entries
+                    .map(
+                      (entry) => RadioListTile<String>(
+                        value: entry.key,
+                        title: Text(entry.value),
+                        subtitle: Text(_modeDescriptions[entry.key] ?? ''),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (selected != null && mounted) _applyModePreset(selected);
   }
 
   Future<void> _restoreDefaults() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('恢复默认人设？'),
+        title: const Text('恢复默认角色设置？'),
         content: const Text('当前编辑内容会被默认版本替换。恢复后仍需点击保存。'),
         actions: [
           TextButton(
@@ -115,22 +256,21 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
   Future<void> _previewPrompt() async {
     final profile = await _profileStorage.loadProfile();
     final memoryPrompt = await _memoryStorage.buildPromptSection();
-    final chatSettings = await _chatSettingsStorage.loadSettings();
-    final characterSettings = _currentSettings();
+    final settings = _currentSettings();
 
     final conversationEngine = ConversationEngine.build(
       messages: const [],
-      conversationMode: chatSettings.conversationMode,
+      conversationMode: settings.conversationMode,
     );
 
     final preview = PromptBuilder.buildSystemPrompt(
-      characterSettings: characterSettings,
+      characterSettings: settings,
       userProfile: profile,
       timeContext: '【当前时间】\n预览模式：实际聊天时会自动写入当前日期和时段。',
       conversationEnginePrompt: conversationEngine.prompt,
       personalityPrompt:
-          '【当前人格调节】\n主动程度 ${chatSettings.initiative.toStringAsFixed(2)}，亲密表达 ${chatSettings.intimacy.toStringAsFixed(2)}，嘴硬程度 ${chatSettings.tsundere.toStringAsFixed(2)}。',
-      replyLengthPrompt: '当前回复长度：${chatSettings.replyLength}',
+          '【当前人格调节】\n主动程度 ${settings.initiative.toStringAsFixed(2)}，亲密表达 ${settings.intimacy.toStringAsFixed(2)}，嘴硬程度 ${settings.tsundere.toStringAsFixed(2)}。',
+      replyLengthPrompt: '当前回复长度：${settings.replyLength}',
       memoryPrompt: memoryPrompt,
     );
 
@@ -141,7 +281,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
         child: SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * 0.86,
+          height: MediaQuery.sizeOf(sheetContext).height * 0.86,
           child: Column(
             children: [
               const Padding(
@@ -152,10 +292,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
                     SizedBox(width: 10),
                     Text(
                       '最终 Prompt 预览',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -163,7 +300,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
-                  '这是当前编辑内容与用户资料、关系设定、记忆等拼接后的预览。示例对话会作为独立消息发送，不显示在这里。',
+                  '这是当前角色设定、相处模式、用户资料和记忆拼接后的预览。',
                   style: TextStyle(color: Colors.black54, height: 1.4),
                 ),
               ),
@@ -191,6 +328,18 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
     );
   }
 
+  Widget _sectionTitle(String title) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+    child: Text(
+      title,
+      style: const TextStyle(
+        fontSize: 13,
+        color: Colors.black54,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
+
   Widget _editorCard({
     required IconData icon,
     required String title,
@@ -213,10 +362,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
                 const SizedBox(width: 10),
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                 ),
               ],
             ),
@@ -247,11 +393,52 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
     );
   }
 
+  Widget _sliderTile({
+    required IconData icon,
+    required String title,
+    required String description,
+    required double value,
+    required ValueChanged<double> onChanged,
+    String lowLabel = '低',
+    String highLabel = '高',
+  }) {
+    return Column(
+      children: [
+        ListTile(
+          leading: Icon(icon),
+          title: Text(title),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(description),
+          ),
+          trailing: Text(value.toStringAsFixed(2)),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(
+            children: [
+              Slider(value: value, onChanged: onChanged),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(lowLabel, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+                  Text(highLabel, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final settings = _currentSettings();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('角色设定'),
+        title: const Text('角色设置'),
         backgroundColor: Colors.blue.shade100,
         surfaceTintColor: Colors.transparent,
         actions: [
@@ -268,10 +455,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(
-                    '保存',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                : const Text('保存', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
           const SizedBox(width: 4),
         ],
@@ -283,16 +467,178 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
                     color: Colors.blue.shade50,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Text(
-                    '这里控制“裴简澈是谁、怎么说话、绝对不能怎么说”。修改后不会影响旧聊天，从下一条新回复开始生效。',
-                    style: TextStyle(height: 1.5),
+                  child: Text(
+                    '这里保存 ${settings.characterName} 自己的人设、相处模式、主动联系和 Memory。以后新增其他角色时，彼此不会互相串设置。',
+                    style: const TextStyle(height: 1.5),
                   ),
                 ),
+                _sectionTitle('角色与关系'),
+                _editorCard(
+                  icon: Icons.alternate_email_rounded,
+                  title: '他对你的称呼',
+                  description: '这个称呼只属于当前角色，不会影响其他 AI。',
+                  controller: _callNameController,
+                  minLines: 1,
+                  maxLines: 1,
+                  helper: '例如：念念、老婆、小狐狸',
+                ),
+                _sectionTitle('相处方式'),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.tune_rounded),
+                        title: const Text('相处模式'),
+                        subtitle: Text(
+                          '${_modeTitles[_conversationMode]} · ${_modeDescriptions[_conversationMode]}',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: _showModeDialog,
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      _sliderTile(
+                        icon: Icons.auto_awesome_outlined,
+                        title: '自由发挥',
+                        description: '越高越灵活，越低越稳定。建议保持在 0.68～0.78。',
+                        value: _temperature,
+                        onChanged: (value) => setState(() => _temperature = value),
+                        lowLabel: '更稳定',
+                        highLabel: '更灵活',
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      _sliderTile(
+                        icon: Icons.forum_outlined,
+                        title: '主动程度',
+                        description: '控制他延续话题、追问细节和主动开启后续内容的程度。',
+                        value: _initiative,
+                        onChanged: (value) => setState(() => _initiative = value),
+                        lowLabel: '等你开口',
+                        highLabel: '主动接话',
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      _sliderTile(
+                        icon: Icons.favorite_border_rounded,
+                        title: '亲密表达',
+                        description: '控制亲近感的表达频率，不等于反复亲亲抱抱。',
+                        value: _intimacy,
+                        onChanged: (value) => setState(() => _intimacy = value),
+                        lowLabel: '克制含蓄',
+                        highLabel: '明显亲近',
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      _sliderTile(
+                        icon: Icons.sentiment_satisfied_alt_outlined,
+                        title: '嘴硬程度',
+                        description: '控制反问、轻微吃醋和嘴硬掩饰真实情绪的频率。',
+                        value: _tsundere,
+                        onChanged: (value) => setState(() => _tsundere = value),
+                        lowLabel: '坦率直接',
+                        highLabel: '嘴硬爱逗',
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.subject_outlined),
+                                SizedBox(width: 10),
+                                Text('回复长度', style: TextStyle(fontSize: 16)),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            SegmentedButton<String>(
+                              segments: _lengthTitles.entries
+                                  .map(
+                                    (entry) => ButtonSegment<String>(
+                                      value: entry.key,
+                                      label: Text(entry.value),
+                                    ),
+                                  )
+                                  .toList(),
+                              selected: {_replyLength},
+                              onSelectionChanged: (selection) {
+                                setState(() => _replyLength = selection.first);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _sectionTitle('主动联系'),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        secondary: const Icon(Icons.notifications_active_outlined),
+                        title: const Text('允许主动联系'),
+                        subtitle: const Text('关闭后，当前角色不会主动发起新消息。'),
+                        value: _proactiveEnabled,
+                        onChanged: (value) => setState(() => _proactiveEnabled = value),
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.nightlight_outlined),
+                        title: const Text('允许深夜消息'),
+                        subtitle: const Text('关闭后，深夜时段不会主动打扰你。'),
+                        value: _lateNightMessages,
+                        onChanged: _proactiveEnabled
+                            ? (value) => setState(() => _lateNightMessages = value)
+                            : null,
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.mark_chat_unread_outlined),
+                        title: const Text('每天最多主动联系'),
+                        subtitle: Text('$_maxProactivePerDay 次'),
+                        trailing: DropdownButton<int>(
+                          value: _maxProactivePerDay,
+                          underline: const SizedBox.shrink(),
+                          items: List.generate(
+                            5,
+                            (index) => DropdownMenuItem<int>(
+                              value: index,
+                              child: Text('$index 次'),
+                            ),
+                          ),
+                          onChanged: _proactiveEnabled
+                              ? (value) {
+                                  if (value != null) {
+                                    setState(() => _maxProactivePerDay = value);
+                                  }
+                                }
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _sectionTitle('Memory'),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  child: ListTile(
+                    leading: const Icon(Icons.psychology_alt_outlined),
+                    title: Text('${settings.characterName}的 Memory'),
+                    subtitle: const Text('长期记忆、待审核记忆与记忆管理'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const MemoryPage()),
+                      );
+                    },
+                  ),
+                ),
+                _sectionTitle('人设'),
                 _editorCard(
                   icon: Icons.badge_outlined,
                   title: '核心人设',
@@ -320,16 +666,18 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
                 _editorCard(
                   icon: Icons.chat_outlined,
                   title: '示例对话',
-                  description: '每行使用“念念：……”或“裴简澈：……”。成对示例越自然，越容易稳定口吻。',
+                  description:
+                      '每行使用“${settings.userCallName}：……”或“${settings.characterName}：……”。示例越自然，越容易稳定口吻。',
                   controller: _examplesController,
                   minLines: 12,
                   maxLines: 24,
-                  helper: '例如：\n念念：你是不是又吃醋了？\n裴简澈：没有。你少给我制造证据。',
+                  helper:
+                      '例如：\n${settings.userCallName}：你今天心情怎么样？\n${settings.characterName}：还行。你怎么突然问这个？',
                 ),
                 OutlinedButton.icon(
                   onPressed: _restoreDefaults,
                   icon: const Icon(Icons.restore_rounded),
-                  label: const Text('恢复默认人设'),
+                  label: const Text('恢复默认角色设置'),
                 ),
               ],
             ),
