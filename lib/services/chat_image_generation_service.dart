@@ -39,6 +39,7 @@ class ChatImageGenerationService {
       scene: scene,
       purpose: '聊天中由${characterSettings.characterName}发给用户的图片',
       visualStyle: _buildVisualStyle(characterSettings),
+      characterSettings: characterSettings,
     );
     final targetDirectory = await _imageStorageService.imageDirectory();
     final imagePath = await _imageGenerationService.generateAndSave(
@@ -78,7 +79,6 @@ $context
     return '''
 角色：${settings.characterName}
 角色简介：${settings.introduction}
-人物核心设定：${settings.coreProfile}
 图片应符合角色自己的审美和当前请求。若用户没有明确要求人物出镜，优先生成环境、物品、食物、背影或第一人称随手拍，避免硬塞人物正脸。若需要角色本人出镜，保持成年感、自然姿态和稳定外貌，不做海报，不加文字。
 ''';
   }

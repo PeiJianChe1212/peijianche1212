@@ -11,7 +11,9 @@ import '../memory_page.dart';
 import 'character_profile_edit_page.dart';
 
 class CharacterManagementPage extends StatefulWidget {
-  const CharacterManagementPage({super.key});
+  const CharacterManagementPage({super.key, required this.characterId});
+
+  final String characterId;
 
   @override
   State<CharacterManagementPage> createState() =>
@@ -39,7 +41,11 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
   }
 
   Future<void> _load() async {
-    final character = await _registry.loadActiveCharacter();
+    final characters = await _registry.loadCharacters();
+    final character = characters.firstWhere(
+      (item) => item.id == widget.characterId,
+      orElse: AiCharacter.peiJianChe,
+    );
     final settings = await CharacterSettingsStorageService(
       characterId: character.id,
     ).loadSettings();
@@ -55,7 +61,9 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
   Future<void> _openProfileEdit() async {
     final changed = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const CharacterProfileEditPage()),
+      MaterialPageRoute(
+        builder: (_) => CharacterProfileEditPage(characterId: _character.id),
+      ),
     );
     if (changed == true) await _load();
   }
@@ -107,32 +115,6 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
       MaterialPageRoute(builder: (_) => const CharacterSettingsPage()),
     );
     await _load();
-  }
-
-  Future<void> _showClearChatConfirmation() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('清空聊天记录？'),
-        content: Text(
-          '只会删除你和${_character.characterName}的聊天消息，长期记忆、待审核记忆和 Today 都会保留。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('清空'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-    await _sessionReset.clearChatOnly();
-    _showSnack('聊天记录已清空，记忆仍然保留');
   }
 
   Future<void> _showCleanupOptions() async {
@@ -342,22 +324,11 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
                 ),
                 const SizedBox(height: 10),
                 _Tile(
-                  title: '角色权限',
-                  subtitle: '记忆、Echo 和未来功能的使用权限',
-                  onTap: () => _soon('角色权限'),
-                ),
-                const SizedBox(height: 10),
-                _Tile(
                   title: '导出角色',
                   subtitle: '以后可生成角色文件或分享码',
                   onTap: () => _soon('导出角色'),
                 ),
                 const SizedBox(height: 10),
-                _Tile(
-                  title: '清空聊天记录',
-                  subtitle: '只删除消息，保留角色与记忆',
-                  onTap: _showClearChatConfirmation,
-                ),
                 _Tile(
                   title: '清理与重置',
                   subtitle: '清空聊天，或重新开始这段关系',

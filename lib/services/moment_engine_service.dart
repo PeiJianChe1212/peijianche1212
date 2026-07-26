@@ -10,6 +10,7 @@ import '../models/life_moment.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'echo_storage_service.dart';
+import 'context_builder.dart';
 
 class MomentEngineService {
   MomentEngineService({
@@ -52,11 +53,15 @@ class MomentEngineService {
       messages: [
         {
           'role': 'system',
-          'content': _buildPrompt(
+          'content': ContextBuilder.build(
+            task: ContextTask.momentSelection,
+            settings: settings,
+            taskRules: _buildPrompt(
             settings: settings,
             candidates: candidates,
             echoes: echoes.take(12).toList(),
             manualRequest: manualRequest,
+          ),
           ),
         },
         {
@@ -112,9 +117,6 @@ class MomentEngineService {
 
     return '''
 你是 PeiLink 的 Moment Engine。你不是负责凑更新频率，而是判断生活里有没有“值得分享的瞬间”。
-
-【角色】
-${settings.coreProfile}
 
 【候选片段】
 $candidateText

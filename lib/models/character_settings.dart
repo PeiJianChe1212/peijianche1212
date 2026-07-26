@@ -150,7 +150,7 @@ $persona
           : character.relationship.trim(),
       birthday: birthdayText,
       anniversary: '未设置',
-      introduction: persona.isEmpty ? '一个刚刚加入 PeiLink 的 AI。' : persona,
+      introduction: character.introduction.trim(),
       coreProfile: coreProfile,
       behaviorStyle: genericBehaviorStyle,
       forbiddenRules: genericForbiddenRules,
@@ -241,7 +241,9 @@ $persona
       relation: readString('relation', defaults.relation),
       birthday: readString('birthday', defaults.birthday),
       anniversary: readString('anniversary', defaults.anniversary),
-      introduction: readString('introduction', defaults.introduction),
+      // 简介是独立的可空字段。旧数据没有该字段时保持空白，
+      // 绝不能用人物设定或默认简介代替。
+      introduction: readStringAllowEmpty('introduction', ''),
       userCallName: readString('userCallName', defaults.userCallName),
       coreProfile: readString('coreProfile', defaults.coreProfile),
       behaviorStyle: readString('behaviorStyle', defaults.behaviorStyle),

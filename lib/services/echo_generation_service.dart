@@ -5,10 +5,20 @@ import '../models/ai_character.dart';
 import '../models/character_settings.dart';
 import '../models/echo_draft.dart';
 import '../models/life_moment.dart';
+import '../models/story_fragment.dart';
+import 'ai_social_protocol_service.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
+import 'context_builder.dart';
+import 'character_registry_service.dart';
+import 'character_relationship_context_service.dart';
+import 'life_decision_engine_service.dart';
+import 'life_engine_service.dart';
 import 'life_event_pool_service.dart';
 import 'moment_engine_service.dart';
+import 'narrative_engine_service.dart';
+import 'story_fragment_engine_service.dart';
+import 'life_moment_storage_service.dart';
 
 class EchoGenerationService {
   EchoGenerationService({
@@ -17,19 +27,23 @@ class EchoGenerationService {
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null {
     _modelHub = ModelHub(client: _client);
-    _lifeEventPool = LifeEventPoolService(
+    _decisionEngine = LifeDecisionEngineService(
       character: character,
       client: _client,
     );
+    _lifeEngine = LifeEngineService(character: character, client: _client);
     _momentEngine = MomentEngineService(character: character, client: _client);
+    _eventPool = LifeEventPoolService(characterId: character.id);
   }
 
   final AiCharacter character;
   final http.Client _client;
   final bool _ownsClient;
   late final ModelHub _modelHub;
-  late final LifeEventPoolService _lifeEventPool;
+  late final LifeDecisionEngineService _decisionEngine;
+  late final LifeEngineService _lifeEngine;
   late final MomentEngineService _momentEngine;
+  late final LifeEventPoolService _eventPool;
 
   final ApiSettingsStorageService _apiStorage = ApiSettingsStorageService();
 
@@ -38,33 +52,94 @@ class EchoGenerationService {
   EchoMomentDecision? get lastDecision => _lastDecision;
 
   Future<EchoDraft> generateDraft() async {
+    final draft = await tryGenerateDraft(manualRequest: true);
+    if (draft == null) {
+      throw const FormatException('当前没有值得发布的生活瞬间。');
+    }
+    return draft;
+  }
+
+  Future<EchoDraft?> tryGenerateDraft({bool manualRequest = false}) async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
       throw StateError('请先在“设置 → 模型与 API”中填写并保存接口配置。');
     }
 
-    final previousId = _lastDecision?.candidate.id;
-    final candidates = await _lifeEventPool.getCandidates(
-      count: 4,
-      excludeIds: previousId == null ? <String>{} : {previousId},
-    );
+    if (await _eventPool.shouldRefill()) {
+      await _refillEventPool();
+    }
+
+    var events = await _eventPool.loadAvailable(limit: 8);
+    if (events.isEmpty) {
+      final nextPendingAt = await _eventPool.nextPendingAt();
+      if (nextPendingAt != null) {
+        throw FormatException(
+          '角色已经有接下来的生活安排，但最近一件事要到'
+          '${_formatPendingTime(nextPendingAt)}才真正发生。现在还没有可发布的生活瞬间。',
+        );
+      }
+
+      await _refillEventPool();
+      events = await _eventPool.loadAvailable(limit: 8);
+    }
+    if (events.isEmpty) {
+      final nextPendingAt = await _eventPool.nextPendingAt();
+      if (nextPendingAt != null) {
+        throw FormatException(
+          '新的生活已经安排好，最近一件事会在'
+          '${_formatPendingTime(nextPendingAt)}发生。Echo 不会提前剧透。',
+        );
+      }
+      throw const FormatException('当前没有足够依据决定新的生活事件，事件池暂时为空。');
+    }
+
     final decision = await _momentEngine.chooseMoment(
-      candidates,
-      manualRequest: true,
+      events,
+      manualRequest: manualRequest,
     );
     _lastDecision = decision;
+    if (!manualRequest && !decision.shouldShare) return null;
 
     final settings = await CharacterSettingsStorageService(
       characterId: character.id,
     ).loadSettings();
+    final storedMoments = await LifeMomentStorageService(
+      characterId: character.id,
+    ).loadItems();
+    final fragment = const StoryFragmentEngineService().buildAround(
+      decision.candidate,
+      [...storedMoments, decision.candidate],
+    );
+    final narrative = const NarrativeEngineService().render(
+      fragment,
+      perspective: NarrativePerspective.echo,
+    );
+    final registeredCharacters =
+        await CharacterRegistryService().loadCharacters();
+    final relationshipPrompt =
+        await CharacterRelationshipContextService().buildPromptSection(
+      currentCharacter: character,
+      allCharacters: registeredCharacters,
+    );
+    final socialProtocolPrompt = AiSocialProtocolService.buildPromptSection(
+      currentCharacter: character,
+      allCharacters: registeredCharacters,
+    );
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
       messages: [
         {
           'role': 'system',
-          'content': _buildDraftPrompt(
+          'content': ContextBuilder.build(
+            task: ContextTask.echo,
             settings: settings,
-            decision: decision,
+            taskRules: _echoRules(settings),
+            relationshipContext: relationshipPrompt,
+            socialProtocol: socialProtocolPrompt,
+            sourceFacts: _echoFacts(
+              decision: decision,
+              officialNarrative: narrative.content,
+            ),
           ),
         },
         {
@@ -95,26 +170,45 @@ class EchoGenerationService {
     );
   }
 
-  String _buildDraftPrompt({
-    required CharacterSettings settings,
+  Future<void> _refillEventPool() async {
+    final decisions = await _decisionEngine.decide(maxDecisions: 4);
+    if (decisions.isEmpty) return;
+
+    final realizedEvents = await _lifeEngine.generateFromDecisions(decisions);
+    await _eventPool.addEvents(realizedEvents);
+  }
+
+
+  String _formatPendingTime(DateTime time) {
+    final now = DateTime.now();
+    final minute = time.minute.toString().padLeft(2, '0');
+    final sameDay = now.year == time.year &&
+        now.month == time.month &&
+        now.day == time.day;
+    if (sameDay) return '今天 ${time.hour}:$minute';
+
+    final tomorrow = DateTime(now.year, now.month, now.day)
+        .add(const Duration(days: 1));
+    final isTomorrow = tomorrow.year == time.year &&
+        tomorrow.month == time.month &&
+        tomorrow.day == time.day;
+    if (isTomorrow) return '明天 ${time.hour}:$minute';
+    return '${time.month}月${time.day}日 ${time.hour}:$minute';
+  }
+
+  String _echoFacts({
     required EchoMomentDecision decision,
+    required String officialNarrative,
   }) {
     final moment = decision.candidate;
     final related = moment.relatedCharacterNames.isEmpty
         ? '无'
         : moment.relatedCharacterNames.join('、');
-
     return '''
-你正在为 PeiLink 的 Echo 写一条角色动态。生活片段已经由 Life Engine 产生，并由 Moment Engine 选中。你只负责把它写成自然正文。
+这件事已经由 Life Decision Engine 确定发生，由 Life Engine 落实成生活事件，再由 Moment Engine 选中。
 
-【角色身份】
-${settings.coreProfile}
-
-【角色表达方式】
-${settings.behaviorStyle}
-
-【角色禁用规则】
-${settings.forbiddenRules}
+【官方故事片段】
+$officialNarrative
 
 【选中的生活瞬间】
 场景：${moment.scene}
@@ -124,21 +218,21 @@ ${settings.forbiddenRules}
 值得分享的原因：${moment.shareHook}
 可自然提及的人：$related
 Moment 评分：${decision.score.toStringAsFixed(0)}
-
-【写作原则】
-1. Echo 是角色自己的生活主页，不是聊天回复，也不是写给用户的情书。
-2. 把重点放在“具体细节和余味”上，不要流水账复述整个事件。
-3. 可以有轻微吐槽、停顿、反差和普通人的不完美。
-4. 不要用“今天我去了……然后……”的作文腔，不要总结人生道理。
-5. 不要机械提当前时间，不要为了生活感硬写早中晚。
-6. 不要称呼${settings.userCallName}，不要提问，不要邀请对方回复。
-7. 不使用括号动作、小说旁白、舞台指令、标题、标签或 Markdown。
-8. 只输出动态正文，20 至 180 个汉字，一到三小段。
-9. “可自然提及的人”不为“无”时，也只有在这条动态读起来确实自然时才可 @ 一次；格式必须是“@名字”。不要句句都 @，也不要在正文末尾单独挂一个名字。
-10. “可自然提及的人”为“无”时，绝对不要自行创造 @ 对象。
-11. 不要虚构片段之外的真实地点、天气、新闻和品牌。
 ''';
   }
+
+  String _echoRules(CharacterSettings settings) => '''
+你正在为 PeiLink 的 Echo 写一条角色动态，只负责把已经发生的真实生活瞬间写成自然正文。
+1. Echo 是角色自己的生活主页，不是聊天回复，也不是写给用户的情书。
+2. 官方故事片段是唯一叙事依据，只能删减和改写语气，不能增加新事实。
+3. 聚焦具体细节和余味，不要流水账、作文腔、人生道理或强行浪漫。
+4. 不要机械报时，不要为了生活感硬写早中晚。
+5. 不要称呼${settings.userCallName}，不要提问，不要邀请对方回复。
+6. 不使用括号动作、小说旁白、舞台指令、标题、标签或 Markdown。
+7. 只输出动态正文，20 至 180 个汉字，一到三小段。
+8. 只有事实中存在相关人物且正文自然时，才可按“@名字”提及一次。
+9. 不得虚构事件之外的地点、天气、新闻、品牌或关系。
+''';
 
   String _buildImageScene(LifeMomentCandidate moment) {
     final parts = <String>[
@@ -176,14 +270,7 @@ Moment 评分：${decision.score.toStringAsFixed(0)}
     return value;
   }
 
-  Future<void> markLastMomentUsed() async {
-    final id = _lastDecision?.candidate.id;
-    if (id == null || id.trim().isEmpty) return;
-    await _lifeEventPool.markUsed(id);
-  }
-
   void dispose() {
-    _lifeEventPool.dispose();
     if (_ownsClient) _client.close();
   }
 }

@@ -5,7 +5,7 @@ import 'character_scope_service.dart';
 
 class EchoStorageService {
   EchoStorageService({String? characterId})
-      : _scope = CharacterScopeService(characterId);
+    : _scope = CharacterScopeService(characterId);
 
   static const String _fileName = 'echo_timeline.json';
   final CharacterScopeService _scope;
@@ -15,11 +15,11 @@ class EchoStorageService {
       _fileName,
       legacyDefaultFileName: _fileName,
     );
-    if (!await file.exists()) return const [];
+    if (!await file.exists()) return [];
 
     try {
       final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! List) return const [];
+      if (decoded is! List) return [];
       final items = decoded
           .whereType<Map>()
           .map(EchoItem.fromJson)
@@ -28,7 +28,7 @@ class EchoStorageService {
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return items;
     } catch (_) {
-      return const [];
+      return [];
     }
   }
 

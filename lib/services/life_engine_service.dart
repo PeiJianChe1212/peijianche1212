@@ -5,17 +5,28 @@ import 'package:http/http.dart' as http;
 import '../ai/model_hub.dart';
 import '../models/ai_character.dart';
 import '../models/chat_message.dart';
+import '../models/causal_node.dart';
 import '../models/character_settings.dart';
 import '../models/echo_item.dart';
+import '../models/life_decision.dart';
 import '../models/life_moment.dart';
 import '../models/memory_item.dart';
 import 'api_settings_storage_service.dart';
-import 'character_registry_service.dart';
 import 'character_settings_storage_service.dart';
+import 'character_registry_service.dart';
+import 'character_relationship_context_service.dart';
 import 'chat_storage_service.dart';
+import 'causal_graph_service.dart';
+import 'decision_history_service.dart';
+import 'context_builder.dart';
 import 'echo_storage_service.dart';
+import 'life_decision_engine_service.dart';
+import 'life_event_renderer_service.dart';
 import 'life_moment_storage_service.dart';
 import 'memory_storage_service.dart';
+import 'ai_social_protocol_service.dart';
+import 'shared_experience_service.dart';
+import 'shared_world_resource_service.dart';
 
 class LifeEngineService {
   LifeEngineService({
@@ -33,9 +44,32 @@ class LifeEngineService {
 
   final ApiSettingsStorageService _apiStorage = ApiSettingsStorageService();
 
+  /// 兼容旧调用入口。
+  ///
+  /// 新链路会先经过 Life Decision Engine，再由 Life Engine 把已经确定
+  /// 发生的事情生成成具体生活事件。
   Future<List<LifeMomentCandidate>> generateCandidates({
     int count = 4,
   }) async {
+    final decisionEngine = LifeDecisionEngineService(
+      character: character,
+      client: _client,
+    );
+    final decisions = await decisionEngine.decide(
+      maxDecisions: count.clamp(1, 4),
+    );
+    return generateFromDecisions(decisions);
+  }
+
+  /// 把已经确定发生的 LifeDecision 生成成具体生活内容。
+  ///
+  /// 此处不能改变决定本身，也不能创造决定之外的天气、地点、店铺、
+  /// NPC、新闻或公共事件。
+  Future<List<LifeMomentCandidate>> generateFromDecisions(
+    List<LifeDecision> decisions,
+  ) async {
+    if (decisions.isEmpty) return const [];
+
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
       throw StateError('请先在“设置 → 模型与 API”中填写并保存接口配置。');
@@ -58,72 +92,131 @@ class LifeEngineService {
       characterId: characterId,
     ).loadItems();
     final allCharacters = await CharacterRegistryService().loadCharacters();
-    final otherCharacters = allCharacters
-        .where((item) => item.id != characterId)
-        .toList();
+    final relationshipPrompt =
+        await CharacterRelationshipContextService().buildPromptSection(
+      currentCharacter: character,
+      allCharacters: allCharacters,
+    );
 
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
       messages: [
         {
           'role': 'system',
-          'content': _buildPrompt(
+          'content': ContextBuilder.build(
+            task: ContextTask.lifeGeneration,
+            settings: settings,
+            taskRules: _buildPrompt(
             settings: settings,
             messages: messages,
             memories: memories,
             echoes: echoes,
             lifeMoments: lifeMoments,
-            otherCharacters: otherCharacters,
-            count: count.clamp(2, 6),
+            decisions: decisions,
+            relationshipPrompt: relationshipPrompt,
+          ),
+            relationshipContext: relationshipPrompt,
+            socialProtocol: AiSocialProtocolService.compactRules,
           ),
         },
         {
           'role': 'user',
-          'content': '为${settings.characterName}生成今天可能发生的生活片段候选。只返回 JSON。',
+          'content': '把这些已经确定发生的决定生成成具体生活事件。只返回 JSON。',
         },
       ],
-      temperature: settings.temperature.clamp(0.72, 0.94).toDouble(),
-      maxTokens: 1400,
-      topP: 0.94,
+      temperature: settings.temperature.clamp(0.58, 0.78).toDouble(),
+      maxTokens: 1500,
+      topP: 0.9,
     );
 
     final decoded = _decodeJson(raw);
-    final rawItems = decoded is Map ? decoded['candidates'] : decoded;
+    final rawItems = decoded is Map ? decoded['events'] : decoded;
     if (rawItems is! List) {
-      throw const FormatException('生活引擎没有返回有效候选。');
+      throw const FormatException('生活引擎没有返回有效事件。');
     }
 
+    final decisionById = {
+      for (final decision in decisions) decision.id: decision,
+    };
     final now = DateTime.now();
-    final allowedNames = otherCharacters
-        .expand((item) => [item.characterName, item.displayName])
-        .map((item) => item.trim())
-        .where((item) => item.isNotEmpty)
-        .toSet();
+    final items = const LifeEventRendererService().render(
+      rawItems: rawItems,
+      decisions: decisions,
+      now: now,
+    );
 
-    final items = <LifeMomentCandidate>[];
-    for (var index = 0; index < rawItems.length; index++) {
-      final item = rawItems[index];
-      if (item is! Map) continue;
-      final map = Map<String, dynamic>.from(item);
-      map['id'] ??= '${now.microsecondsSinceEpoch}_$index';
-      map['occurredAt'] ??= now.toIso8601String();
-
-      final candidate = LifeMomentCandidate.fromJson(map);
-      if (candidate.event.isEmpty || candidate.shareHook.isEmpty) continue;
-
-      final safeNames = candidate.relatedCharacterNames
-          .where(allowedNames.contains)
-          .toSet()
-          .take(1)
-          .toList();
-      items.add(candidate.copyWith(relatedCharacterNames: safeNames));
+    await _persistLifeCauses(items, decisionsById: decisionById, now: now);
+    await DecisionHistoryService(characterId: characterId).markMaterialized(
+      items.map((item) => item.decisionId),
+      now: now,
+    );
+    final resourceService = SharedWorldResourceService();
+    for (final decisionId in items.map((item) => item.decisionId).toSet()) {
+      await resourceService.commitDecision(decisionId, now: now);
     }
 
-    if (items.isEmpty) {
-      throw const FormatException('生活引擎没有生成可用片段。');
+    final sharedExperienceService = SharedExperienceService();
+    for (final item in items) {
+      for (final relatedName in item.relatedCharacterNames.toSet()) {
+        AiCharacter? relatedCharacter;
+        for (final candidate in allCharacters) {
+          if (candidate.id == character.id) continue;
+          if (candidate.characterName == relatedName ||
+              candidate.displayName == relatedName) {
+            relatedCharacter = candidate;
+            break;
+          }
+        }
+        if (relatedCharacter == null) continue;
+        await sharedExperienceService.recordLifeEvent(
+          currentCharacter: character,
+          relatedCharacter: relatedCharacter,
+          event: item,
+        );
+      }
     }
     return items;
   }
+
+
+  Future<void> _persistLifeCauses(
+    List<LifeMomentCandidate> events, {
+    required Map<String, LifeDecision> decisionsById,
+    required DateTime now,
+  }) async {
+    if (events.isEmpty) return;
+    final nodes = events.map((event) {
+      final decision = decisionsById[event.decisionId];
+      final parentId = decision?.causeNodeId.trim() ?? '';
+      return CausalNode(
+        id: event.causeNodeId,
+        type: CausalNodeType.lifeEvent,
+        sourceId: event.id,
+        title: event.event,
+        detail: event.detail,
+        occurredAt: event.occurredAt,
+        createdAt: now,
+        parentIds: parentId.isEmpty ? const [] : [parentId],
+        characterId: character.id,
+        metadata: {
+          'scene': event.scene,
+          'feeling': event.feeling,
+          'decisionId': event.decisionId,
+          'decisionSummary': event.decisionSummary,
+          'decisionReason': event.decisionReason,
+          'worldEventIds': event.worldEventIds,
+          'resourceClaims': event.resourceClaims,
+          'renderedAt': event.renderedAt?.toIso8601String(),
+          'rendererVersion': event.rendererVersion,
+          'relationshipOpportunityId':
+              event.relationshipOpportunityId,
+        },
+      );
+    }).toList();
+    await CausalGraphService().upsertAll(nodes, now: now);
+  }
+
+
 
   String _buildPrompt({
     required CharacterSettings settings,
@@ -131,109 +224,112 @@ class LifeEngineService {
     required List<MemoryItem> memories,
     required List<EchoItem> echoes,
     required List<LifeMomentCandidate> lifeMoments,
-    required List<AiCharacter> otherCharacters,
-    required int count,
+    required List<LifeDecision> decisions,
+    required String relationshipPrompt,
   }) {
-    final now = DateTime.now();
     final recentMessages = messages
         .where((item) => item.role == 'user' || item.role == 'assistant')
         .toList();
-    final selectedMessages = recentMessages.length > 12
-        ? recentMessages.sublist(recentMessages.length - 12)
+    final selectedMessages = recentMessages.length > 8
+        ? recentMessages.sublist(recentMessages.length - 8)
         : recentMessages;
     final selectedMemories = memories
         .where((item) => !item.isArchived && item.category != '收藏回复')
-        .take(12)
+        .take(10)
         .toList();
-    final selectedEchoes = echoes.take(10).toList();
-    final selectedLifeMoments = lifeMoments.take(12).toList();
+    final selectedEchoes = echoes.take(8).toList();
+    final selectedLifeMoments = lifeMoments.take(10).toList();
+
+    final decisionText = decisions.map((decision) {
+      final names = decision.relatedCharacterNames.isEmpty
+          ? '无'
+          : decision.relatedCharacterNames.join('、');
+      return '''
+- decisionId：${decision.id}
+  确定事项：${decision.summary}
+  因果：${decision.reason}
+  发生时间：${decision.scheduledAt.toIso8601String()}
+  已知地点：${decision.location.isEmpty ? '未知' : decision.location}
+  相关角色：$names
+  关系机会：${decision.relationshipOpportunityId.isEmpty ? '无' : decision.relationshipOpportunityId}
+''';
+    }).join('\n');
 
     final chatText = selectedMessages.isEmpty
         ? '无。'
-        : selectedMessages
-            .map((item) =>
-                '${item.role == 'user' ? settings.userCallName : settings.characterName}：${_truncate(item.content, 160)}')
-            .join('\n');
+        : selectedMessages.map((item) {
+            final speaker = item.role == 'user'
+                ? settings.userCallName
+                : settings.characterName;
+            return '$speaker：${_truncate(item.content, 120)}';
+          }).join('\n');
     final memoryText = selectedMemories.isEmpty
         ? '无。'
         : selectedMemories
-            .map((item) => '- ${_truncate(item.content, 160)}')
+            .map((item) => '- ${_truncate(item.content, 140)}')
             .join('\n');
     final echoText = selectedEchoes.isEmpty
         ? '无。'
         : selectedEchoes
-            .map((item) => '- ${_truncate(item.content, 180)}')
+            .map((item) => '- ${_truncate(item.content, 150)}')
             .join('\n');
     final lifeText = selectedLifeMoments.isEmpty
         ? '无。'
         : selectedLifeMoments.map((item) {
-            final date = item.occurredAt;
-            return '- ${date.month}/${date.day}：${_truncate(item.event, 100)}；细节：${_truncate(item.detail, 100)}；感受：${_truncate(item.feeling, 70)}';
-          }).join('\n');
-    final characterText = otherCharacters.isEmpty
-        ? '无。'
-        : otherCharacters.map((item) {
-            final relationship = item.relationship.trim().isEmpty
-                ? '关系未填写'
-                : item.relationship.trim();
-            return '- ${item.displayName}（本名：${item.characterName}，$relationship）';
+            return '- ${item.occurredAt.month}/${item.occurredAt.day}：'
+                '${_truncate(item.event, 100)}；${_truncate(item.detail, 90)}';
           }).join('\n');
 
     return '''
-你是 PeiLink 的 Life Engine。你的任务不是写朋友圈，而是先为角色构造“今天可能真实发生的生活片段”。
+你是 PeiLink 的 Life Engine。
+上游 Life Decision Engine 已经决定了哪些事情会发生。
+你只负责把这些决定落实为具体、自然、符合角色的生活事件。
 
-【角色】
-${settings.coreProfile}
+【已经确定发生的决定】
+$decisionText
 
-【表达与行为】
-${settings.behaviorStyle}
-
-【当前时间】
-${now.year}年${now.month}月${now.day}日 ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}
-
-【近期聊天，只是弱参考，不是生活来源的全部】
-$chatText
-
-【长期记忆，可用于保持连续性】
-$memoryText
-
-【过去真实记录过的生活片段】
+【过去已经发生的生活，用于保持连续性】
 $lifeText
 
-【最近 Echo，必须避开重复主题和相似句式】
+【长期记忆】
+$memoryText
+
+【近期聊天，只能影响细微反应】
+$chatText
+
+【最近 Echo，避免重复细节和表达】
 $echoText
 
-【PeiLink 中已存在的其他角色】
-$characterText
 
-【核心原则】
-1. 角色在用户不出现时也有自己的生活。候选可以完全与近期聊天无关。
-2. 不要按早中晚打卡，不要机械生成“上班、吃饭、下班、睡觉”。
-3. 每个候选都必须包含一个可感知的具体细节，例如味道变化、误会、偶遇、反差、失败、小发现或一句听见的话。
-4. 允许普通、尴尬、无聊、好笑和不完美，不要每件事都唯美或浪漫。
-5. 可以生成符合角色设定的外出、工作、兴趣、朋友往来和独处片段，但不要使用真实新闻、精确天气、真实店名或需要联网验证的事实。
-6. 不要让所有候选都围绕${settings.userCallName}。聊天最多只影响其中一个候选。
-7. 事件必须适合该角色，不要像通用随机故事。
-8. 可以延续“过去真实记录过的生活片段”，例如昨天没做完的事、上次留下的小麻烦或情绪余波，但不要强行续写每一条。
-9. relatedCharacterNames 只能填写“PeiLink 中已存在的其他角色”里的名字，最多一个；多数候选应为空数组，只有真的一起经历了事情时才填写。
-10. 不要为了制造社交感硬塞别人，也不要虚构不存在的人名。
-11. 先生成生活，再由别的模块判断是否值得发 Echo。
+【生成边界】
+1. 每个输出必须对应一个真实存在的 decisionId，一条决定最多生成一条事件。
+2. 不得取消、替换或改写决定的核心事实，也不得把“确定发生”改成“可能发生”。
+3. 不得创造决定之外的天气、真实店名、NPC、新闻、节日、公共事件或地图变化。
+4. scene 只能使用决定中已有地点；地点未知时写普通室内、住处、路上等不新增世界事实的场景。
+5. event 写已经发生了什么；detail 写一个可感知的具体细节；feeling 写克制真实的感受。
+6. shareHook 只说明这一刻可能值得记录的原因，不代表一定会发 Echo。
+7. 可以补充动作、物品、味道、声音、微小失败和反差，但补充内容必须服务于原决定。
+8. 不要把事件写成小说，不要强行浪漫，不要把每件事都变得特别。
+9. relatedCharacterNames 由系统固定，不要自行增删。
+10. 多角色共同参与时，写自然分工与不同反应，不自动生成吃醋、争吵、抢人或评论区对线。
+11. 只输出对应事件；无法安全落实某个决定时可以跳过，不要编造补洞。
 
-请生成 $count 个候选，只返回以下 JSON，不要 Markdown：
+只返回以下 JSON，不要 Markdown：
 {
-  "candidates": [
+  "events": [
     {
-      "scene": "发生地点或生活场景，简短",
-      "event": "发生了什么",
-      "detail": "最具体、最有画面的细节",
-      "feeling": "角色当时真实但克制的感受",
-      "shareHook": "为什么这一刻可能值得分享",
-      "relatedCharacterNames": []
+      "decisionId": "对应的 decisionId",
+      "scene": "发生场景",
+      "event": "已经发生的事情",
+      "detail": "最具体的生活细节",
+      "feeling": "角色真实而克制的感受",
+      "shareHook": "为什么这一刻可能值得记录"
     }
   ]
 }
 ''';
   }
+
 
   dynamic _decodeJson(String raw) {
     var value = raw.trim();

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/user_profile.dart';
 import '../../services/user_profile_storage_service.dart';
 import '../profile_page.dart';
+import 'peilink_echo_page.dart';
 
 class PeiLinkMePage extends StatefulWidget {
   const PeiLinkMePage({super.key});
@@ -35,6 +36,14 @@ class _PeiLinkMePageState extends State<PeiLinkMePage> {
       MaterialPageRoute(builder: (_) => const ProfilePage()),
     );
     await _loadProfile();
+  }
+
+
+  Future<void> _openMyEcho() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PeiLinkEchoPage()),
+    );
   }
 
   void _showComingSoon(String title) {
@@ -131,7 +140,7 @@ class _PeiLinkMePageState extends State<PeiLinkMePage> {
           _MeTile(
             icon: Icons.auto_awesome_outlined,
             title: '我的 Echo',
-            onTap: () => _showComingSoon('我的 Echo'),
+            onTap: _openMyEcho,
           ),
           _MeTile(
             icon: Icons.emoji_emotions_outlined,

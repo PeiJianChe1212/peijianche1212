@@ -59,6 +59,9 @@ class EchoItem {
     this.likeCount = 0,
     this.isCollected = false,
     this.comments = const [],
+    this.imagePrompt = '',
+    this.imageStatus = 'none',
+    this.imagePath = '',
   });
 
   final String id;
@@ -71,6 +74,9 @@ class EchoItem {
   final int likeCount;
   final bool isCollected;
   final List<EchoComment> comments;
+  final String imagePrompt;
+  final String imageStatus;
+  final String imagePath;
 
   EchoItem copyWith({
     String? content,
@@ -81,6 +87,9 @@ class EchoItem {
     int? likeCount,
     bool? isCollected,
     List<EchoComment>? comments,
+    String? imagePrompt,
+    String? imageStatus,
+    String? imagePath,
   }) {
     return EchoItem(
       id: id,
@@ -93,6 +102,9 @@ class EchoItem {
       likeCount: likeCount ?? this.likeCount,
       isCollected: isCollected ?? this.isCollected,
       comments: comments ?? this.comments,
+      imagePrompt: imagePrompt ?? this.imagePrompt,
+      imageStatus: imageStatus ?? this.imageStatus,
+      imagePath: imagePath ?? this.imagePath,
     );
   }
 
@@ -107,6 +119,9 @@ class EchoItem {
         'likeCount': likeCount,
         'isCollected': isCollected,
         'comments': comments.map((comment) => comment.toJson()).toList(),
+        'imagePrompt': imagePrompt,
+        'imageStatus': imageStatus,
+        'imagePath': imagePath,
       };
 
   factory EchoItem.fromJson(Map<dynamic, dynamic> json) {
@@ -135,6 +150,9 @@ class EchoItem {
               .map(EchoComment.fromJson)
               .toList()
           : const [],
+      imagePrompt: json['imagePrompt']?.toString() ?? '',
+      imageStatus: json['imageStatus']?.toString() ?? 'none',
+      imagePath: json['imagePath']?.toString() ?? '',
     );
   }
 }

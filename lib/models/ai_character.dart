@@ -5,6 +5,8 @@ class AiCharacter {
     required this.remark,
     required this.createdAt,
     this.avatarPath = '',
+    this.portraitPath = '',
+    this.introduction = '',
     this.relationship = '',
     this.peiLinkId = '',
     this.birthday,
@@ -18,6 +20,8 @@ class AiCharacter {
   final String characterName;
   final String remark;
   final String avatarPath;
+  final String portraitPath;
+  final String introduction;
   final String relationship;
   final String peiLinkId;
   final DateTime? birthday;
@@ -31,6 +35,8 @@ class AiCharacter {
     String? characterName,
     String? remark,
     String? avatarPath,
+    String? portraitPath,
+    String? introduction,
     String? relationship,
     String? peiLinkId,
     DateTime? birthday,
@@ -44,6 +50,8 @@ class AiCharacter {
       characterName: characterName ?? this.characterName,
       remark: remark ?? this.remark,
       avatarPath: avatarPath ?? this.avatarPath,
+      portraitPath: portraitPath ?? this.portraitPath,
+      introduction: introduction ?? this.introduction,
       relationship: relationship ?? this.relationship,
       peiLinkId: peiLinkId ?? this.peiLinkId,
       birthday: clearBirthday ? null : (birthday ?? this.birthday),
@@ -58,6 +66,8 @@ class AiCharacter {
     'characterName': characterName,
     'remark': remark,
     'avatarPath': avatarPath,
+    'portraitPath': portraitPath,
+    'introduction': introduction,
     'relationship': relationship,
     'peiLinkId': peiLinkId,
     'birthday': birthday?.toIso8601String(),
@@ -69,16 +79,21 @@ class AiCharacter {
   factory AiCharacter.fromJson(Map<dynamic, dynamic> json) {
     final rawId = json['id']?.toString().trim() ?? '';
     final rawName = json['characterName']?.toString().trim() ?? '';
+    final persona = json['persona']?.toString().trim() ?? '';
 
     return AiCharacter(
       id: rawId.isEmpty ? defaultCharacterId : rawId,
       characterName: rawName.isEmpty ? '未命名 AI' : rawName,
       remark: json['remark']?.toString().trim() ?? '',
       avatarPath: json['avatarPath']?.toString().trim() ?? '',
+      portraitPath: json['portraitPath']?.toString().trim() ?? '',
+      introduction: json.containsKey('introduction')
+          ? (json['introduction']?.toString().trim() ?? '')
+          : '',
       relationship: json['relationship']?.toString().trim() ?? '',
       peiLinkId: _readPeiLinkId(json, rawId),
       birthday: DateTime.tryParse(json['birthday']?.toString() ?? ''),
-      persona: json['persona']?.toString().trim() ?? '',
+      persona: persona,
       createdAt:
           DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.now(),
@@ -102,6 +117,7 @@ class AiCharacter {
     id: defaultCharacterId,
     characterName: '裴简澈',
     remark: '老裴',
+    introduction: '银白短发、蓝色眼睛，外冷内热，偶尔嘴硬。',
     relationship: '恋人',
     peiLinkId: 'peijianche1212',
     birthday: DateTime(2000, 12, 12),

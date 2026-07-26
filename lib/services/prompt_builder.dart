@@ -1,28 +1,34 @@
 import '../models/character_settings.dart';
 import '../models/user_profile.dart';
-import '../prompts/relationship_prompt.dart';
+import 'context_builder.dart';
 
+/// 只负责模型消息格式和输出约束。
+/// 人设、记忆、生活与关系上下文统一交给 ContextBuilder。
 class PromptBuilder {
   const PromptBuilder._();
 
-  static String buildSystemPrompt({
+  static String buildStableSystemPrompt({
     required CharacterSettings characterSettings,
     required UserProfile userProfile,
+    String styleExamplesPrompt = '',
+  }) {
+    return ContextBuilder.build(
+      task: ContextTask.chat,
+      settings: characterSettings,
+      userProfile: userProfile,
+      styleExamples: styleExamplesPrompt,
+    );
+  }
+
+  static String buildDynamicSystemPrompt({
     required String timeContext,
     required String conversationEnginePrompt,
     required String personalityPrompt,
     required String replyLengthPrompt,
     String memoryPrompt = '',
     String activityPrompt = '',
-    String styleExamplesPrompt = '',
   }) {
     return '''
-${characterSettings.toPromptSection()}
-
-${userProfile.toPromptSection()}
-
-$relationshipPrompt
-
 $memoryPrompt
 
 $timeContext
@@ -39,8 +45,35 @@ $personalityPrompt
 
 【回复长度要求】
 $replyLengthPrompt
+''';
+  }
 
-$styleExamplesPrompt
+  static String buildSystemPrompt({
+    required CharacterSettings characterSettings,
+    required UserProfile userProfile,
+    required String timeContext,
+    required String conversationEnginePrompt,
+    required String personalityPrompt,
+    required String replyLengthPrompt,
+    String memoryPrompt = '',
+    String activityPrompt = '',
+    String styleExamplesPrompt = '',
+  }) {
+    return '''
+${buildStableSystemPrompt(
+      characterSettings: characterSettings,
+      userProfile: userProfile,
+      styleExamplesPrompt: styleExamplesPrompt,
+    )}
+
+${buildDynamicSystemPrompt(
+      timeContext: timeContext,
+      conversationEnginePrompt: conversationEnginePrompt,
+      personalityPrompt: personalityPrompt,
+      replyLengthPrompt: replyLengthPrompt,
+      memoryPrompt: memoryPrompt,
+      activityPrompt: activityPrompt,
+    )}
 ''';
   }
 
@@ -48,29 +81,18 @@ $styleExamplesPrompt
     final examples = settings.parseExampleMessages();
     if (examples.isEmpty) return '';
 
-    final lines = examples
-        .map((message) {
-          final speaker = message['role'] == 'user'
-              ? settings.userCallName
-              : settings.characterName;
-          return '$speaker：${message['content'] ?? ''}';
-        })
-        .join('\n');
+    final lines = examples.map((message) {
+      final speaker = message['role'] == 'user'
+          ? settings.userCallName
+          : settings.characterName;
+      return '$speaker：${message['content'] ?? ''}';
+    }).join('\n');
 
     return '''
 【语言风格样本｜STYLE_ONLY｜NON_FACTUAL】
 以下文本只用于学习${settings.characterName}的语气、用词、句长、回应节奏、接梗方式和情绪表达。
-
-它们不是历史聊天记录，不是共同记忆，也不是当前剧情。
-样本中的人物、事件、能力、地点、关系变化和话题全部视为虚构占位内容。
-
-严格禁止：
-1. 主动提起样本中的任何话题或设定。
-2. 假设样本里的事情真实发生过。
-3. 延续、追问、复述或引用样本里的剧情与原句。
-4. 把样本内容写入记忆，或用它解释当前聊天。
-
-只有用户资料、正式记忆和当前真实聊天可以被视为事实。
+它们不是历史聊天记录、共同记忆或当前剧情。
+禁止主动提起、延续、引用或把样本写入记忆。
 只学习表达方式，不学习内容。
 
 <STYLE_EXAMPLES>

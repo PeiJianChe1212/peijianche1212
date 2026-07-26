@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../ai/model_hub.dart';
 import '../conversation/conversation_engine.dart';
+import '../models/ai_character.dart';
 import '../models/chat_message.dart';
 import '../models/pending_memory.dart';
 import 'activity_context_service.dart';
@@ -11,7 +12,12 @@ import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'echo_chat_context_service.dart';
 import 'memory_storage_service.dart';
+import 'character_registry_service.dart';
+import 'character_relationship_context_service.dart';
+import 'ai_social_protocol_service.dart';
+import 'context_builder.dart';
 import 'prompt_builder.dart';
+import 'shared_world_event_service.dart';
 import 'user_profile_storage_service.dart';
 
 class DeepSeekService {
@@ -71,16 +77,45 @@ class DeepSeekService {
         : await EchoChatContextService(
             characterId: characterId,
           ).buildPromptSection();
+    final sharedWorldPrompt = characterId == null || characterId.trim().isEmpty
+        ? ''
+        : await SharedWorldEventService().buildChatPromptSection(characterId);
+    final registeredCharacters = await CharacterRegistryService().loadCharacters();
+    AiCharacter? currentCharacter;
+    for (final item in registeredCharacters) {
+      if (item.id == characterId) {
+        currentCharacter = item;
+        break;
+      }
+    }
+    final relationshipPrompt = currentCharacter == null
+        ? ''
+        : await CharacterRelationshipContextService().buildPromptSection(
+            currentCharacter: currentCharacter,
+            allCharacters: registeredCharacters,
+          );
+    final socialProtocolPrompt = currentCharacter == null
+        ? ''
+        : AiSocialProtocolService.buildPromptSection(
+            currentCharacter: currentCharacter,
+            allCharacters: registeredCharacters,
+          );
 
     final conversationEngine = ConversationEngine.build(
       messages: validConversation,
       conversationMode: conversationMode,
     );
 
-    final systemPrompt = '''
-${PromptBuilder.buildSystemPrompt(
+    final stableSystemPrompt = PromptBuilder.buildStableSystemPrompt(
       characterSettings: characterSettings,
       userProfile: userProfile,
+      styleExamplesPrompt: PromptBuilder.buildStyleExamplesPrompt(
+        characterSettings,
+      ),
+    );
+
+    final dynamicSystemPrompt = '''
+${PromptBuilder.buildDynamicSystemPrompt(
       timeContext: _buildTimeContext(),
       conversationEnginePrompt: conversationEngine.prompt,
       personalityPrompt: _buildPersonalityPrompt(
@@ -94,12 +129,15 @@ ${PromptBuilder.buildSystemPrompt(
           validConversation.where((message) => message.role == 'user').length <= 1
           ? activity.toPromptSection()
           : '',
-      styleExamplesPrompt: PromptBuilder.buildStyleExamplesPrompt(
-        characterSettings,
-      ),
     )}
 
 $echoContextPrompt
+
+$sharedWorldPrompt
+
+$relationshipPrompt
+
+$socialProtocolPrompt
 
 【真实媒体规则】
 你不能靠文字假装已经发送照片、图片、语音或视频。
@@ -110,7 +148,9 @@ $echoContextPrompt
     final requestMessages = <Map<String, dynamic>>[
       {
         'role': 'system',
-        'content': systemPrompt,
+        // 固定人设必须保持在最前面，动态上下文只能追加在后面。
+        // 这样 DeepSeek 的自动上下文缓存才能稳定命中重复前缀。
+        'content': '$stableSystemPrompt\n\n$dynamicSystemPrompt',
       },
       ...recentConversation.map<Map<String, dynamic>>(
         (message) => <String, dynamic>{
@@ -171,14 +211,16 @@ $echoContextPrompt
       messages: [
         {
           'role': 'system',
-          'content': '''
-${characterSettings.toPromptSection()}
-
+          'content': ContextBuilder.build(
+            task: ContextTask.imageMessage,
+            settings: characterSettings,
+            taskRules: '''
 你刚刚按照用户的要求生成并发送了一张图片。
 现在只写一句自然的随图消息，像聊天里把照片发过去时顺口说的话。
 不要解释生成过程，不要说“AI绘图”“模型”“提示词”，不要复述完整画面描述。
-通常 4 到 24 个字，最多两句。
+通常 4 到 24 个字，最多两句。只输出消息正文。
 ''',
+          ),
         },
         {'role': 'user', 'content': '用户原话：$userRequest'},
       ],
@@ -217,22 +259,28 @@ ${characterSettings.toPromptSection()}
         )
         .join('\n');
 
+    final characterSettings = await _characterStorage.loadSettings();
+    final userProfile = await _profileStorage.loadProfile();
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
       messages: [
         {
           'role': 'system',
-          'content': '''
-你是“裴简澈 OS”的记忆整理器。请只提取关于用户林念念的、长期有效且未来聊天确实有帮助的信息。
-
+          'content': ContextBuilder.build(
+            task: ContextTask.memoryExtraction,
+            settings: characterSettings,
+            userProfile: userProfile,
+            taskRules: '''
+你是 PeiLink 的记忆整理器。只提取关于用户的、长期有效且未来互动确实有帮助的信息。
 可以保存：长期兴趣、稳定偏好、害怕或禁忌、重要关系、长期习惯、重要经历、明确约定。
-不要保存：当天吃了什么、天气、临时情绪、随口玩笑、尚未确认的猜测、裴简澈自己的台词、重复信息。
-
-只返回 JSON 数组，不要 Markdown，不要解释。最多 5 条。
+不要保存：当天饮食、天气、临时情绪、随口玩笑、未确认猜测、角色自己的台词和重复信息。
+只返回 JSON 数组，不要 Markdown，不要解释，最多 5 条。
 格式：
 [{"content":"用户……","reason":"说明未来聊天为什么有用","category":"关于我/兴趣偏好/生活习惯/害怕与禁忌/重要关系/经历过的事/我们的约定/共同纪念"}]
 没有值得保存的内容时返回 []。
 ''',
+            recentConversation: transcript,
+          ),
         },
         {'role': 'user', 'content': transcript},
       ],

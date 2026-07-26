@@ -15,7 +15,9 @@ import 'character_profile_edit_page.dart';
 import 'peilink_echo_page.dart';
 
 class CharacterDetailPage extends StatefulWidget {
-  const CharacterDetailPage({super.key});
+  const CharacterDetailPage({super.key, this.character});
+
+  final AiCharacter? character;
 
   @override
   State<CharacterDetailPage> createState() => _CharacterDetailPageState();
@@ -36,7 +38,7 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   }
 
   Future<void> _load() async {
-    final character = await _registry.loadActiveCharacter();
+    final character = widget.character ?? await _registry.loadActiveCharacter();
     final settings = await CharacterSettingsStorageService(
       characterId: character.id,
     ).loadSettings();
@@ -52,6 +54,8 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   }
 
   Future<void> _openChat() async {
+    await _registry.setActiveCharacter(_character.id);
+    if (!mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const ChatPage()),
@@ -62,7 +66,9 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   Future<void> _openManagement() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const CharacterManagementPage()),
+      MaterialPageRoute(
+        builder: (_) => CharacterManagementPage(characterId: _character.id),
+      ),
     );
     if (!mounted) return;
     await _load();
@@ -71,7 +77,9 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   Future<void> _openBasicProfile() async {
     final changed = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const CharacterProfileEditPage()),
+      MaterialPageRoute(
+        builder: (_) => CharacterProfileEditPage(characterId: _character.id),
+      ),
     );
     if (changed == true) await _load();
   }
@@ -79,7 +87,7 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   Future<void> _openEcho() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const PeiLinkEchoPage()),
+      MaterialPageRoute(builder: (_) => PeiLinkEchoPage(character: _character)),
     );
     await _load();
   }
@@ -195,21 +203,37 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
                     items: _recentEcho,
                     onTap: _openEcho,
                   ),
-                  if (_settings.introduction.trim().isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-                      child: Text(
-                        _settings.introduction,
-                        style: const TextStyle(
-                          color: Color(0xFF666666),
-                          fontSize: 14,
-                          height: 1.55,
+                  const SizedBox(height: 10),
+                  Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '角色简介',
+                          style: TextStyle(
+                            color: Color(0xFF222222),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _settings.introduction.trim().isEmpty
+                              ? '暂未填写'
+                              : _settings.introduction.trim(),
+                          style: TextStyle(
+                            color: _settings.introduction.trim().isEmpty
+                                ? const Color(0xFFAAAAAA)
+                                : const Color(0xFF666666),
+                            fontSize: 14,
+                            height: 1.55,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 16),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),

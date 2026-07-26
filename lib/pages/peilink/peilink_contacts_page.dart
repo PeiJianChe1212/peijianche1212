@@ -52,7 +52,7 @@ class _PeiLinkContactsPageState extends State<PeiLinkContactsPage> {
     if (!mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const CharacterDetailPage()),
+      MaterialPageRoute(builder: (_) => CharacterDetailPage(character: character)),
     );
     await _load();
   }

@@ -1,11 +1,17 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 
 import '../../models/ai_character.dart';
-import '../../services/character_registry_service.dart';
+import '../../models/character_settings.dart';
 import '../../services/character_avatar_storage_service.dart';
+import '../../services/character_registry_service.dart';
+import '../../services/character_settings_storage_service.dart';
 
 class CharacterCreationPage extends StatefulWidget {
   const CharacterCreationPage({super.key});
@@ -19,242 +25,348 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
   final CharacterAvatarStorageService _avatarStorage =
       const CharacterAvatarStorageService();
   final ImagePicker _imagePicker = ImagePicker();
-  final PageController _pageController = PageController();
 
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _remarkController = TextEditingController();
-  final TextEditingController _customRelationshipController =
-      TextEditingController();
   final TextEditingController _personaController = TextEditingController();
+  final TextEditingController _introductionController = TextEditingController();
+  final TextEditingController _behaviorController = TextEditingController();
+  final TextEditingController _forbiddenController = TextEditingController();
+  final TextEditingController _examplesController = TextEditingController();
 
-  int _step = 0;
   bool _saving = false;
-  String _relationship = '朋友';
-  DateTime? _birthday;
-  String _selectedAvatarPath = '';
-
-  static const List<String> _relationships = [
-    '恋人',
-    '朋友',
-    '哥哥',
-    '妹妹',
-    '家人',
-    '搭档',
-    '自定义',
-  ];
+  String _portraitSourcePath = '';
+  Uint8List? _avatarBytes;
 
   @override
   void dispose() {
-    _pageController.dispose();
     _nameController.dispose();
-    _remarkController.dispose();
-    _customRelationshipController.dispose();
     _personaController.dispose();
+    _introductionController.dispose();
+    _behaviorController.dispose();
+    _forbiddenController.dispose();
+    _examplesController.dispose();
     super.dispose();
   }
 
-  String get _resolvedRelationship {
-    if (_relationship != '自定义') return _relationship;
-    return _customRelationshipController.text.trim();
-  }
-
-  Future<void> _pickAvatar() async {
+  Future<void> _pickPortrait() async {
     try {
       final picked = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 92,
-        maxWidth: 1600,
+        imageQuality: 94,
+        maxWidth: 2200,
       );
       if (picked == null || !mounted) return;
-      setState(() => _selectedAvatarPath = picked.path);
+      setState(() {
+        _portraitSourcePath = picked.path;
+        _avatarBytes = null;
+      });
+      await _editAvatar();
     } catch (error) {
-      if (!mounted) return;
-      _showMessage('选择头像失败：$error');
+      if (mounted) _showMessage('选择角色图片失败：$error');
     }
   }
 
-
-  Future<void> _next() async {
-    FocusScope.of(context).unfocus();
-
-    if (_step == 0 && _nameController.text.trim().isEmpty) {
-      _showMessage('先为这个 AI 写下名字。');
+  Future<void> _editAvatar() async {
+    if (_portraitSourcePath.isEmpty) {
+      _showMessage('请先选择完整角色图片。');
       return;
     }
-
-    if (_step == 1 &&
-        _relationship == '自定义' &&
-        _customRelationshipController.text.trim().isEmpty) {
-      _showMessage('写下你们之间的关系。');
-      return;
-    }
-
-    if (_step == 2 && _personaController.text.trim().isEmpty) {
-      _showMessage('人物设定不能是空白的。');
-      return;
-    }
-
-    if (_step < 3) {
-      setState(() => _step += 1);
-      await _pageController.animateToPage(
-        _step,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-      );
-      return;
-    }
-
-    await _createCharacter();
-  }
-
-  Future<void> _back() async {
-    FocusScope.of(context).unfocus();
-    if (_step == 0) {
-      Navigator.pop(context);
-      return;
-    }
-    setState(() => _step -= 1);
-    await _pageController.animateToPage(
-      _step,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  Future<void> _pickBirthday() async {
-    final now = DateTime.now();
-    final selected = await showDatePicker(
+    final bytes = await showDialog<Uint8List>(
       context: context,
-      initialDate: _birthday ?? DateTime(now.year - 20, 1, 1),
-      firstDate: DateTime(1900),
-      lastDate: DateTime(now.year + 10, 12, 31),
-      helpText: '选择生日',
-      cancelText: '取消',
-      confirmText: '确定',
+      barrierDismissible: false,
+      builder: (_) => _AvatarCropDialog(imagePath: _portraitSourcePath),
     );
-    if (selected == null || !mounted) return;
-    setState(() => _birthday = selected);
+    if (bytes != null && mounted) setState(() => _avatarBytes = bytes);
+  }
+
+  Future<void> _openAdvancedSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: const Color(0xFFF6F6F7),
+      builder: (sheetContext) {
+        final bottom = MediaQuery.viewInsetsOf(sheetContext).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(18, 0, 18, bottom + 24),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '高级设置',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '这些内容用于约束长期相处方式，不会展示在角色资料页。',
+                  style: TextStyle(color: Colors.black54, height: 1.45),
+                ),
+                const SizedBox(height: 18),
+                _InputCard(
+                  label: '行为规则',
+                  hint: '例如：先回应用户真正说的事情；保持自然口语；允许简短回复。',
+                  controller: _behaviorController,
+                  minLines: 5,
+                  maxLines: 9,
+                  maxLength: 1600,
+                ),
+                const SizedBox(height: 14),
+                _InputCard(
+                  label: '禁止事项',
+                  hint: '例如：不要使用括号动作；不要强行把普通话题变成情话。',
+                  controller: _forbiddenController,
+                  minLines: 5,
+                  maxLines: 9,
+                  maxLength: 1600,
+                ),
+                const SizedBox(height: 14),
+                _InputCard(
+                  label: '示例对话',
+                  hint: '用户：今天有点累。\n角色：先歇会儿，别硬撑。',
+                  controller: _examplesController,
+                  minLines: 6,
+                  maxLines: 12,
+                  maxLength: 2400,
+                ),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: () => Navigator.pop(sheetContext),
+                  child: const Text('完成'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _createCharacter() async {
     if (_saving) return;
-    setState(() => _saving = true);
+    FocusScope.of(context).unfocus();
 
+    final name = _nameController.text.trim();
+    final persona = _personaController.text.trim();
+    final introduction = _introductionController.text.trim();
+    if (name.isEmpty) {
+      _showMessage('请填写角色名称。');
+      return;
+    }
+    if (persona.isEmpty) {
+      _showMessage('角色设定不能是空白的。');
+      return;
+    }
+    if (_portraitSourcePath.isNotEmpty && _avatarBytes == null) {
+      _showMessage('请先调整并保存聊天头像。');
+      return;
+    }
+
+    setState(() => _saving = true);
     try {
       final now = DateTime.now();
       final characterId = 'character_${now.microsecondsSinceEpoch}';
-      final avatarPath = _selectedAvatarPath.isEmpty
+      final portraitPath = _portraitSourcePath.isEmpty
           ? ''
-          : await _avatarStorage.saveAvatar(
+          : await _avatarStorage.savePortrait(
               characterId: characterId,
-              sourcePath: _selectedAvatarPath,
+              sourcePath: _portraitSourcePath,
             );
+      final avatarPath = _avatarBytes == null
+          ? ''
+          : await _avatarStorage.saveAvatarBytes(
+              characterId: characterId,
+              bytes: _avatarBytes!,
+            );
+
       final character = AiCharacter(
         id: characterId,
-        characterName: _nameController.text.trim(),
-        remark: _remarkController.text.trim(),
+        characterName: name,
+        remark: '',
         avatarPath: avatarPath,
-        relationship: _resolvedRelationship,
-        birthday: _birthday,
-        persona: _personaController.text.trim(),
+        portraitPath: portraitPath,
+        introduction: introduction,
+        persona: persona,
         createdAt: now,
       );
-
       await _registry.addCharacter(character);
+
+      final defaults = CharacterSettings.fromAiCharacter(character);
+      final settings = defaults.copyWith(
+        introduction: introduction,
+        coreProfile: persona,
+        behaviorStyle: _behaviorController.text.trim().isEmpty
+            ? defaults.behaviorStyle
+            : _behaviorController.text.trim(),
+        forbiddenRules: _forbiddenController.text.trim().isEmpty
+            ? defaults.forbiddenRules
+            : _forbiddenController.text.trim(),
+        exampleDialogues: _examplesController.text.trim(),
+      );
+      await CharacterSettingsStorageService(characterId: characterId)
+          .saveSettings(settings);
       await _registry.setActiveCharacter(character.id);
 
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
-      _showMessage('创建失败：$error');
       setState(() => _saving = false);
+      _showMessage('创建失败：$error');
     }
   }
 
   void _showMessage(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
-    );
-  }
-
-  String get _birthdayText {
-    final value = _birthday;
-    if (value == null) return '以后可用于生日与时间感';
-    return '${value.year}年${value.month}月${value.day}日';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final portraitFile =
+        _portraitSourcePath.isEmpty ? null : File(_portraitSourcePath);
+    final hasPortrait = portraitFile != null && portraitFile.existsSync();
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF5F4F1),
+        backgroundColor: const Color(0xFFF5F6F8),
         appBar: AppBar(
-          backgroundColor: const Color(0xFFF5F4F1),
+          backgroundColor: const Color(0xFFF5F6F8),
           surfaceTintColor: Colors.transparent,
-          leading: IconButton(
-            onPressed: _saving ? null : _back,
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          ),
-          title: const Text(
-            '创建 AI',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
+          title: const Text('创建角色'),
           centerTitle: true,
         ),
-        body: Column(
-          children: [
-            _ProgressHeader(currentStep: _step),
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _IdentityStep(
-                    nameController: _nameController,
-                    remarkController: _remarkController,
-                    avatarPath: _selectedAvatarPath,
-                    onPickAvatar: _pickAvatar,
-                    onRemoveAvatar: _selectedAvatarPath.isEmpty
-                        ? null
-                        : () => setState(() => _selectedAvatarPath = ''),
-                  ),
-                  _RelationshipStep(
-                    relationship: _relationship,
-                    relationships: _relationships,
-                    birthdayText: _birthdayText,
-                    customRelationshipController:
-                        _customRelationshipController,
-                    onRelationshipChanged: (value) {
-                      setState(() => _relationship = value);
-                    },
-                    onBirthdayTap: _pickBirthday,
-                  ),
-                  _PersonaStep(controller: _personaController),
-                  _ConfirmStep(
-                    nameController: _nameController,
-                    remarkController: _remarkController,
-                    relationship: () => _resolvedRelationship,
-                    birthday: () => _birthdayText,
-                    personaController: _personaController,
-                  ),
-                ],
+        body: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 26),
+                  children: [
+                    _sectionTitle('角色形象'),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _saving ? null : _pickPortrait,
+                            child: Container(
+                              height: 250,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(24),
+                                image: hasPortrait
+                                    ? DecorationImage(
+                                        image: FileImage(portraitFile),
+                                        fit: BoxFit.contain,
+                                      )
+                                    : null,
+                              ),
+                              child: hasPortrait
+                                  ? null
+                                  : const Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.add_rounded,
+                                            size: 46, color: Color(0xFF8D959D)),
+                                        SizedBox(height: 10),
+                                        Text('创建形象',
+                                            style: TextStyle(
+                                                color: Color(0xFF8D959D),
+                                                fontSize: 17,
+                                                fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        SizedBox(
+                          width: 96,
+                          child: Column(
+                            children: [
+                              GestureDetector(
+                                onTap: _saving ? null : _editAvatar,
+                                child: CircleAvatar(
+                                  radius: 42,
+                                  backgroundColor: Colors.white,
+                                  backgroundImage: _avatarBytes == null
+                                      ? null
+                                      : MemoryImage(_avatarBytes!),
+                                  child: _avatarBytes == null
+                                      ? const Icon(Icons.crop_rounded,
+                                          color: Color(0xFF7C858D))
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text('聊天头像预览',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.black54)),
+                              TextButton(
+                                onPressed: _saving ? null : _editAvatar,
+                                child: const Text('调整'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    _sectionTitle('角色名称'),
+                    _InputCard(
+                      label: '名称',
+                      hint: '请填写角色名称',
+                      controller: _nameController,
+                      maxLength: 20,
+                    ),
+                    const SizedBox(height: 20),
+                    _sectionTitle('角色设定'),
+                    _InputCard(
+                      label: '人物设定',
+                      hint: '角色的性格、身份、说话风格，以及与用户的关系等。请使用“用户”称呼与角色对话的人。',
+                      controller: _personaController,
+                      minLines: 10,
+                      maxLines: 18,
+                      maxLength: 6000,
+                    ),
+                    const SizedBox(height: 20),
+                    _sectionTitle('角色简介（选填）'),
+                    _InputCard(
+                      label: '一句介绍',
+                      hint: '例如：每天都会等你回家。',
+                      controller: _introductionController,
+                      maxLength: 20,
+                    ),
+                    const SizedBox(height: 20),
+                    _sectionTitle('高级设置'),
+                    Material(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      child: ListTile(
+                        onTap: _saving ? null : _openAdvancedSettings,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 9),
+                        title: const Text('行为规则、禁止事项与示例对话'),
+                        subtitle: const Text('可选，未填写时使用 PeiLink 默认规则'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
                 child: SizedBox(
                   width: double.infinity,
-                  height: 52,
+                  height: 54,
                   child: FilledButton(
-                    onPressed: _saving ? null : _next,
+                    onPressed: _saving ? null : _createCharacter,
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF26384A),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(17),
+                        borderRadius: BorderRadius.circular(18),
                       ),
                     ),
                     child: _saving
@@ -262,396 +374,26 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                             width: 22,
                             height: 22,
                             child: CircularProgressIndicator(
-                              strokeWidth: 2.3,
-                              color: Colors.white,
-                            ),
+                                strokeWidth: 2.2, color: Colors.white),
                           )
-                        : Text(
-                            _step == 3 ? '初始化这个 AI' : '继续',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                        : const Text('创建角色',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w700)),
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProgressHeader extends StatelessWidget {
-  const _ProgressHeader({required this.currentStep});
-
-  final int currentStep;
-
-  @override
-  Widget build(BuildContext context) {
-    const labels = ['身份', '关系', '人格', '确认'];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 6, 24, 18),
-      child: Row(
-        children: List.generate(labels.length, (index) {
-          final active = index <= currentStep;
-          return Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: active
-                              ? const Color(0xFF26384A)
-                              : const Color(0xFFD9D8D4),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        labels[index],
-                        style: TextStyle(
-                          color: active
-                              ? const Color(0xFF26384A)
-                              : const Color(0xFFAAA9A5),
-                          fontSize: 12,
-                          fontWeight:
-                              active ? FontWeight.w600 : FontWeight.w400,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (index != labels.length - 1) const SizedBox(width: 8),
-              ],
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-class _StepShell extends StatelessWidget {
-  const _StepShell({
-    required this.eyebrow,
-    required this.title,
-    required this.description,
-    required this.child,
-  });
-
-  final String eyebrow;
-  final String title;
-  final String description;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-      children: [
-        Text(
-          eyebrow,
-          style: const TextStyle(
-            color: Color(0xFF788693),
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.1,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          title,
-          style: const TextStyle(
-            color: Color(0xFF1D2832),
-            fontSize: 29,
-            height: 1.18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 11),
-        Text(
-          description,
-          style: const TextStyle(
-            color: Color(0xFF737A80),
-            fontSize: 15,
-            height: 1.55,
-          ),
-        ),
-        const SizedBox(height: 26),
-        child,
-      ],
-    );
-  }
-}
-
-class _IdentityStep extends StatelessWidget {
-  const _IdentityStep({
-    required this.nameController,
-    required this.remarkController,
-    required this.avatarPath,
-    required this.onPickAvatar,
-    required this.onRemoveAvatar,
-  });
-
-  final TextEditingController nameController;
-  final TextEditingController remarkController;
-  final String avatarPath;
-  final VoidCallback onPickAvatar;
-  final VoidCallback? onRemoveAvatar;
-
-  @override
-  Widget build(BuildContext context) {
-    return _StepShell(
-      eyebrow: '01 · 赋予身份',
-      title: '先让这个存在拥有名字',
-      description: '名字属于 AI 自己，备注只属于你。头像会被复制进这个角色自己的独立空间。',
-      child: Column(
-        children: [
-          GestureDetector(
-            onTap: onPickAvatar,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 104,
-                  height: 104,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE2E7EA),
-                    borderRadius: BorderRadius.circular(32),
-                    border: Border.all(color: Colors.white, width: 3),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x1D1A2732),
-                        blurRadius: 24,
-                        offset: Offset(0, 10),
-                      ),
-                    ],
-                    image: avatarPath.isEmpty
-                        ? null
-                        : DecorationImage(
-                            image: FileImage(File(avatarPath)),
-                            fit: BoxFit.cover,
-                          ),
-                  ),
-                  child: avatarPath.isEmpty
-                      ? const Icon(
-                          Icons.auto_awesome_rounded,
-                          size: 42,
-                          color: Color(0xFF536B7B),
-                        )
-                      : null,
-                ),
-                Positioned(
-                  right: -5,
-                  bottom: -5,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF26384A),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.photo_camera_outlined,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextButton(
-                onPressed: onPickAvatar,
-                child: Text(avatarPath.isEmpty ? '选择头像' : '更换头像'),
-              ),
-              if (onRemoveAvatar != null)
-                TextButton(
-                  onPressed: onRemoveAvatar,
-                  child: const Text('移除'),
-                ),
             ],
           ),
-          const SizedBox(height: 14),
-          _InputCard(
-            label: 'AI 名称',
-            hint: '例如：凌玄',
-            controller: nameController,
-            maxLength: 20,
-          ),
-          const SizedBox(height: 14),
-          _InputCard(
-            label: '你的备注',
-            hint: '例如：阿玄（可以留空）',
-            controller: remarkController,
-            maxLength: 20,
-          ),
-        ],
+        ),
       ),
     );
   }
-}
 
-class _RelationshipStep extends StatelessWidget {
-  const _RelationshipStep({
-    required this.relationship,
-    required this.relationships,
-    required this.birthdayText,
-    required this.customRelationshipController,
-    required this.onRelationshipChanged,
-    required this.onBirthdayTap,
-  });
-
-  final String relationship;
-  final List<String> relationships;
-  final String birthdayText;
-  final TextEditingController customRelationshipController;
-  final ValueChanged<String> onRelationshipChanged;
-  final VoidCallback onBirthdayTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return _StepShell(
-      eyebrow: '02 · 建立关系',
-      title: '你们将以什么方式认识彼此',
-      description: '关系会成为以后 Prompt、纪念日与相处方式的一部分，不只是资料标签。',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: relationships.map((item) {
-              final selected = item == relationship;
-              return ChoiceChip(
-                label: Text(item),
-                selected: selected,
-                onSelected: (_) => onRelationshipChanged(item),
-                showCheckmark: false,
-                selectedColor: const Color(0xFF26384A),
-                backgroundColor: Colors.white,
-                labelStyle: TextStyle(
-                  color: selected ? Colors.white : const Color(0xFF38434C),
-                  fontWeight: FontWeight.w500,
-                ),
-                side: const BorderSide(color: Color(0xFFE2E0DB)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              );
-            }).toList(),
-          ),
-          if (relationship == '自定义') ...[
-            const SizedBox(height: 16),
-            _InputCard(
-              label: '自定义关系',
-              hint: '写下只属于你们的称呼',
-              controller: customRelationshipController,
-              maxLength: 20,
-            ),
-          ],
-          const SizedBox(height: 20),
-          Material(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            child: ListTile(
-              onTap: onBirthdayTap,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-              leading: const Icon(
-                Icons.cake_outlined,
-                color: Color(0xFF5D7180),
-              ),
-              title: const Text(
-                '生日',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(birthdayText),
-              trailing: const Icon(Icons.chevron_right_rounded),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PersonaStep extends StatelessWidget {
-  const _PersonaStep({required this.controller});
-
-  final TextEditingController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return _StepShell(
-      eyebrow: '03 · 写入人格',
-      title: '告诉系统，他是谁',
-      description: '这里不是一句随手 Prompt。可以写身份、性格、说话方式、世界观、喜欢与讨厌的事。',
-      child: _InputCard(
-        label: '人物设定',
-        hint:
-            '例如：\n姓名：凌玄\n身份：狐族妖王\n性格：冷静克制，外冷内热……\n说话方式：简洁，不使用括号动作……',
-        controller: controller,
-        maxLines: 14,
-        minLines: 10,
-        maxLength: 4000,
-      ),
-    );
-  }
-}
-
-class _ConfirmStep extends StatelessWidget {
-  const _ConfirmStep({
-    required this.nameController,
-    required this.remarkController,
-    required this.relationship,
-    required this.birthday,
-    required this.personaController,
-  });
-
-  final TextEditingController nameController;
-  final TextEditingController remarkController;
-  final String Function() relationship;
-  final String Function() birthday;
-  final TextEditingController personaController;
-
-  @override
-  Widget build(BuildContext context) {
-    return _StepShell(
-      eyebrow: '04 · 初始化',
-      title: '确认将这个 AI 加入 PeiLink',
-      description: '本批会建立角色身份与角色名单。聊天、Memory、Today 等独立数据接线会在下一批完成。',
-      child: Column(
-        children: [
-          _ReviewRow(label: '名字', value: nameController.text.trim()),
-          _ReviewRow(
-            label: '备注',
-            value: remarkController.text.trim().isEmpty
-                ? '未设置'
-                : remarkController.text.trim(),
-          ),
-          _ReviewRow(label: '关系', value: relationship()),
-          _ReviewRow(label: '生日', value: birthday()),
-          _ReviewRow(
-            label: '人物设定',
-            value: personaController.text.trim(),
-            multiline: true,
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 9),
+        child: Text(text,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+      );
 }
 
 class _InputCard extends StatelessWidget {
@@ -659,90 +401,219 @@ class _InputCard extends StatelessWidget {
     required this.label,
     required this.hint,
     required this.controller,
-    this.maxLength,
+    this.minLines = 1,
     this.maxLines = 1,
-    this.minLines,
+    this.maxLength,
   });
 
   final String label;
   final String hint;
   final TextEditingController controller;
-  final int? maxLength;
+  final int minLines;
   final int maxLines;
-  final int? minLines;
+  final int? maxLength;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(17, 13, 17, 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE6E3DE)),
+        borderRadius: BorderRadius.circular(20),
       ),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
       child: TextField(
         controller: controller,
-        maxLength: maxLength,
-        maxLines: maxLines,
         minLines: minLines,
+        maxLines: maxLines,
+        maxLength: maxLength,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           border: InputBorder.none,
-          counterStyle: const TextStyle(color: Color(0xFFAAA6A0)),
-          hintStyle: const TextStyle(color: Color(0xFFAAA6A0), height: 1.45),
+          alignLabelWithHint: maxLines > 1,
         ),
       ),
     );
   }
 }
 
-class _ReviewRow extends StatelessWidget {
-  const _ReviewRow({
-    required this.label,
-    required this.value,
-    this.multiline = false,
-  });
+class _AvatarCropDialog extends StatefulWidget {
+  const _AvatarCropDialog({required this.imagePath});
 
-  final String label;
-  final String value;
-  final bool multiline;
+  final String imagePath;
+
+  @override
+  State<_AvatarCropDialog> createState() => _AvatarCropDialogState();
+}
+
+class _AvatarCropDialogState extends State<_AvatarCropDialog> {
+  static const double _viewportSize = 250;
+
+  final GlobalKey _captureKey = GlobalKey();
+  final TransformationController _transformationController =
+      TransformationController();
+
+  bool _saving = false;
+  bool _loadingImage = true;
+  double _imageWidth = _viewportSize;
+  double _imageHeight = _viewportSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepareImage();
+  }
+
+  Future<void> _prepareImage() async {
+    try {
+      final bytes = await File(widget.imagePath).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final sourceWidth = frame.image.width.toDouble();
+      final sourceHeight = frame.image.height.toDouble();
+      frame.image.dispose();
+      codec.dispose();
+
+      final aspectRatio = sourceWidth / sourceHeight;
+      final displayWidth = aspectRatio >= 1
+          ? _viewportSize * aspectRatio
+          : _viewportSize;
+      final displayHeight = aspectRatio >= 1
+          ? _viewportSize
+          : _viewportSize / aspectRatio;
+
+      if (!mounted) return;
+      setState(() {
+        _imageWidth = displayWidth;
+        _imageHeight = displayHeight;
+        _loadingImage = false;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _transformationController.value = Matrix4.identity()
+          ..translate(
+            -(_imageWidth - _viewportSize) / 2,
+            -(_imageHeight - _viewportSize) / 2,
+          );
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _loadingImage = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('读取图片失败：$error')),
+      );
+    }
+  }
+
+  void _clampTransform() {
+    final matrix = _transformationController.value.clone();
+    final scale = matrix.getMaxScaleOnAxis().clamp(1.0, 5.0);
+    final scaledWidth = _imageWidth * scale;
+    final scaledHeight = _imageHeight * scale;
+
+    final minX = _viewportSize - scaledWidth;
+    final minY = _viewportSize - scaledHeight;
+    final translation = matrix.getTranslation();
+    final x = translation.x.clamp(minX, 0.0).toDouble();
+    final y = translation.y.clamp(minY, 0.0).toDouble();
+
+    _transformationController.value = Matrix4.identity()
+      ..translate(x, y)
+      ..scale(scale);
+  }
+
+  Future<void> _save() async {
+    if (_saving || _loadingImage) return;
+    _clampTransform();
+    setState(() => _saving = true);
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      final boundary = _captureKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) throw StateError('头像预览尚未准备好。');
+      final image = await boundary.toImage(pixelRatio: 2.5);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      if (data == null) throw StateError('头像保存失败。');
+      if (!mounted) return;
+      Navigator.pop(context, data.buffer.asUint8List());
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE6E3DE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return AlertDialog(
+      title: const Text('调整聊天头像'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF8A8D8F),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+          const Text(
+            '拖动图片调整位置，双指缩放。图片会始终铺满头像范围。',
+            style: TextStyle(color: Colors.black54),
           ),
-          const SizedBox(height: 7),
-          Text(
-            value.isEmpty ? '未填写' : value,
-            maxLines: multiline ? 8 : 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF26313A),
-              fontSize: 15,
-              height: 1.45,
+          const SizedBox(height: 14),
+          ClipOval(
+            child: RepaintBoundary(
+              key: _captureKey,
+              child: SizedBox(
+                width: _viewportSize,
+                height: _viewportSize,
+                child: _loadingImage
+                    ? const ColoredBox(
+                        color: Color(0xFFF1F2F3),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : InteractiveViewer(
+                        transformationController: _transformationController,
+                        minScale: 1,
+                        maxScale: 5,
+                        boundaryMargin: EdgeInsets.zero,
+                        constrained: false,
+                        clipBehavior: Clip.hardEdge,
+                        onInteractionEnd: (_) => _clampTransform(),
+                        child: Image.file(
+                          File(widget.imagePath),
+                          width: _imageWidth,
+                          height: _imageHeight,
+                          fit: BoxFit.fill,
+                        ),
+                      ),
+              ),
             ),
           ),
         ],
       ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _saving || _loadingImage ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('保存头像'),
+        ),
+      ],
     );
   }
 }

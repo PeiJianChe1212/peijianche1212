@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../models/echo_item.dart';
+import '../../services/character_registry_service.dart';
 import '../../services/echo_storage_service.dart';
 import 'peilink_echo_page.dart';
 
@@ -24,9 +25,18 @@ class _PeiLinkDiscoverPageState extends State<PeiLinkDiscoverPage> {
   }
 
   Future<void> _load() async {
-    final items = await EchoStorageService(
-      characterId: 'peilink_user_echo',
-    ).loadItems();
+    final characters = await CharacterRegistryService().loadCharacters();
+    final ownerIds = <String>[
+      'peilink_user_echo',
+      ...characters.map((character) => character.id),
+    ];
+    final timelines = await Future.wait(
+      ownerIds.map(
+        (id) => EchoStorageService(characterId: id).loadItems(),
+      ),
+    );
+    final items = timelines.expand((timeline) => timeline).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     if (!mounted) return;
     setState(() {
       _recentItems = items.take(3).toList();
@@ -37,7 +47,9 @@ class _PeiLinkDiscoverPageState extends State<PeiLinkDiscoverPage> {
   Future<void> _openEcho() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const PeiLinkEchoPage()),
+      MaterialPageRoute(
+        builder: (_) => const PeiLinkEchoPage(showPublicTimeline: true),
+      ),
     );
     await _load();
   }
@@ -99,7 +111,7 @@ class _PeiLinkDiscoverPageState extends State<PeiLinkDiscoverPage> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                   child: Text(
-                    '从这里进入你的 Echo 主页。角色的 Echo 则从各自的朋友资料页进入。',
+                    '从这里进入公共 Echo。你和所有角色发布的生活回声都会汇总在这里。',
                     style: const TextStyle(
                       color: Color(0xFFAAAAAA),
                       fontSize: 12,

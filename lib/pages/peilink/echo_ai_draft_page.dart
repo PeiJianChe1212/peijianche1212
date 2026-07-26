@@ -11,6 +11,8 @@ import '../../services/echo_generation_service.dart';
 import '../../services/echo_storage_service.dart';
 import '../../services/image_generation_service.dart';
 import '../../services/life_moment_storage_service.dart';
+import '../../services/life_event_pool_service.dart';
+import '../../services/shared_world_event_service.dart';
 import '../../services/multimodal_service.dart';
 
 class EchoAiDraftPage extends StatefulWidget {
@@ -150,10 +152,18 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
 
       final selectedMoment = _generationService.lastDecision?.candidate;
       if (selectedMoment != null) {
+        final confirmedMoment = selectedMoment.copyWith(occurredAt: now);
         await LifeMomentStorageService(
           characterId: widget.character.id,
-        ).addItem(selectedMoment.copyWith(occurredAt: now));
-        await _generationService.markLastMomentUsed();
+        ).addItem(confirmedMoment);
+        await LifeEventPoolService(
+          characterId: widget.character.id,
+        ).markUsed(selectedMoment.id, now: now);
+        await SharedWorldEventService().recordConfirmedMoment(
+          originCharacter: widget.character,
+          moment: confirmedMoment,
+          occurredAt: now,
+        );
       }
 
       if (!mounted) return;

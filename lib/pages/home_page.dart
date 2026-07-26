@@ -8,6 +8,7 @@ import '../models/activity_status.dart';
 import '../models/ai_character.dart';
 import '../models/life_trace.dart';
 import '../services/activity_context_service.dart';
+import '../services/auto_echo_service.dart';
 import '../services/activity_service.dart';
 import '../services/character_registry_service.dart';
 import '../services/home_character_storage_service.dart';
@@ -15,6 +16,7 @@ import '../services/presence_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
 import '../services/today_service.dart';
+import '../services/world_tick_service.dart';
 import 'peilink/character_detail_page.dart';
 import 'peilink/peilink_home_page.dart';
 import 'settings_page.dart';
@@ -27,12 +29,14 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final ActivityService _activityService = const ActivityService();
   final PresenceService _presenceService = const PresenceService();
   final CharacterRegistryService _characterRegistry = CharacterRegistryService();
   final HomeCharacterStorageService _homeCharacterStorage =
       HomeCharacterStorageService();
+  final WorldTickService _worldTickService = WorldTickService();
+  final AutoEchoService _autoEchoService = AutoEchoService();
 
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
@@ -44,6 +48,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _advanceWorld(markForeground: true);
     _refreshInitiative();
     _recordCurrentActivity();
     _loadRecentTraces();
@@ -60,8 +66,38 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _advanceWorld(markForeground: true);
+    }
+  }
+
+  Future<void> _advanceWorld({bool markForeground = false}) async {
+    try {
+      final report = await _worldTickService.advance(
+        markForeground: markForeground,
+      );
+      if (!report.executed || !mounted) return;
+
+      // 世界完成推进后，才允许检查是否有已经发生且值得展示的生活瞬间。
+      // 自动 Echo 失败不会影响首页与世界时钟。
+      await _autoEchoService.checkAll(now: report.tickAt);
+
+      // 跨时段或跨天后，首页活动和生活痕迹需要重新读取。
+      if (report.crossedTimePeriod || report.crossedDayBoundary) {
+        setState(() => _now = report.tickAt);
+        await _recordCurrentActivity(now: report.tickAt);
+        await _loadRecentTraces();
+      }
+    } catch (error) {
+      debugPrint('推进 PeiLink 世界失败：$error');
+    }
   }
 
 

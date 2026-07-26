@@ -6,6 +6,10 @@ import '../models/character_settings.dart';
 import '../models/echo_item.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
+import 'character_registry_service.dart';
+import 'character_relationship_context_service.dart';
+import 'ai_social_protocol_service.dart';
+import 'context_builder.dart';
 
 class EchoCommentReplyService {
   EchoCommentReplyService({
@@ -35,13 +39,25 @@ class EchoCommentReplyService {
     final settings = await CharacterSettingsStorageService(
       characterId: character.id,
     ).loadSettings();
+    final allCharacters = await CharacterRegistryService().loadCharacters();
+    final relationshipPrompt =
+        await CharacterRelationshipContextService().buildPromptSection(
+      currentCharacter: character,
+      allCharacters: allCharacters,
+    );
 
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
       messages: [
         {
           'role': 'system',
-          'content': _buildSystemPrompt(settings),
+          'content': ContextBuilder.build(
+            task: ContextTask.echoComment,
+            settings: settings,
+            taskRules: _buildSystemPrompt(settings),
+            relationshipContext: relationshipPrompt,
+            socialProtocol: AiSocialProtocolService.compactRules,
+          ),
         },
         {
           'role': 'user',
@@ -72,15 +88,6 @@ ${userComment.content}
     return '''
 你正在扮演${settings.characterName}，回复 PeiLink Echo 下的一条评论。
 
-【角色身份】
-${settings.coreProfile}
-
-【角色表达方式】
-${settings.behaviorStyle}
-
-【禁用规则】
-${settings.forbiddenRules}
-
 【评论区回复规则】
 1. 只输出回复正文，不要标题、引号、解释、Markdown 或角色名前缀。
 2. 这是评论区里的简短互动，不是重新开始一段聊天。
@@ -89,7 +96,8 @@ ${settings.forbiddenRules}
 5. 不要强行亲亲抱抱，不要套用“我会一直陪着你”等模板。
 6. 不虚构 Echo 和评论中没有出现的具体事实。
 7. 符合${settings.characterName}本人的语气，允许简短、接梗、吐槽或轻微情绪。
-8. 通常控制在 5 至 80 个汉字，最多两小段。
+8. 即使评论提到其他角色，也不要争宠、挑衅、宣示唯一或逼用户表态。
+9. 通常控制在 5 至 80 个汉字，最多两小段。
 ''';
   }
 

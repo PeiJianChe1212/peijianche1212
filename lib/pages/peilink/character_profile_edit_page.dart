@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'character_profile_structure_page.dart';
+
 import '../../models/ai_character.dart';
 import '../../models/character_settings.dart';
 import '../../services/character_avatar_storage_service.dart';
@@ -10,7 +12,9 @@ import '../../services/character_registry_service.dart';
 import '../../services/character_settings_storage_service.dart';
 
 class CharacterProfileEditPage extends StatefulWidget {
-  const CharacterProfileEditPage({super.key});
+  const CharacterProfileEditPage({super.key, required this.characterId});
+
+  final String characterId;
 
   @override
   State<CharacterProfileEditPage> createState() =>
@@ -18,8 +22,8 @@ class CharacterProfileEditPage extends StatefulWidget {
 }
 
 class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
-  final CharacterSettingsStorageService _storage =
-      CharacterSettingsStorageService();
+  CharacterSettingsStorageService get _storage =>
+      CharacterSettingsStorageService(characterId: widget.characterId);
   final CharacterRegistryService _registry = CharacterRegistryService();
   final CharacterAvatarStorageService _avatarStorage =
       const CharacterAvatarStorageService();
@@ -57,8 +61,12 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
   }
 
   Future<void> _load() async {
+    final characters = await _registry.loadCharacters();
+    final character = characters.firstWhere(
+      (item) => item.id == widget.characterId,
+      orElse: AiCharacter.peiJianChe,
+    );
     final settings = await _storage.loadSettings();
-    final character = await _registry.loadActiveCharacter();
     if (!mounted) return;
 
     _settings = settings;
@@ -135,7 +143,8 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
           remark: _remarkController.text.trim(),
           relationship: _relationController.text.trim(),
           avatarPath: savedAvatarPath,
-          persona: _introductionController.text.trim(),
+          introduction: _introductionController.text.trim(),
+          persona: _character.persona,
         ),
       );
 
@@ -155,6 +164,7 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
     TextEditingController controller, {
     String? hint,
     int maxLines = 1,
+    int? maxLength,
   }) {
     return Container(
       color: Colors.white,
@@ -162,6 +172,7 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
+        maxLength: maxLength,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -247,6 +258,28 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 10),
+                Container(
+                  color: Colors.white,
+                  child: ListTile(
+                    leading: const Icon(
+                      Icons.view_agenda_outlined,
+                      color: Color(0xFF526A78),
+                    ),
+                    title: const Text('角色档案'),
+                    subtitle: const Text('查看结构化资料框架，暂不迁移原 Prompt'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const CharacterProfileStructurePage(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
                 const SizedBox(height: 10),
                 _field('本名', _nameController),
                 _field(
@@ -262,8 +295,9 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
                 _field(
                   '角色简介',
                   _introductionController,
-                  hint: '用于资料页展示，也会加入角色资料',
-                  maxLines: 4,
+                  hint: '一句介绍，留空时资料页显示“暂未填写”',
+                  maxLines: 2,
+                  maxLength: 20,
                 ),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(20, 12, 20, 0),

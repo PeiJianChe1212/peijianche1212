@@ -50,10 +50,49 @@ class CharacterSettingsStorageService {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return _fallbackSettings();
 
-      return CharacterSettings.fromJson(decoded);
+      final saved = CharacterSettings.fromJson(decoded);
+      return _reconcileIdentityWithRegistry(saved);
     } catch (_) {
       return _fallbackSettings();
     }
+  }
+
+  /// 姓名、备注、关系和简介同时存在于角色登记册与角色设置中。
+  /// 旧版本创建角色时，设置文件可能错误继承默认角色的“老裴”等资料。
+  /// 从 v1.4.4 起，登记册作为这些公开资料的唯一准绳，加载时自动修正旧数据。
+  Future<CharacterSettings> _reconcileIdentityWithRegistry(
+    CharacterSettings saved,
+  ) async {
+    final id = await _resolvedId();
+    final characters = await CharacterRegistryService().loadCharacters();
+    final index = characters.indexWhere((item) => item.id == id);
+    if (index < 0) return saved;
+
+    final character = characters[index];
+    final birthday = character.birthday;
+    final registryBirthday = birthday == null
+        ? saved.birthday
+        : '${birthday.month}月${birthday.day}日';
+    final registryRelation = character.relationship.trim().isEmpty
+        ? saved.relation
+        : character.relationship.trim();
+
+    final reconciled = saved.copyWith(
+      characterName: character.characterName,
+      remark: character.remark,
+      relation: registryRelation,
+      birthday: registryBirthday,
+      introduction: character.introduction,
+    );
+
+    if (reconciled.characterName != saved.characterName ||
+        reconciled.remark != saved.remark ||
+        reconciled.relation != saved.relation ||
+        reconciled.birthday != saved.birthday ||
+        reconciled.introduction != saved.introduction) {
+      await saveSettings(reconciled);
+    }
+    return reconciled;
   }
 
   Future<CharacterSettings> _fallbackSettings() async {

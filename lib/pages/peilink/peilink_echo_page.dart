@@ -19,10 +19,18 @@ import 'echo_ai_draft_page.dart';
 import 'echo_comments_page.dart';
 
 class PeiLinkEchoPage extends StatefulWidget {
-  const PeiLinkEchoPage({super.key, this.character});
+  const PeiLinkEchoPage({
+    super.key,
+    this.character,
+    this.showPublicTimeline = false,
+  });
 
-  /// 为空时显示“我”的 Echo；传入角色时显示该角色的生活主页。
+  /// 传入角色时显示该角色的个人 Echo。
+  /// character 为空且 showPublicTimeline 为 false 时，显示“我的 Echo”。
   final AiCharacter? character;
+
+  /// 为 true 时显示所有角色与用户发布的公共 Echo 时间线。
+  final bool showPublicTimeline;
 
   @override
   State<PeiLinkEchoPage> createState() => _PeiLinkEchoPageState();
@@ -38,8 +46,10 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   UserProfile _userProfile = const UserProfile();
   EchoProfile _echoProfile = const EchoProfile();
   List<EchoItem> _items = const [];
+  List<AiCharacter> _characters = const [];
   bool _loading = true;
 
+  bool get _isPublicTimeline => widget.showPublicTimeline;
   bool get _isUserPage => widget.character == null;
   String get _ownerId => _isUserPage ? _userEchoId : _character!.id;
   String get _displayName =>
@@ -64,17 +74,37 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       final character =
           widget.character ?? await _registry.loadActiveCharacter();
       final userProfile = await UserProfileStorageService().loadProfile();
+      final characters = await _registry.loadCharacters();
       final ownerId = _isUserPage ? _userEchoId : character.id;
-      final results = await Future.wait<dynamic>([
-        EchoStorageService(characterId: ownerId).loadItems(),
-        EchoProfileStorageService(ownerId: ownerId).loadProfile(),
-      ]);
+
+      final profile = await EchoProfileStorageService(
+        ownerId: ownerId,
+      ).loadProfile();
+
+      List<EchoItem> items;
+      if (_isPublicTimeline) {
+        final ownerIds = <String>[
+          _userEchoId,
+          ...characters.map((item) => item.id),
+        ];
+        final timelines = await Future.wait(
+          ownerIds.map(
+            (id) => EchoStorageService(characterId: id).loadItems(),
+          ),
+        );
+        items = timelines.expand((timeline) => timeline).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      } else {
+        items = await EchoStorageService(characterId: ownerId).loadItems();
+      }
+
       if (!mounted) return;
       setState(() {
         _character = character;
+        _characters = characters;
         _userProfile = userProfile;
-        _items = results[0] as List<EchoItem>;
-        _echoProfile = results[1] as EchoProfile;
+        _items = items;
+        _echoProfile = profile;
         _loading = false;
       });
     } catch (error) {
@@ -85,6 +115,10 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   }
 
   Future<void> _reloadTimeline() async {
+    if (_isPublicTimeline) {
+      await _loadPage();
+      return;
+    }
     final items = await EchoStorageService(characterId: _ownerId).loadItems();
     if (!mounted) return;
     setState(() => _items = items);
@@ -229,7 +263,9 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
     final next = [..._items]..[index] = updated;
     setState(() => _items = next);
     try {
-      await EchoStorageService(characterId: _ownerId).updateItem(updated);
+      await EchoStorageService(
+        characterId: updated.characterId,
+      ).updateItem(updated);
     } catch (error) {
       await _reloadTimeline();
       _showMessage('保存失败：$error');
@@ -255,9 +291,11 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       ),
     );
     if (confirmed != true) return;
-    await EchoStorageService(characterId: _ownerId).deleteItem(item.id);
+    await EchoStorageService(
+      characterId: item.characterId,
+    ).deleteItem(item.id);
     await EchoImageStorageService(
-      characterId: _ownerId,
+      characterId: item.characterId,
     ).deleteImages(item.imagePaths);
     if (!mounted) return;
     setState(() => _items = _items.where((e) => e.id != item.id).toList());
@@ -268,10 +306,10 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       context,
       MaterialPageRoute(
         builder: (_) => EchoCommentsPage(
-          ownerId: _ownerId,
+          ownerId: item.characterId,
           echo: item,
           userProfile: _userProfile,
-          character: _isUserPage ? null : _character,
+          character: _characterForItem(item),
         ),
       ),
     );
@@ -280,6 +318,57 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
     } else {
       await _reloadTimeline();
     }
+  }
+
+
+  AiCharacter? _characterForItem(EchoItem item) {
+    if (item.characterId == _userEchoId) return null;
+    for (final character in _characters) {
+      if (character.id == item.characterId) return character;
+    }
+    if (_character?.id == item.characterId) return _character;
+    return null;
+  }
+
+  String _displayNameForItem(EchoItem item) {
+    if (item.characterId == _userEchoId) return _userProfile.nickname;
+    return _characterForItem(item)?.characterName ?? '未知角色';
+  }
+
+  Widget _avatarForItem(EchoItem item, {double size = 46}) {
+    if (item.characterId == _userEchoId) {
+      final path = _userProfile.avatarPath.trim();
+      if (path.isNotEmpty && File(path).existsSync()) {
+        return Image.file(File(path), width: size, height: size, fit: BoxFit.cover);
+      }
+      return Container(
+        width: size,
+        height: size,
+        color: const Color(0xFFE6EAED),
+        child: Icon(Icons.person_rounded, size: size * 0.45, color: const Color(0xFF6F7D86)),
+      );
+    }
+
+    final character = _characterForItem(item);
+    final path = character?.avatarPath.trim() ?? '';
+    if (path.isNotEmpty && File(path).existsSync()) {
+      return Image.file(File(path), width: size, height: size, fit: BoxFit.cover);
+    }
+    if (character?.isBuiltIn == true) {
+      return Image.asset(
+        'assets/images/pei_avatar.jpg',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        alignment: const Alignment(0, -0.15),
+      );
+    }
+    return Container(
+      width: size,
+      height: size,
+      color: const Color(0xFFE6EAED),
+      child: Icon(Icons.auto_awesome_rounded, size: size * 0.45, color: const Color(0xFF6F7D86)),
+    );
   }
 
   void _showMessage(String text) {
@@ -374,8 +463,8 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                         itemBuilder: (context, index) {
                           final item = _items[index];
                           return _TimelineItem(
-                            avatar: _avatar(size: 46),
-                            displayName: _displayName,
+                            avatar: _avatarForItem(item),
+                            displayName: _displayNameForItem(item),
                             item: item,
                             onLike: () => _toggleLike(item),
                             onCollect: () => _toggleCollected(item),

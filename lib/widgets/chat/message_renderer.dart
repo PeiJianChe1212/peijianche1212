@@ -16,12 +16,16 @@ class MessageRenderer extends StatelessWidget {
     required this.onLongPress,
     required this.assistantAvatar,
     required this.userAvatar,
+    this.onAssistantAvatarTap,
+    this.onUserAvatarTap,
   });
 
   final ChatMessage message;
   final VoidCallback onLongPress;
   final Widget assistantAvatar;
   final Widget userAvatar;
+  final VoidCallback? onAssistantAvatarTap;
+  final VoidCallback? onUserAvatarTap;
 
   @override
   Widget build(BuildContext context) {
@@ -85,9 +89,23 @@ class MessageRenderer extends StatelessWidget {
             : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (!isUser) ...[assistantAvatar, const SizedBox(width: 7)],
+          if (!isUser) ...[
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onAssistantAvatarTap,
+              child: assistantAvatar,
+            ),
+            const SizedBox(width: 7),
+          ],
           Flexible(child: bubble),
-          if (isUser) ...[const SizedBox(width: 7), userAvatar],
+          if (isUser) ...[
+            const SizedBox(width: 7),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onUserAvatarTap,
+              child: userAvatar,
+            ),
+          ],
         ],
       ),
     );
