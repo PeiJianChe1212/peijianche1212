@@ -6,11 +6,14 @@ import '../../conversation/message_content_parser.dart';
 import '../../models/ai_character.dart';
 import '../../models/chat_message.dart';
 import '../../models/character_settings.dart';
+import '../../models/group_chat.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/character_settings_storage_service.dart';
 import '../../services/chat_storage_service.dart';
 import '../../services/initiative_service.dart';
+import '../../services/group_chat_storage_service.dart';
 import '../chat_page.dart';
+import 'group_chat_page.dart';
 
 class PeiLinkChatsPage extends StatefulWidget {
   const PeiLinkChatsPage({super.key});
@@ -21,8 +24,11 @@ class PeiLinkChatsPage extends StatefulWidget {
 
 class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
   final CharacterRegistryService _registry = CharacterRegistryService();
+  final GroupChatStorageService _groupStorage = GroupChatStorageService();
 
   List<_ConversationPreview> _conversations = const [];
+  List<GroupChat> _groups = const [];
+  Map<String, AiCharacter> _charactersById = const {};
   bool _loading = true;
 
   @override
@@ -35,6 +41,7 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
     try {
       final characters = await _registry.loadCharacters();
       final previews = <_ConversationPreview>[];
+      final groups = await _groupStorage.loadGroups();
 
       for (final character in characters) {
         final messages = await ChatStorageService(
@@ -63,9 +70,16 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
         return bTime.compareTo(aTime);
       });
 
+      groups.sort((a, b) {
+        if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+        return b.lastActiveAt.compareTo(a.lastActiveAt);
+      });
+
       if (!mounted) return;
       setState(() {
         _conversations = previews;
+        _groups = groups;
+        _charactersById = {for (final item in characters) item.id: item};
         _loading = false;
       });
     } catch (error) {
@@ -81,6 +95,14 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const ChatPage()),
+    );
+    await _loadConversationPreviews();
+  }
+
+  Future<void> _openGroup(GroupChat group) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => GroupChatPage(groupId: group.id)),
     );
     await _loadConversationPreviews();
   }
@@ -121,20 +143,25 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
               color: Colors.white,
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
-                  : _conversations.isEmpty
-                      ? const Center(child: Text('还没有 AI 进入消息列表'))
+                  : _conversations.isEmpty && _groups.isEmpty
+                      ? const Center(child: Text('还没有聊天，点右上角“+”开始吧'))
                       : RefreshIndicator(
                           onRefresh: _loadConversationPreviews,
-                          child: ListView.builder(
+                          child: ListView(
                             padding: EdgeInsets.zero,
-                            itemCount: _conversations.length,
-                            itemBuilder: (context, index) {
-                              final preview = _conversations[index];
-                              return _ConversationTile(
-                                preview: preview,
-                                onTap: () => _openChat(preview),
-                              );
-                            },
+                            children: [
+                              for (final group in _groups)
+                                _GroupConversationTile(
+                                  group: group,
+                                  charactersById: _charactersById,
+                                  onTap: () => _openGroup(group),
+                                ),
+                              for (final preview in _conversations)
+                                _ConversationTile(
+                                  preview: preview,
+                                  onTap: () => _openChat(preview),
+                                ),
+                            ],
                           ),
                         ),
             ),
@@ -363,6 +390,216 @@ class _CharacterAvatar extends StatelessWidget {
       ),
       child: const Icon(
         Icons.auto_awesome_rounded,
+        color: Color(0xFF647C8B),
+      ),
+    );
+  }
+}
+
+
+class _GroupConversationTile extends StatelessWidget {
+  const _GroupConversationTile({
+    required this.group,
+    required this.charactersById,
+    required this.onTap,
+  });
+
+  final GroupChat group;
+  final Map<String, AiCharacter> charactersById;
+  final VoidCallback onTap;
+
+  String get _timeText {
+    final time = group.lastMessageAt;
+    if (time == null) return '';
+    final now = DateTime.now();
+    final isToday = time.year == now.year &&
+        time.month == now.month &&
+        time.day == now.day;
+    if (isToday) {
+      return '${time.hour.toString().padLeft(2, '0')}:'
+          '${time.minute.toString().padLeft(2, '0')}';
+    }
+    return '${time.month}月${time.day}日';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final members = group.memberCharacterIds
+        .map((id) => charactersById[id])
+        .whereType<AiCharacter>()
+        .toList();
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 78,
+        child: Row(
+          children: [
+            const SizedBox(width: 16),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _GroupAvatar(characters: members),
+                if (group.unreadCount > 0 && !group.isMuted)
+                  Positioned(
+                    right: -7,
+                    top: -7,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 20),
+                      height: 20,
+                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFA5151),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        group.unreadCount > 99 ? '99+' : '${group.unreadCount}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Container(
+                height: double.infinity,
+                padding: const EdgeInsets.only(right: 16),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Color(0xFFEDEDED), width: 0.7),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              if (group.isPinned)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 4),
+                                  child: Icon(
+                                    Icons.push_pin_rounded,
+                                    size: 14,
+                                    color: Color(0xFF999999),
+                                  ),
+                                ),
+                              Expanded(
+                                child: Text(
+                                  group.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF171717),
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (group.isMuted)
+                                const Icon(
+                                  Icons.notifications_off_outlined,
+                                  size: 16,
+                                  color: Color(0xFFAAAAAA),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            group.lastMessage.isEmpty
+                                ? '群聊已创建'
+                                : group.lastMessage.replaceAll('\n', ' '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF999999),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_timeText.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 10, bottom: 29),
+                        child: Text(
+                          _timeText,
+                          style: const TextStyle(
+                            color: Color(0xFFB2B2B2),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupAvatar extends StatelessWidget {
+  const _GroupAvatar({required this.characters});
+
+  final List<AiCharacter> characters;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = characters.take(4).toList();
+    return Container(
+      width: 54,
+      height: 54,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE1E5E7),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: GridView.count(
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 2,
+        mainAxisSpacing: 2,
+        crossAxisSpacing: 2,
+        children: [
+          for (final character in visible) _MiniAvatar(character: character),
+          for (var i = visible.length; i < 4; i++)
+            Container(color: const Color(0xFFF2F4F5)),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniAvatar extends StatelessWidget {
+  const _MiniAvatar({required this.character});
+
+  final AiCharacter character;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = character.avatarPath.trim();
+    if (path.isNotEmpty && File(path).existsSync()) {
+      return Image.file(File(path), fit: BoxFit.cover);
+    }
+    if (character.isBuiltIn) {
+      return Image.asset('assets/images/pei_avatar.jpg', fit: BoxFit.cover);
+    }
+    return Container(
+      color: const Color(0xFFEDF1F3),
+      child: const Icon(
+        Icons.auto_awesome_rounded,
+        size: 13,
         color: Color(0xFF647C8B),
       ),
     );

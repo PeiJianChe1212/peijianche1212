@@ -4,6 +4,7 @@ import '../models/relationship_network.dart';
 import '../models/relationship_opportunity.dart';
 import '../models/world_event.dart';
 import 'relationship_network_service.dart';
+import 'echo_comment_interaction_storage_service.dart';
 import 'relationship_opportunity_state_service.dart';
 
 /// 决定“此刻是否适合让两个角色自然产生共同生活”的调度层。
@@ -20,6 +21,8 @@ class RelationshipOpportunityEngineService {
 
   final RelationshipNetworkService _networkService;
   final RelationshipOpportunityStateService _stateService;
+  final EchoCommentInteractionStorageService _echoInteractionStorage =
+      EchoCommentInteractionStorageService();
 
   Future<List<RelationshipOpportunity>> evaluate({
     required AiCharacter currentCharacter,
@@ -63,6 +66,35 @@ class RelationshipOpportunityEngineService {
           suggestedActivity: _suggestedActivity(type, worldMatch),
           suggestedLocation: worldMatch?.locationName?.trim() ?? '',
           worldEventIds: worldMatch == null ? const [] : [worldMatch.id],
+        ),
+      );
+    }
+
+    final echoCandidates =
+        await _echoInteractionStorage.loadCandidates(now: time);
+    for (final candidate in echoCandidates) {
+      final other = others.where(
+        (item) => candidate.isForPair(currentCharacter.id, item.id),
+      );
+      if (other.isEmpty) continue;
+      final matched = other.first;
+      final duplicate = opportunities.any(
+        (item) => item.otherCharacterId == matched.id &&
+            item.suggestedActivity == candidate.suggestedActivity,
+      );
+      if (duplicate) continue;
+      opportunities.add(
+        RelationshipOpportunity(
+          id: candidate.id,
+          currentCharacterId: currentCharacter.id,
+          otherCharacterId: matched.id,
+          otherCharacterName: matched.displayName,
+          type: RelationshipOpportunityType.sharedRoutine,
+          reason: '${candidate.reason}；该意向只是候选，仍需结合当前生活决定是否发生',
+          score: 64,
+          createdAt: candidate.createdAt,
+          expiresAt: candidate.expiresAt,
+          suggestedActivity: candidate.suggestedActivity,
         ),
       );
     }

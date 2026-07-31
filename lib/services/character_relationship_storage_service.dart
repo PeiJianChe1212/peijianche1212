@@ -16,10 +16,10 @@ class CharacterRelationshipStorageService {
 
   Future<List<CharacterRelationship>> loadAll() async {
     final file = await _file();
-    if (!await file.exists()) return const [];
+    if (!await file.exists()) return <CharacterRelationship>[];
     try {
       final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! List) return const [];
+      if (decoded is! List) return <CharacterRelationship>[];
       return decoded
           .whereType<Map>()
           .map(CharacterRelationship.fromJson)
@@ -29,7 +29,7 @@ class CharacterRelationshipStorageService {
               item.characterIdA != item.characterIdB)
           .toList();
     } catch (_) {
-      return const [];
+      return <CharacterRelationship>[];
     }
   }
 
@@ -45,7 +45,7 @@ class CharacterRelationshipStorageService {
     List<AiCharacter> characters,
   ) async {
     final valid = characters.where((item) => item.id.trim().isNotEmpty).toList();
-    final items = await loadAll();
+    final items = List<CharacterRelationship>.from(await loadAll());
     var changed = false;
     final now = DateTime.now();
 
@@ -89,7 +89,7 @@ class CharacterRelationshipStorageService {
   }
 
   Future<void> save(CharacterRelationship relationship) async {
-    final items = await loadAll();
+    final items = List<CharacterRelationship>.from(await loadAll());
     final index = items.indexWhere((item) => item.id == relationship.id);
     if (index >= 0) {
       items[index] = relationship;

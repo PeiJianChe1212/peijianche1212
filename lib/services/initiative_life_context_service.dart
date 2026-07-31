@@ -7,10 +7,13 @@ class InitiativeLifeContext {
   const InitiativeLifeContext({
     required this.message,
     required this.momentId,
+    required this.sourceSummary,
   });
 
+  /// 旧固定生成逻辑保留，模型不可用时可直接作为兜底。
   final String message;
   final String momentId;
+  final String sourceSummary;
 }
 
 class InitiativeLifeContextService {
@@ -46,24 +49,24 @@ class InitiativeLifeContextService {
       perspective: NarrativePerspective.chat,
       now: now,
     );
-    final core = _trimSentence(narrative.content, maxLength: 56);
+    final core = _trimSentence(narrative.content, maxLength: 90);
     if (core.isEmpty) return null;
 
+    final fallbackCore = _trimSentence(core, maxLength: 56);
     final endings = <String>[
-      '$core 刚才忽然想跟你说一声。',
-      '$core 你今天有没有碰到什么有意思的事？',
-      '$core 想到你大概会有话说。',
+      '$fallbackCore 刚才忽然想跟你说一声。',
+      '$fallbackCore 你今天有没有碰到什么有意思的事？',
+      '$fallbackCore 想到你大概会有话说。',
     ];
     return InitiativeLifeContext(
       message: endings[seed % endings.length],
       momentId: fragment.lifeMomentIds.first,
+      sourceSummary: core,
     );
   }
 
   String _trimSentence(String value, {required int maxLength}) {
-    final clean = value
-        .trim()
-        .replaceAll(RegExp(r'[。！？!?]+$'), '');
+    final clean = value.trim().replaceAll(RegExp(r'[。！？!?]+$'), '');
     if (clean.length <= maxLength) return clean;
     return '${clean.substring(0, maxLength).trim()}…';
   }

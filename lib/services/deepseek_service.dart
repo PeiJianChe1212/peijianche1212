@@ -29,7 +29,6 @@ class DeepSeekService {
   late final ModelHub _modelHub;
   final UserProfileStorageService _profileStorage = UserProfileStorageService();
   final ApiSettingsStorageService _apiStorage = ApiSettingsStorageService();
-  final MemoryStorageService _memoryStorage = MemoryStorageService();
   final CharacterSettingsStorageService _characterStorage =
       CharacterSettingsStorageService();
 
@@ -80,7 +79,8 @@ class DeepSeekService {
     final sharedWorldPrompt = characterId == null || characterId.trim().isEmpty
         ? ''
         : await SharedWorldEventService().buildChatPromptSection(characterId);
-    final registeredCharacters = await CharacterRegistryService().loadCharacters();
+    final registeredCharacters = await CharacterRegistryService()
+        .loadCharacters();
     AiCharacter? currentCharacter;
     for (final item in registeredCharacters) {
       if (item.id == characterId) {
@@ -114,22 +114,16 @@ class DeepSeekService {
       ),
     );
 
-    final dynamicSystemPrompt = '''
+    final dynamicSystemPrompt =
+        '''
 ${PromptBuilder.buildDynamicSystemPrompt(
-      timeContext: _buildTimeContext(),
-      conversationEnginePrompt: conversationEngine.prompt,
-      personalityPrompt: _buildPersonalityPrompt(
-        initiative: initiative,
-        intimacy: intimacy,
-        tsundere: tsundere,
-      ),
-      replyLengthPrompt: _buildReplyLengthPrompt(replyLength),
-      memoryPrompt: memoryPrompt,
-      activityPrompt:
-          validConversation.where((message) => message.role == 'user').length <= 1
-          ? activity.toPromptSection()
-          : '',
-    )}
+          timeContext: _buildTimeContext(),
+          conversationEnginePrompt: conversationEngine.prompt,
+          personalityPrompt: _buildPersonalityPrompt(initiative: initiative, intimacy: intimacy, tsundere: tsundere),
+          replyLengthPrompt: _buildReplyLengthPrompt(replyLength),
+          memoryPrompt: memoryPrompt,
+          activityPrompt: validConversation.where((message) => message.role == 'user').length <= 1 ? activity.toPromptSection() : '',
+        )}
 
 $echoContextPrompt
 
@@ -170,7 +164,6 @@ $socialProtocolPrompt
     return _cleanReply(content);
   }
 
-
   String _messageContentForModel(ChatMessage message) {
     if (message.type != MessageType.image) return message.content;
 
@@ -197,9 +190,7 @@ $socialProtocolPrompt
     return parts.join('\n');
   }
 
-  Future<String> composeImageMessage({
-    required String userRequest,
-  }) async {
+  Future<String> composeImageMessage({required String userRequest}) async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
       return '给你。';
@@ -228,9 +219,7 @@ $socialProtocolPrompt
       maxTokens: 80,
       topP: 0.86,
     );
-    final cleaned = _cleanReply(raw)
-        .replaceAll(RegExp(r'[\r\n]+'), ' ')
-        .trim();
+    final cleaned = _cleanReply(raw).replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
     return cleaned.isEmpty ? '给你。' : cleaned;
   }
 

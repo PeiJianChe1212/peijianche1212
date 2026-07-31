@@ -4,6 +4,7 @@ import '../ai/model_hub.dart';
 import '../models/ai_character.dart';
 import '../models/character_settings.dart';
 import '../models/echo_item.dart';
+import '../models/echo_comment.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'character_registry_service.dart';
@@ -29,8 +30,14 @@ class EchoCommentReplyService {
 
   Future<String> generateReply({
     required EchoItem echo,
-    required EchoComment userComment,
+    EchoComment? userComment,
+    EchoComment? targetComment,
+    List<EchoComment> existingComments = const [],
   }) async {
+    final comment = targetComment ?? userComment;
+    if (comment == null) {
+      throw ArgumentError('必须提供要回复的评论。');
+    }
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
       throw StateError('请先在“设置 → 模型与 API”中填写并保存接口配置。');
@@ -65,8 +72,11 @@ class EchoCommentReplyService {
 【${settings.characterName}发布的 Echo】
 ${echo.content}
 
-【${settings.userCallName}的评论】
-${userComment.content}
+【要回复的评论】
+${comment.authorNameSnapshot}：${comment.content}
+
+【评论区已有内容】
+${existingComments.isEmpty ? '暂无其他评论' : existingComments.map((item) => '${item.authorNameSnapshot}：${item.content}').join('\n')}
 
 请生成${settings.characterName}在评论区对这条评论的自然回复。
 ''',
@@ -78,7 +88,7 @@ ${userComment.content}
     );
 
     final cleaned = _clean(raw);
-    if (cleaned.isEmpty) {
+    if (!_isValid(cleaned, target: comment, existing: existingComments)) {
       throw const FormatException('模型没有生成有效回复。');
     }
     return cleaned;
@@ -98,8 +108,35 @@ ${userComment.content}
 7. 符合${settings.characterName}本人的语气，允许简短、接梗、吐槽或轻微情绪。
 8. 即使评论提到其他角色，也不要争宠、挑衅、宣示唯一或逼用户表态。
 9. 通常控制在 5 至 80 个汉字，最多两小段。
+10. 自动回复到这里结束，不邀请其他角色继续对线，不制造新的争执。
 ''';
   }
+
+  bool _isValid(
+    String value, {
+    required EchoComment target,
+    required List<EchoComment> existing,
+  }) {
+    if (value.isEmpty || value.length > 100) return false;
+    if (RegExp(r'[\(\（][^\)\）]*[\)\）]').hasMatch(value)) return false;
+    if (_containsConflict(value)) return false;
+    final normalized = _normalize(value);
+    if (normalized == _normalize(target.content)) return false;
+    return !existing.any((item) => _normalize(item.content) == normalized);
+  }
+
+  bool _containsConflict(String value) {
+    return RegExp(
+      r'只能是我的|只属于我|离她远点|离他远点|跟我抢|抢走她|抢走他|'
+      r'你算什么|轮不到你|她是我的|他是我的|选我还是|二选一|'
+      r'不许和.{0,8}(说话|见面|出去|联系)',
+    ).hasMatch(value);
+  }
+
+  String _normalize(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll(RegExp(r'[，。！？、,.!?：:；;“”’\-—_]'), '');
 
   String _clean(String raw) {
     var value = raw.trim();

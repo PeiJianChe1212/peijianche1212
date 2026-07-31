@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_character.dart';
@@ -9,6 +10,7 @@ import '../../services/character_scope_service.dart';
 import '../../services/character_settings_storage_service.dart';
 import '../../services/echo_generation_service.dart';
 import '../../services/echo_storage_service.dart';
+import '../../services/auto_echo_comment_service.dart';
 import '../../services/image_generation_service.dart';
 import '../../services/life_moment_storage_service.dart';
 import '../../services/life_event_pool_service.dart';
@@ -67,7 +69,22 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
       final draft = await _generationService.generateDraft();
       if (!mounted) return;
       _applyDraft(draft);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('================ Echo Draft Generate Error ================');
+      debugPrint('[EchoDraft] 生成失败：$error');
+      debugPrintStack(
+        stackTrace: stackTrace,
+        label: '[EchoDraft] 异常堆栈',
+      );
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'EchoAiDraftPage',
+          context: ErrorDescription('generating an Echo draft'),
+        ),
+      );
+
       if (!mounted) return;
       setState(() {
         _generating = false;
@@ -139,16 +156,20 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
     setState(() => _publishing = true);
     final now = DateTime.now();
     try {
-      await EchoStorageService(characterId: widget.character.id).addItem(
-        EchoItem(
-          id: 'echo_${now.microsecondsSinceEpoch}',
-          characterId: widget.character.id,
-          content: content,
-          imagePaths: _imagePath.isEmpty ? const [] : [_imagePath],
-          createdAt: now,
-          sourceType: EchoSourceType.aiGenerated,
-        ),
+      final echo = EchoItem(
+        id: 'echo_${now.microsecondsSinceEpoch}',
+        characterId: widget.character.id,
+        content: content,
+        imagePaths: _imagePath.isEmpty ? const [] : [_imagePath],
+        createdAt: now,
+        sourceType: EchoSourceType.aiGenerated,
       );
+      await EchoStorageService(characterId: widget.character.id).addItem(echo);
+      try {
+        await AutoEchoCommentService().scheduleForEcho(echo, now: now);
+      } catch (_) {
+        // 评论系统失败不能影响 Echo 本身发布。
+      }
 
       final selectedMoment = _generationService.lastDecision?.candidate;
       if (selectedMoment != null) {

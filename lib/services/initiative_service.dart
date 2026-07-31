@@ -9,6 +9,7 @@ import 'chat_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'character_scope_service.dart';
 import 'initiative_life_context_service.dart';
+import 'proactive_message_generation_service.dart';
 import 'life_trace_service.dart';
 
 class InitiativeService {
@@ -65,52 +66,104 @@ class InitiativeService {
 
   Future<bool> maybeLeaveMessage({DateTime? now}) async {
     final time = now ?? DateTime.now();
+    final characterId = _characterId ?? 'default';
     final settings = await _characterStorage.loadSettings();
+    _log(characterId, '开始检查主动联系');
+
     if (!settings.proactiveEnabled || settings.maxProactivePerDay <= 0) {
+      _log(characterId, '跳过：主动联系已关闭或每日上限为 0');
       return false;
     }
 
     final slot = _slotFor(time);
-    if (slot == null) return false;
-    if (slot == 'late' && !settings.lateNightMessages) return false;
+    if (slot == null) {
+      _log(characterId, '跳过：当前不在发送时间窗口');
+      return false;
+    }
+    if (slot == 'late' && !settings.lateNightMessages) {
+      _log(characterId, '跳过：深夜主动联系已关闭');
+      return false;
+    }
 
     final state = (await loadState(now: time)).normalized(time);
     if (state.sentCount >= settings.maxProactivePerDay ||
         state.usedSlots.contains(slot)) {
+      _log(characterId, '跳过：已达到今日上限或当前时间段已使用');
       return false;
     }
 
     final messages = await _chatStorage.loadMessages();
+    if (_hasUnansweredInitiative(messages)) {
+      _log(characterId, '跳过：上一条主动消息仍未收到用户回复');
+      return false;
+    }
+
     final latest = messages.isEmpty ? null : messages.last.createdAt;
     final lastTouch = _latest(latest, state.lastSentAt);
     final requiredGap = slot == 'late'
         ? const Duration(hours: 2)
         : const Duration(hours: 3);
     if (lastTouch != null && time.difference(lastTouch) < requiredGap) {
+      _log(characterId, '跳过：仍在原有冷却时间内');
       return false;
     }
 
     final activity = await ActivityContextService(
-      characterId: _characterId ?? 'default',
+      characterId: characterId,
     ).resolve(now: time);
     final lifeContext = await InitiativeLifeContextService(
-      characterId: _characterId ?? 'default',
+      characterId: characterId,
     ).build(
       now: time,
       excludedMomentIds: state.usedLifeMomentIds.toSet(),
     );
-    final content = lifeContext?.message ??
+    final fallbackMessage = lifeContext?.message ??
         _messageFor(activity: activity, now: time, slot: slot);
+
+    _log(
+      characterId,
+      '满足条件：task=proactiveChat，生活事件=${lifeContext == null ? '未使用' : '已使用'}，准备调用模型',
+    );
+    final generator = ProactiveMessageGenerationService(
+      characterId: characterId,
+    );
+    final result = await generator.generate(
+      settings: settings,
+      activity: activity,
+      now: time,
+      slot: slot,
+      messages: messages,
+      recentProactiveMessages: state.recentMessages,
+      fallbackMessage: fallbackMessage,
+      lifeEventSummary: lifeContext?.sourceSummary ?? '',
+    );
+    generator.dispose();
+
+    final content = result.content.trim();
+    if (content.isEmpty) {
+      _log(characterId, '发送失败：模型与固定兜底均未生成内容');
+      return false;
+    }
+
     final nextMessages = List<ChatMessage>.from(messages)
       ..add(
         ChatMessage(
           role: 'assistant',
           content: content,
           source: 'initiative',
+          metadata: {
+            'generation': result.usedFallback ? 'fallback' : 'model',
+            'lifeMomentId': lifeContext?.momentId ?? '',
+          },
         ),
       );
     await _chatStorage.saveMessages(nextMessages);
     await _lifeTraceService.recordInitiative(now: time);
+
+    final recentMessages = <String>[content, ...state.recentMessages]
+        .where((item) => item.trim().isNotEmpty)
+        .take(5)
+        .toList();
     await saveState(
       state.copyWith(
         sentCount: state.sentCount + 1,
@@ -119,10 +172,41 @@ class InitiativeService {
         usedLifeMomentIds: lifeContext == null
             ? state.usedLifeMomentIds
             : [...state.usedLifeMomentIds, lifeContext.momentId],
+        recentMessages: recentMessages,
+        lastUsedLifeMomentId: lifeContext?.momentId ?? '',
+        modelFailureCount:
+            result.usedFallback ? state.modelFailureCount + 1 : 0,
         lastSentAt: time,
       ),
     );
+    _log(
+      characterId,
+      '发送成功：模型=${result.usedModel}，fallback=${result.usedFallback}，生活事件=${result.usedLifeEvent}',
+    );
     return true;
+  }
+
+  bool _hasUnansweredInitiative(List<ChatMessage> messages) {
+    var latestInitiativeIndex = -1;
+    for (var index = messages.length - 1; index >= 0; index--) {
+      if (messages[index].source == 'initiative') {
+        latestInitiativeIndex = index;
+        break;
+      }
+    }
+    if (latestInitiativeIndex < 0) return false;
+    for (var index = latestInitiativeIndex + 1;
+        index < messages.length;
+        index++) {
+      if (messages[index].role == 'user') return false;
+    }
+    return true;
+  }
+
+  void _log(String characterId, String message) {
+    // 不记录完整人设、Memory、API Key 或用户隐私正文。
+    // ignore: avoid_print
+    print('[Initiative][$characterId] $message');
   }
 
   Future<void> clear() async {

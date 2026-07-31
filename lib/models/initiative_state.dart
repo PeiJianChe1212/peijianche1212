@@ -5,6 +5,9 @@ class InitiativeState {
     required this.unreadCount,
     required this.usedSlots,
     this.usedLifeMomentIds = const [],
+    this.recentMessages = const [],
+    this.lastUsedLifeMomentId = '',
+    this.modelFailureCount = 0,
     this.lastSentAt,
   });
 
@@ -13,6 +16,9 @@ class InitiativeState {
   final int unreadCount;
   final List<String> usedSlots;
   final List<String> usedLifeMomentIds;
+  final List<String> recentMessages;
+  final String lastUsedLifeMomentId;
+  final int modelFailureCount;
   final DateTime? lastSentAt;
 
   factory InitiativeState.empty([DateTime? now]) {
@@ -23,6 +29,7 @@ class InitiativeState {
       unreadCount: 0,
       usedSlots: const [],
       usedLifeMomentIds: const [],
+      recentMessages: const [],
     );
   }
 
@@ -37,6 +44,9 @@ class InitiativeState {
     int? unreadCount,
     List<String>? usedSlots,
     List<String>? usedLifeMomentIds,
+    List<String>? recentMessages,
+    String? lastUsedLifeMomentId,
+    int? modelFailureCount,
     DateTime? lastSentAt,
     bool clearLastSentAt = false,
   }) {
@@ -46,6 +56,10 @@ class InitiativeState {
       unreadCount: unreadCount ?? this.unreadCount,
       usedSlots: usedSlots ?? this.usedSlots,
       usedLifeMomentIds: usedLifeMomentIds ?? this.usedLifeMomentIds,
+      recentMessages: recentMessages ?? this.recentMessages,
+      lastUsedLifeMomentId:
+          lastUsedLifeMomentId ?? this.lastUsedLifeMomentId,
+      modelFailureCount: modelFailureCount ?? this.modelFailureCount,
       lastSentAt: clearLastSentAt ? null : (lastSentAt ?? this.lastSentAt),
     );
   }
@@ -56,6 +70,9 @@ class InitiativeState {
         'unreadCount': unreadCount,
         'usedSlots': usedSlots,
         'usedLifeMomentIds': usedLifeMomentIds,
+        'recentMessages': recentMessages,
+        'lastUsedLifeMomentId': lastUsedLifeMomentId,
+        'modelFailureCount': modelFailureCount,
         'lastSentAt': lastSentAt?.toIso8601String(),
       };
 
@@ -72,6 +89,15 @@ class InitiativeState {
               ?.map((item) => item.toString())
               .toList() ??
           const [],
+      recentMessages: (json['recentMessages'] as List?)
+              ?.map((item) => item.toString())
+              .where((item) => item.trim().isNotEmpty)
+              .take(5)
+              .toList() ??
+          const [],
+      lastUsedLifeMomentId:
+          json['lastUsedLifeMomentId']?.toString() ?? '',
+      modelFailureCount: (json['modelFailureCount'] as num?)?.toInt() ?? 0,
       lastSentAt: DateTime.tryParse(json['lastSentAt']?.toString() ?? ''),
     );
   }

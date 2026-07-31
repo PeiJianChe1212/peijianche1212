@@ -7,6 +7,8 @@ import 'echo_storage_service.dart';
 import 'life_event_pool_service.dart';
 import 'life_moment_storage_service.dart';
 import 'shared_world_event_service.dart';
+import 'shared_experience_storage_service.dart';
+import 'auto_echo_comment_service.dart';
 
 class AutoEchoReport {
   const AutoEchoReport({required this.checked, required this.published});
@@ -69,6 +71,11 @@ class AutoEchoService {
         return false;
       }
 
+      final selected = decision.candidate;
+      final confirmed = selected.copyWith(occurredAt: now);
+      final sharedExperience = await SharedExperienceStorageService()
+          .findByLifeEventId(selected.id);
+
       final item = EchoItem(
         id: 'auto_echo_${now.microsecondsSinceEpoch}',
         characterId: character.id,
@@ -78,11 +85,11 @@ class AutoEchoService {
         imagePrompt: draft.imageScene,
         imageStatus: draft.imageScene.isEmpty ? 'not_needed' : 'pending',
         imagePath: '',
+        sourceLifeEventId: selected.id,
+        sourceSharedExperienceId: sharedExperience?.id ?? '',
       );
       await EchoStorageService(characterId: character.id).addItem(item);
 
-      final selected = decision.candidate;
-      final confirmed = selected.copyWith(occurredAt: now);
       await LifeMomentStorageService(characterId: character.id).addItem(confirmed);
       await LifeEventPoolService(characterId: character.id)
           .markUsed(selected.id, now: now);
@@ -91,6 +98,11 @@ class AutoEchoService {
         moment: confirmed,
         occurredAt: now,
       );
+      try {
+        await AutoEchoCommentService().scheduleForEcho(item, now: now);
+      } catch (_) {
+        // 评论排队失败不能让已经成功发布的 Echo 被判定为发布失败。
+      }
 
       final summaries = <String>[summary, ...state.recentSummaries]
           .where((value) => value.trim().isNotEmpty)

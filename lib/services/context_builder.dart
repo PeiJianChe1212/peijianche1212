@@ -16,6 +16,8 @@ enum ContextTask {
   summary,
   multimodal,
   imageRouting,
+  proactiveChat,
+  groupChat,
 }
 
 enum ContextProfile {
@@ -39,7 +41,10 @@ class ContextBuilder {
 
   static ContextProfile profileFor(ContextTask task) {
     return switch (task) {
-      ContextTask.chat || ContextTask.imageMessage => ContextProfile.chat,
+      ContextTask.chat ||
+      ContextTask.imageMessage ||
+      ContextTask.proactiveChat ||
+      ContextTask.groupChat => ContextProfile.chat,
       ContextTask.echo || ContextTask.echoComment => ContextProfile.echo,
       ContextTask.image || ContextTask.imageRouting => ContextProfile.image,
       ContextTask.lifeDecision ||

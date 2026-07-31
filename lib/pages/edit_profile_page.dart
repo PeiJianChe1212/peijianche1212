@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, unused_import, unused_element
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -19,7 +21,6 @@ class EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   final _storage = UserProfileStorageService();
-  final _picker = ImagePicker();
 
   late final TextEditingController _nicknameController;
   late final TextEditingController _birthdayController;
@@ -59,27 +60,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _preferenceController.dispose();
     super.dispose();
   }
-
-  Future<void> _pickAvatar() async {
-    try {
-      final picked = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 88,
-        maxWidth: 1600,
-      );
-      if (picked == null) return;
-      final savedPath = await _storage.saveAvatarCopy(picked.path);
-      if (!mounted || savedPath.isEmpty) return;
-      setState(() => _avatarPath = savedPath);
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('选择头像失败：$error')));
-    }
-  }
-
-  void _removeAvatar() => setState(() => _avatarPath = '');
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;

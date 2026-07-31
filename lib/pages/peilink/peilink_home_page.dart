@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'add_ai_page.dart';
+import 'create_group_chat_page.dart';
 import 'peilink_chats_page.dart';
 import 'peilink_contacts_page.dart';
 import 'peilink_me_page.dart';
@@ -20,18 +21,48 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   static const _titles = ['PeiLink', '羁绊', '发现', '我'];
 
   int _contactsRevision = 0;
+  int _chatsRevision = 0;
 
   List<Widget> get _pages => [
-    const PeiLinkChatsPage(),
+    PeiLinkChatsPage(key: ValueKey(_chatsRevision)),
     PeiLinkContactsPage(key: ValueKey(_contactsRevision)),
     const PeiLinkDiscoverPage(),
     const PeiLinkMePage(),
   ];
 
-  void _showChatAddTip() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('群聊和更多聊天入口会在后面的版本开放。')),
+  Future<void> _showChatAddMenu() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person_outline_rounded),
+              title: const Text('发起单聊'),
+              onTap: () => Navigator.pop(context, 'single'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.group_add_outlined),
+              title: const Text('创建群聊'),
+              onTap: () => Navigator.pop(context, 'group'),
+            ),
+          ],
+        ),
+      ),
     );
+    if (!mounted || action == null) return;
+    if (action == 'single') {
+      setState(() => _currentIndex = 1);
+      return;
+    }
+    final created = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateGroupChatPage()),
+    );
+    if (created != null && mounted) {
+      setState(() => _chatsRevision += 1);
+    }
   }
 
   Future<void> _openAddAi() async {
@@ -66,7 +97,7 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
           actions: [
             if (_currentIndex == 0)
               IconButton(
-                onPressed: _showChatAddTip,
+                onPressed: _showChatAddMenu,
                 tooltip: '添加',
                 icon: const Icon(
                   Icons.add_circle_outline_rounded,

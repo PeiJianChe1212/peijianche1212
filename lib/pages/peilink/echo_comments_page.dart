@@ -1,10 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../models/ai_character.dart';
 import '../../models/echo_item.dart';
+import '../../models/echo_comment.dart';
 import '../../models/user_profile.dart';
 import '../../services/echo_comment_reply_service.dart';
-import '../../services/echo_storage_service.dart';
+import '../../services/auto_echo_comment_reply_service.dart';
+import '../../services/echo_comment_storage_service.dart';
+import '../../services/echo_comment_interaction_service.dart';
+import '../../services/character_registry_service.dart';
 
 class EchoCommentsPage extends StatefulWidget {
   const EchoCommentsPage({
@@ -32,6 +38,7 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
   EchoCommentReplyService? _replyService;
   bool _saving = false;
   String? _replyingCommentId;
+  EchoComment? _replyingTo;
 
   String get _userName {
     final nickname = widget.userProfile.nickname.trim();
@@ -58,8 +65,7 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
     super.dispose();
   }
 
-  Future<void> _saveEcho(EchoItem updated) async {
-    await EchoStorageService(characterId: widget.ownerId).updateItem(updated);
+  Future<void> _setEcho(EchoItem updated) async {
     if (!mounted) return;
     setState(() => _echo = updated);
   }
@@ -73,17 +79,36 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
     final now = DateTime.now();
     final comment = EchoComment(
       id: 'comment_${now.microsecondsSinceEpoch}',
-      authorType: EchoAuthorType.user,
+      echoId: _echo.id,
+      authorType: EchoCommentAuthorType.user,
+      authorId: 'peilink_user',
+      authorNameSnapshot: _userName,
+      authorAvatarSnapshot: widget.userProfile.avatarPath,
       content: content,
       createdAt: now,
+      replyToCommentId: _replyingTo?.id,
+      replyToAuthorId: _replyingTo?.authorId ?? '',
+      replyToAuthorNameSnapshot:
+          _replyingTo?.authorNameSnapshot ?? '',
+      sourceType: EchoCommentSourceType.manualUser,
     );
 
     try {
-      await _saveEcho(
-        _echo.copyWith(comments: [..._echo.comments, comment]),
+      await EchoCommentStorageService(ownerId: widget.ownerId).add(comment);
+      await EchoCommentInteractionService().record(
+        echo: _echo,
+        comment: comment,
+        parentComment: _replyingTo,
       );
+      await AutoEchoCommentReplyService().scheduleFor(
+        echo: _echo,
+        comment: comment,
+        now: now,
+      );
+      await _setEcho(_echo.copyWith(comments: [..._echo.comments, comment]));
       _controller.clear();
       _focusNode.unfocus();
+      setState(() => _replyingTo = null);
     } catch (error) {
       _showMessage('评论保存失败：$error');
     } finally {
@@ -100,18 +125,31 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
       final content = await service.generateReply(
         echo: _echo,
         userComment: comment,
+        existingComments: _echo.comments,
       );
       final now = DateTime.now();
+      final character = widget.character!;
       final reply = EchoComment(
         id: 'comment_${now.microsecondsSinceEpoch}',
-        authorType: EchoAuthorType.character,
+        echoId: _echo.id,
+        authorType: EchoCommentAuthorType.character,
         content: content,
         createdAt: now,
         replyToCommentId: comment.id,
+        replyToAuthorId: comment.authorId,
+        replyToAuthorNameSnapshot: comment.authorNameSnapshot,
+        authorId: character.id,
+        authorNameSnapshot: character.displayName,
+        authorAvatarSnapshot: character.avatarPath,
+        sourceType: EchoCommentSourceType.autoReply,
       );
-      await _saveEcho(
-        _echo.copyWith(comments: [..._echo.comments, reply]),
+      await EchoCommentStorageService(ownerId: widget.ownerId).add(reply);
+      await EchoCommentInteractionService().record(
+        echo: _echo,
+        comment: reply,
+        parentComment: comment,
       );
+      await _setEcho(_echo.copyWith(comments: [..._echo.comments, reply]));
     } catch (error) {
       _showMessage(
         error.toString().replaceFirst('Bad state: ', ''),
@@ -124,7 +162,7 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
   bool _hasReplyFor(String commentId) {
     return _echo.comments.any(
       (comment) =>
-          comment.authorType == EchoAuthorType.character &&
+          comment.authorType == EchoCommentAuthorType.character &&
           comment.replyToCommentId == commentId,
     );
   }
@@ -134,7 +172,7 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('删除这条评论？'),
-        content: comment.authorType == EchoAuthorType.user
+        content: comment.authorType == EchoCommentAuthorType.user
             ? const Text('与它关联的角色回复也会一起删除。')
             : null,
         actions: [
@@ -154,20 +192,94 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
     );
     if (confirmed != true) return;
 
-    final next = _echo.comments.where((item) {
-      if (item.id == comment.id) return false;
-      if (comment.authorType == EchoAuthorType.user &&
-          item.replyToCommentId == comment.id) {
-        return false;
-      }
-      return true;
-    }).toList();
-
     try {
-      await _saveEcho(_echo.copyWith(comments: next));
+      await EchoCommentStorageService(ownerId: widget.ownerId).delete(
+        comment.id,
+        deleteReplies: true,
+      );
+      final next = _echo.comments
+          .where(
+            (item) =>
+                item.id != comment.id &&
+                item.replyToCommentId != comment.id,
+          )
+          .toList();
+      await _setEcho(_echo.copyWith(comments: next));
     } catch (error) {
       _showMessage('删除失败：$error');
     }
+  }
+
+  Future<void> _addDebugCharacterComment() async {
+    final characters = await CharacterRegistryService().loadCharacters();
+    if (!mounted || characters.isEmpty) {
+      _showMessage('还没有可用于调试的角色。');
+      return;
+    }
+    final character = await showModalBottomSheet<AiCharacter>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text('选择评论身份'),
+              subtitle: Text('仅用于测试角色名、头像、回复与存储'),
+            ),
+            for (final item in characters)
+              ListTile(
+                title: Text(item.displayName),
+                subtitle: Text(item.characterName),
+                onTap: () => Navigator.pop(sheetContext, item),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (character == null || !mounted) return;
+
+    final input = TextEditingController();
+    final content = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('以 ${character.displayName} 评论'),
+        content: TextField(
+          controller: input,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 4,
+          maxLength: 500,
+          decoration: const InputDecoration(hintText: '输入调试评论'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, input.text.trim()),
+            child: const Text('发布'),
+          ),
+        ],
+      ),
+    );
+    input.dispose();
+    if (content == null || content.isEmpty) return;
+
+    final now = DateTime.now();
+    final comment = EchoComment(
+      id: 'debug_comment_${now.microsecondsSinceEpoch}',
+      echoId: _echo.id,
+      authorType: EchoCommentAuthorType.character,
+      authorId: character.id,
+      authorNameSnapshot: character.displayName,
+      authorAvatarSnapshot: character.avatarPath,
+      content: content,
+      createdAt: now,
+      sourceType: EchoCommentSourceType.manualCharacterDebug,
+    );
+    await EchoCommentStorageService(ownerId: widget.ownerId).add(comment);
+    await _setEcho(_echo.copyWith(comments: [..._echo.comments, comment]));
   }
 
   void _showMessage(String text) {
@@ -194,6 +306,13 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           centerTitle: true,
+          actions: [
+            IconButton(
+              tooltip: '角色评论调试',
+              onPressed: _addDebugCharacterComment,
+              icon: const Icon(Icons.bug_report_outlined),
+            ),
+          ],
         ),
         body: Column(
           children: [
@@ -221,13 +340,21 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
                       _CommentTile(
                         comment: comment,
                         userName: _userName,
+                        userAvatarPath: widget.userProfile.avatarPath,
                         characterName: _characterName,
+                        characterAvatarPath:
+                            widget.character?.avatarPath ?? '',
                         isReplying: _replyingCommentId == comment.id,
                         canGenerateReply:
                             widget.character != null &&
-                            comment.authorType == EchoAuthorType.user &&
+                            comment.authorType ==
+                                EchoCommentAuthorType.user &&
                             !_hasReplyFor(comment.id),
                         onGenerateReply: () => _generateReply(comment),
+                        onReply: () {
+                          setState(() => _replyingTo = comment);
+                          _focusNode.requestFocus();
+                        },
                         onDelete: () => _deleteComment(comment),
                       ),
                 ],
@@ -237,6 +364,8 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
               controller: _controller,
               focusNode: _focusNode,
               saving: _saving,
+              replyingToName: _replyingTo?.authorNameSnapshot ?? '',
+              onCancelReply: () => setState(() => _replyingTo = null),
               onSubmit: _submitComment,
             ),
           ],
@@ -293,98 +422,194 @@ class _CommentTile extends StatelessWidget {
   const _CommentTile({
     required this.comment,
     required this.userName,
+    required this.userAvatarPath,
     required this.characterName,
+    required this.characterAvatarPath,
     required this.isReplying,
     required this.canGenerateReply,
     required this.onGenerateReply,
+    required this.onReply,
     required this.onDelete,
   });
 
   final EchoComment comment;
   final String userName;
+  final String userAvatarPath;
   final String characterName;
+  final String characterAvatarPath;
   final bool isReplying;
   final bool canGenerateReply;
   final VoidCallback onGenerateReply;
+  final VoidCallback onReply;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final isCharacter = comment.authorType == EchoAuthorType.character;
+    final isCharacter =
+        comment.authorType == EchoCommentAuthorType.character;
+    final savedName = comment.authorNameSnapshot.trim();
     final name = isCharacter
-        ? (characterName.isEmpty ? '角色' : characterName)
+        ? (savedName.isNotEmpty
+            ? savedName
+            : (characterName.isEmpty ? '角色' : characterName))
         : userName;
+    final savedAvatar = comment.authorAvatarSnapshot.trim();
+    final avatarPath = isCharacter
+        ? (savedAvatar.isNotEmpty ? savedAvatar : characterAvatarPath.trim())
+        : userAvatarPath.trim();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
+      padding: const EdgeInsets.fromLTRB(12, 12, 10, 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  color: Color(0xFF576B95),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+          _CommentAvatar(
+            path: avatarPath,
+            fallbackName: name,
+            isCharacter: isCharacter,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF576B95),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: '删除',
+                      onPressed: onDelete,
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 17,
+                        color: Color(0xFFAAAAAA),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              if (isCharacter) ...[
-                const SizedBox(width: 6),
-                const Text(
-                  '回复',
-                  style: TextStyle(
-                    color: Color(0xFF999999),
-                    fontSize: 12,
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      if (comment.replyToAuthorNameSnapshot
+                          .trim()
+                          .isNotEmpty) ...[
+                        const TextSpan(text: '回复 '),
+                        TextSpan(
+                          text: comment.replyToAuthorNameSnapshot.trim(),
+                          style: const TextStyle(
+                            color: Color(0xFF576B95),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const TextSpan(text: '：'),
+                      ],
+                      TextSpan(text: comment.content),
+                    ],
+                  ),
+                  style: const TextStyle(
+                    color: Color(0xFF222222),
+                    fontSize: 14,
+                    height: 1.45,
                   ),
                 ),
+                TextButton(
+                  onPressed: onReply,
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('回复'),
+                ),
+                if (canGenerateReply) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: isReplying ? null : onGenerateReply,
+                    icon: isReplying
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_awesome_outlined, size: 17),
+                    label: Text(isReplying ? '正在回复…' : '让角色回复'),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
               ],
-              const Spacer(),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                tooltip: '删除',
-                onPressed: onDelete,
-                icon: const Icon(
-                  Icons.close_rounded,
-                  size: 17,
-                  color: Color(0xFFAAAAAA),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentAvatar extends StatelessWidget {
+  const _CommentAvatar({
+    required this.path,
+    required this.fallbackName,
+    required this.isCharacter,
+  });
+
+  final String path;
+  final String fallbackName;
+  final bool isCharacter;
+
+  @override
+  Widget build(BuildContext context) {
+    final file = path.isEmpty ? null : File(path);
+    final hasFile = file != null && file.existsSync();
+    final fallback = fallbackName.trim().isEmpty
+        ? (isCharacter ? '角' : '我')
+        : fallbackName.trim().substring(0, 1);
+
+    return ClipOval(
+      child: Container(
+        width: 38,
+        height: 38,
+        color: const Color(0xFFE8E8E8),
+        alignment: Alignment.center,
+        child: hasFile
+            ? Image.file(
+                file,
+                width: 38,
+                height: 38,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Text(
+                  fallback,
+                  style: const TextStyle(
+                    color: Color(0xFF777777),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            : Text(
+                fallback,
+                style: const TextStyle(
+                  color: Color(0xFF777777),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ],
-          ),
-          Text(
-            comment.content,
-            style: const TextStyle(
-              color: Color(0xFF222222),
-              fontSize: 14,
-              height: 1.45,
-            ),
-          ),
-          if (canGenerateReply) ...[
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: isReplying ? null : onGenerateReply,
-              icon: isReplying
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.auto_awesome_outlined, size: 17),
-              label: Text(isReplying ? '正在回复…' : '让角色回复'),
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }
@@ -395,12 +620,16 @@ class _CommentComposer extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.saving,
+    required this.replyingToName,
+    required this.onCancelReply,
     required this.onSubmit,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool saving;
+  final String replyingToName;
+  final VoidCallback onCancelReply;
   final VoidCallback onSubmit;
 
   @override
@@ -415,8 +644,30 @@ class _CommentComposer extends StatelessWidget {
             top: BorderSide(color: Color(0xFFE5E5E5)),
           ),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
+            if (replyingToName.trim().isNotEmpty)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '回复 ${replyingToName.trim()}',
+                      style: const TextStyle(
+                        color: Color(0xFF777777),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onCancelReply,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close_rounded, size: 17),
+                  ),
+                ],
+              ),
+            Row(
+              children: [
             Expanded(
               child: TextField(
                 controller: controller,
@@ -454,6 +705,8 @@ class _CommentComposer extends StatelessWidget {
                       ),
                     )
                   : const Icon(Icons.arrow_upward_rounded),
+            ),
+              ],
             ),
           ],
         ),

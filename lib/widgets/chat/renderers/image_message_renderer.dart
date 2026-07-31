@@ -31,7 +31,7 @@ class ImageMessageRenderer extends StatelessWidget {
                     maxHeight: 310,
                   ),
                   child: Image.file(
-                    file!,
+                    file,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => const _MissingImage(),
                   ),
@@ -62,10 +62,7 @@ class _MissingImage extends StatelessWidget {
         children: [
           Icon(Icons.broken_image_outlined, color: Colors.black38),
           SizedBox(height: 6),
-          Text(
-            '图片已失效',
-            style: TextStyle(fontSize: 12, color: Colors.black38),
-          ),
+          Text('图片已失效', style: TextStyle(fontSize: 12, color: Colors.black38)),
         ],
       ),
     );

@@ -2,12 +2,17 @@ import 'dart:convert';
 
 import '../models/echo_item.dart';
 import 'character_scope_service.dart';
+import 'echo_comment_storage_service.dart';
+import 'echo_comment_task_storage_service.dart';
+import 'echo_comment_reply_task_storage_service.dart';
 
 class EchoStorageService {
   EchoStorageService({String? characterId})
-    : _scope = CharacterScopeService(characterId);
+    : _ownerId = characterId,
+      _scope = CharacterScopeService(characterId);
 
   static const String _fileName = 'echo_timeline.json';
+  final String? _ownerId;
   final CharacterScopeService _scope;
 
   Future<List<EchoItem>> loadItems() async {
@@ -25,8 +30,20 @@ class EchoStorageService {
           .map(EchoItem.fromJson)
           .where((item) => item.id.isNotEmpty)
           .toList();
-      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return items;
+      final resolvedOwnerId = _ownerId ?? await _scope.resolveCharacterId();
+      final commentStorage =
+          EchoCommentStorageService(ownerId: resolvedOwnerId);
+      final merged = <EchoItem>[];
+      var hadLegacyComments = false;
+      for (final item in items) {
+        hadLegacyComments = hadLegacyComments || item.comments.isNotEmpty;
+        await commentStorage.importLegacy(item.id, item.comments);
+        final comments = await commentStorage.loadForEcho(item.id);
+        merged.add(item.copyWith(comments: comments));
+      }
+      if (hadLegacyComments) await saveItems(merged);
+      merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return merged;
     } catch (_) {
       return [];
     }
@@ -40,7 +57,9 @@ class EchoStorageService {
     final sorted = [...items]
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     await file.writeAsString(
-      jsonEncode(sorted.map((item) => item.toJson()).toList()),
+      jsonEncode(
+        sorted.map((item) => item.toJson(includeComments: false)).toList(),
+      ),
       flush: true,
     );
   }
@@ -67,6 +86,11 @@ class EchoStorageService {
     final items = await loadItems();
     items.removeWhere((item) => item.id == echoId);
     await saveItems(items);
+    final resolvedOwnerId = _ownerId ?? await _scope.resolveCharacterId();
+    await EchoCommentStorageService(ownerId: resolvedOwnerId)
+        .deleteForEcho(echoId);
+    await EchoCommentTaskStorageService().deleteForEcho(echoId);
+    await EchoCommentReplyTaskStorageService().removeForEcho(echoId);
   }
 
   Future<void> clear() => saveItems(const []);
