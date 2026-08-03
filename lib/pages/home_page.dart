@@ -109,9 +109,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         markForeground: markForeground,
       );
       if (!mounted) return;
-      if (report.executed) {
-        await _autoEchoService.checkAll(now: report.tickAt);
-      }
+      // AutoEcho has its own two-hour guard. Check even when the world tick was
+      // recently advanced so an empty/new timeline cannot miss its fallback.
+      await _autoEchoService.checkAll(now: report.tickAt);
       await _autoEchoCommentService.checkAll(now: report.tickAt);
       if (report.executed &&
           (report.crossedTimePeriod || report.crossedDayBoundary)) {

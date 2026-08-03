@@ -11,6 +11,7 @@ import '../../models/ai_character.dart';
 import '../../models/character_settings.dart';
 import '../../services/character_avatar_storage_service.dart';
 import '../../services/character_registry_service.dart';
+import '../../services/auto_echo_service.dart';
 import '../../services/character_settings_storage_service.dart';
 
 class CharacterCreationPage extends StatefulWidget {
@@ -205,6 +206,11 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
       );
       await CharacterSettingsStorageService(characterId: characterId)
           .saveSettings(settings);
+      try {
+        await AutoEchoService().generateInitialEcho(character, now: now);
+      } catch (_) {
+        // Initial Echo is a protection layer and must not block character creation.
+      }
       await _registry.setActiveCharacter(character.id);
 
       if (!mounted) return;

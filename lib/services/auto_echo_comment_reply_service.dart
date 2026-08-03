@@ -111,6 +111,7 @@ class AutoEchoCommentReplyService {
           replyToAuthorId: parent.authorId,
           replyToAuthorNameSnapshot: parent.authorNameSnapshot,
           sourceType: EchoCommentSourceType.autoReply,
+          commentType: EchoCommentType.aiCharacter,
           relatedLifeEventId: echo.sourceLifeEventId,
           relatedRelationshipId: parent.relatedRelationshipId,
           metadata: {

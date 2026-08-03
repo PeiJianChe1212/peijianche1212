@@ -7,16 +7,27 @@ import '../conversation/conversation_engine.dart';
 import '../models/ai_character.dart';
 import '../models/chat_message.dart';
 import '../models/pending_memory.dart';
+import '../context_builder/character_context.dart';
+import '../context_builder/cooldown_context.dart';
+import '../context_builder/conversation_context.dart';
+import '../context_builder/existing_memory_context_provider.dart';
+import '../context_builder/relationship_context.dart';
+import '../context_builder/response_strategy_context.dart';
+import '../chat_flow/chat_flow_engine.dart';
+import '../reply_strategy/reply_strategy_engine.dart';
+import '../personality_style/personality_style_engine.dart';
+import '../prompt_composer/prompt_composer.dart';
+import '../prompt_composer/prompt_context.dart';
 import 'activity_context_service.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'echo_chat_context_service.dart';
-import 'memory_storage_service.dart';
 import 'character_registry_service.dart';
 import 'character_relationship_context_service.dart';
 import 'ai_social_protocol_service.dart';
 import 'context_builder.dart';
 import 'prompt_builder.dart';
+import 'relationship_cooldown_service.dart';
 import 'shared_world_event_service.dart';
 import 'user_profile_storage_service.dart';
 
@@ -52,19 +63,17 @@ class DeepSeekService {
       throw StateError('请先在“设置 → 模型与 API”中填写并保存接口配置。');
     }
 
-    final validConversation = messages
-        .where(
-          (message) => message.role == 'user' || message.role == 'assistant',
-        )
-        .toList();
-    final recentConversation = validConversation.length > 36
-        ? validConversation.sublist(validConversation.length - 36)
-        : validConversation;
+    final conversationContext = ConversationContext(messages);
+    final validConversation = conversationContext.messages;
+    final isInCooldown = await RelationshipCooldownService(
+      characterId: characterId,
+    ).isInCooldown();
+    final cooldownContext = CooldownContext(isInCooldown: isInCooldown);
 
     final userProfile = await _profileStorage.loadProfile();
-    final memoryPrompt = await MemoryStorageService(
+    final memoryContext = await ExistingMemoryContextProvider(
       characterId: characterId,
-    ).buildPromptSection();
+    ).load();
     final characterSettings = await CharacterSettingsStorageService(
       characterId: characterId,
     ).loadSettings();
@@ -106,57 +115,73 @@ class DeepSeekService {
       conversationMode: conversationMode,
     );
 
-    final stableSystemPrompt = PromptBuilder.buildStableSystemPrompt(
-      characterSettings: characterSettings,
-      userProfile: userProfile,
-      styleExamplesPrompt: PromptBuilder.buildStyleExamplesPrompt(
-        characterSettings,
-      ),
-    );
-
     final dynamicSystemPrompt =
-        '''
-${PromptBuilder.buildDynamicSystemPrompt(
+        '\n${PromptBuilder.buildDynamicSystemPrompt(
           timeContext: _buildTimeContext(),
           conversationEnginePrompt: conversationEngine.prompt,
           personalityPrompt: _buildPersonalityPrompt(initiative: initiative, intimacy: intimacy, tsundere: tsundere),
           replyLengthPrompt: _buildReplyLengthPrompt(replyLength),
-          memoryPrompt: memoryPrompt,
+          memoryPrompt: memoryContext.confirmedMemory,
           activityPrompt: validConversation.where((message) => message.role == 'user').length <= 1 ? activity.toPromptSection() : '',
-        )}
-
-$echoContextPrompt
-
-$sharedWorldPrompt
-
-$relationshipPrompt
-
-$socialProtocolPrompt
-
-【真实媒体规则】
+        )}\n';
+    const mediaRules = '''【真实媒体规则】
 你不能靠文字假装已经发送照片、图片、语音或视频。
 除非聊天记录中真的存在一条由角色发送的 image 类型消息，否则禁止说“我拍了”“发给你了”“照片给你”“刚发过去”，也禁止用括号写“拍了一张发过去”“发送图片”。
 当用户索要图片但系统尚未真正插入图片消息时，不要虚构已发送成功。
 ''';
 
-    final requestMessages = <Map<String, dynamic>>[
-      {
-        'role': 'system',
-        // 固定人设必须保持在最前面，动态上下文只能追加在后面。
-        // 这样 DeepSeek 的自动上下文缓存才能稳定命中重复前缀。
-        'content': '$stableSystemPrompt\n\n$dynamicSystemPrompt',
-      },
-      ...recentConversation.map<Map<String, dynamic>>(
-        (message) => <String, dynamic>{
-          'role': message.role,
-          'content': _messageContentForModel(message),
-        },
+    final context = ContextBuilder.buildChatRequest(
+      character: CharacterContext(
+        settings: characterSettings,
+        userProfile: userProfile,
+        styleExamples: PromptBuilder.buildStyleExamplesPrompt(
+          characterSettings,
+        ),
       ),
-    ];
+      relationship: RelationshipContext(
+        echoContext: echoContextPrompt,
+        sharedWorldContext: sharedWorldPrompt,
+        relationshipState: relationshipPrompt,
+        socialProtocol: socialProtocolPrompt,
+      ),
+      memory: memoryContext,
+      conversation: conversationContext,
+      responseStrategy: ResponseStrategyContext(
+        dynamicPrompt: dynamicSystemPrompt,
+        mediaRules: mediaRules,
+      ),
+      messageContent: (message) => _messageContentForModel(message),
+    );
+    final chatFlowEngine = const ChatFlowEngine();
+    final chatFlowPlan = chatFlowEngine.plan(
+      conversationContext,
+      isInCooldown: isInCooldown,
+    );
+    final replyStrategyEngine = const ReplyStrategyEngine();
+    final replyStrategy = replyStrategyEngine.plan(
+      conversation: conversationContext,
+      flow: chatFlowPlan,
+      isInCooldown: isInCooldown,
+    );
+    final personalityStyleEngine = const PersonalityStyleEngine();
+    final personalityStyle = personalityStyleEngine.resolve(
+      settings: characterSettings,
+      replyStrategy: replyStrategy,
+    );
+    final modelContext = PromptComposer(baseContext: context)
+        .addContext(PromptContext.cooldown(cooldownContext.toPromptSection()))
+        .addContext(PromptContext.chatFlow(chatFlowPlan.toPromptSection()))
+        .addContext(
+          PromptContext.personalityStyle(personalityStyle.toPromptSection()),
+        )
+        .addContext(
+          PromptContext.replyStrategy(replyStrategy.toPromptSection()),
+        )
+        .compose();
 
     final provider = await _modelHub.chatProvider();
     final content = await provider.complete(
-      messages: requestMessages,
+      messages: modelContext.messages,
       temperature: temperature,
       maxTokens: _getMaxTokens(replyLength, conversationMode),
       topP: _getTopP(temperature),

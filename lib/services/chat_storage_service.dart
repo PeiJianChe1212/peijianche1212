@@ -10,10 +10,9 @@ class ChatStorageService {
   final String? characterId;
 
   Future<File> _historyFile() {
-    return CharacterScopeService(characterId).dataFile(
-      'chat_history.json',
-      legacyDefaultFileName: 'chat_history.json',
-    );
+    return CharacterScopeService(
+      characterId,
+    ).dataFile('chat_history.json', legacyDefaultFileName: 'chat_history.json');
   }
 
   Future<List<ChatMessage>> loadMessages() async {
@@ -33,6 +32,8 @@ class ChatStorageService {
           .where(
             (message) =>
                 message.content.trim().isNotEmpty ||
+                (message.type == MessageType.redPacket &&
+                    message.redPacket != null) ||
                 (message.type == MessageType.image &&
                     (message.metadata['imagePath']
                             ?.toString()
@@ -52,6 +53,65 @@ class ChatStorageService {
       jsonEncode(messages.map((message) => message.toJson()).toList()),
       flush: true,
     );
+  }
+
+  /// Marks an existing message as recalled without removing its stored record.
+  ///
+  /// Returns `true` when the message exists (including an already recalled
+  /// message), and `false` when [messageId] cannot be found.
+  Future<bool> recallMessage(String messageId) async {
+    final normalizedId = messageId.trim();
+    if (normalizedId.isEmpty) return false;
+
+    final messages = await loadMessages();
+    final index = messages.indexWhere((message) => message.id == normalizedId);
+    if (index < 0) return false;
+
+    final message = messages[index];
+    if (!message.isRecalled) {
+      messages[index] = message.copyWith(messageStatus: MessageStatus.recalled);
+      await saveMessages(messages);
+    }
+    return true;
+  }
+
+  /// Opens a red packet once and persists its original opening time.
+  ///
+  /// An already opened packet is returned unchanged, making this operation
+  /// idempotent. Returns `null` when the message is missing or is not a valid
+  /// red packet message.
+  Future<ChatMessage?> openRedPacket(
+    String messageId, {
+    String currentUserId = 'user',
+    DateTime? openedAt,
+  }) async {
+    final normalizedId = messageId.trim();
+    if (normalizedId.isEmpty) return null;
+
+    final messages = await loadMessages();
+    final index = messages.indexWhere((message) => message.id == normalizedId);
+    if (index < 0) return null;
+
+    final message = messages[index];
+    final redPacket = message.redPacket;
+    if (message.type != MessageType.redPacket || redPacket == null) return null;
+    final actorId = currentUserId.trim();
+    if (actorId.isEmpty ||
+        actorId == redPacket.senderId ||
+        actorId != redPacket.receiverId) {
+      return null;
+    }
+    if (redPacket.isOpened) return message;
+
+    final updated = message.copyWith(
+      redPacket: redPacket.copyWith(
+        isOpened: true,
+        openedAt: openedAt ?? DateTime.now(),
+      ),
+    );
+    messages[index] = updated;
+    await saveMessages(messages);
+    return updated;
   }
 
   Future<void> clearMessages() async {

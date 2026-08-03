@@ -23,10 +23,14 @@ class ConversationContext {
   factory ConversationContext.fromMessages(List<ChatMessage> messages) {
     final valid = messages
         .where(
-          (message) => message.role == 'user' || message.role == 'assistant',
+          (message) =>
+              message.isVisibleInConversationContext &&
+              (message.role == 'user' || message.role == 'assistant'),
         )
         .toList();
-    final userMessages = valid.where((message) => message.role == 'user').toList();
+    final userMessages = valid
+        .where((message) => message.role == 'user')
+        .toList();
     final assistantMessages = valid
         .where((message) => message.role == 'assistant')
         .toList();
@@ -40,7 +44,11 @@ class ConversationContext {
       for (final entry in _actionGroups.entries) {
         if (entry.value.any(message.content.contains)) {
           actionMentions += 1;
-          groupCounts.update(entry.key, (value) => value + 1, ifAbsent: () => 1);
+          groupCounts.update(
+            entry.key,
+            (value) => value + 1,
+            ifAbsent: () => 1,
+          );
         }
       }
     }
@@ -59,8 +67,7 @@ class ConversationContext {
       latestUserMessage: userMessages.isEmpty ? '' : userMessages.last.content,
       actionMentions: actionMentions,
       repeatedActionGroups: repeated,
-      shouldInviteSelfSharing:
-          userTurnCount >= 3 && userTurnCount % 4 == 0,
+      shouldInviteSelfSharing: userTurnCount >= 3 && userTurnCount % 4 == 0,
     );
   }
 

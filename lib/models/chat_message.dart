@@ -1,10 +1,8 @@
-enum MessageType {
-  text,
-  image,
-  voice,
-  system,
-  card,
-}
+import 'red_packet_data.dart';
+
+enum MessageType { text, image, redPacket, voice, system, card }
+
+enum MessageStatus { normal, recalled }
 
 class ChatMessage {
   ChatMessage({
@@ -15,6 +13,8 @@ class ChatMessage {
     this.isFavorite = false,
     this.source = 'normal',
     this.type = MessageType.text,
+    this.messageStatus = MessageStatus.normal,
+    this.redPacket,
     this.metadata = const {},
   }) : id = id ?? _createId(),
        createdAt = createdAt ?? DateTime.now();
@@ -26,7 +26,14 @@ class ChatMessage {
   final bool isFavorite;
   final String source;
   final MessageType type;
+  final MessageStatus messageStatus;
+  final RedPacketData? redPacket;
   final Map<String, dynamic> metadata;
+
+  bool get isRecalled => messageStatus == MessageStatus.recalled;
+  bool get isPendingRedPacket =>
+      type == MessageType.redPacket && redPacket?.isOpened != true;
+  bool get isVisibleInConversationContext => !isRecalled && !isPendingRedPacket;
 
   ChatMessage copyWith({
     String? role,
@@ -35,6 +42,8 @@ class ChatMessage {
     bool? isFavorite,
     String? source,
     MessageType? type,
+    MessageStatus? messageStatus,
+    RedPacketData? redPacket,
     Map<String, dynamic>? metadata,
   }) {
     return ChatMessage(
@@ -45,6 +54,8 @@ class ChatMessage {
       isFavorite: isFavorite ?? this.isFavorite,
       source: source ?? this.source,
       type: type ?? this.type,
+      messageStatus: messageStatus ?? this.messageStatus,
+      redPacket: redPacket ?? this.redPacket,
       metadata: metadata ?? this.metadata,
     );
   }
@@ -57,6 +68,8 @@ class ChatMessage {
     'isFavorite': isFavorite,
     'source': source,
     'type': type.name,
+    'messageStatus': messageStatus.name,
+    'redPacket': redPacket?.toJson(),
     'metadata': metadata,
   };
 
@@ -70,6 +83,10 @@ class ChatMessage {
       isFavorite: json['isFavorite'] == true,
       source: json['source']?.toString() ?? 'normal',
       type: _messageTypeFromJson(json['type']),
+      messageStatus: _messageStatusFromJson(
+        json['messageStatus'] ?? json['status'],
+      ),
+      redPacket: _redPacketFromJson(json['redPacket']),
       metadata: _metadataFromJson(json['metadata']),
     );
   }
@@ -82,12 +99,23 @@ class ChatMessage {
     );
   }
 
+  static MessageStatus _messageStatusFromJson(dynamic value) {
+    final statusName = value?.toString();
+    return MessageStatus.values.firstWhere(
+      (status) => status.name == statusName,
+      orElse: () => MessageStatus.normal,
+    );
+  }
+
+  static RedPacketData? _redPacketFromJson(dynamic value) {
+    if (value is! Map) return null;
+    return RedPacketData.fromJson(value);
+  }
+
   static Map<String, dynamic> _metadataFromJson(dynamic value) {
     if (value is! Map) return const {};
 
-    return value.map(
-      (key, item) => MapEntry(key.toString(), item),
-    );
+    return value.map((key, item) => MapEntry(key.toString(), item));
   }
 
   static String _createId() =>

@@ -9,6 +9,7 @@ import 'ai_social_protocol_service.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'context_builder.dart';
+import 'echo_comment_diversity_service.dart';
 
 class EchoCommentGenerationService {
   EchoCommentGenerationService({http.Client? client})
@@ -21,6 +22,8 @@ class EchoCommentGenerationService {
   final bool _ownsClient;
   late final ModelHub _modelHub;
   final ApiSettingsStorageService _apiStorage = ApiSettingsStorageService();
+  final EchoCommentDiversityService _diversity =
+      const EchoCommentDiversityService();
 
   Future<String> generate({
     required AiCharacter commenter,
@@ -125,7 +128,9 @@ ${styleHint.trim()}
     if (normalized.isEmpty || normalized == _normalize(echo.content)) {
       return false;
     }
-    return !existing.any((item) => _normalize(item.content) == normalized);
+    return !existing.any(
+      (item) => _diversity.isSemanticallySimilar(item.content, value),
+    );
   }
 
   bool _containsConflict(String value) {

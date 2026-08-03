@@ -12,6 +12,8 @@ import 'character_relationship_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'auto_echo_comment_reply_service.dart';
 import 'echo_comment_generation_service.dart';
+import 'echo_comment_diversity_service.dart';
+import 'echo_relationship_engine_service.dart';
 import 'echo_comment_interaction_service.dart';
 import 'echo_comment_interaction_policy.dart';
 import 'echo_comment_storage_service.dart';
@@ -50,6 +52,8 @@ class AutoEchoCommentService {
       EchoCommentTaskStorageService();
   final EchoCommentInteractionPolicy _policy =
       const EchoCommentInteractionPolicy();
+  final EchoCommentDiversityService _diversity =
+      const EchoCommentDiversityService();
   final AutoEchoCommentReplyService _replyService =
       AutoEchoCommentReplyService();
 
@@ -132,7 +136,8 @@ class AutoEchoCommentService {
           character: commenter,
           relationship: relationship,
           reason: '$baseReason；${decision.reason}',
-          score: _stableScore('${echo.id}|${commenter.id}') -
+          score:
+              _stableScore('${echo.id}|${commenter.id}') -
               decision.relevance * 100000,
         ),
       );
@@ -207,8 +212,7 @@ class AutoEchoCommentService {
     ];
     var scheduled = 0;
     for (final ownerId in ownerIds) {
-      final echoes =
-          await EchoStorageService(characterId: ownerId).loadItems();
+      final echoes = await EchoStorageService(characterId: ownerId).loadItems();
       for (final echo in echoes.take(30)) {
         if (echo.createdAt.isBefore(time.subtract(const Duration(hours: 24)))) {
           continue;
@@ -222,9 +226,11 @@ class AutoEchoCommentService {
   Future<_ExecutionCount> _publishDue({required DateTime now}) async {
     final tasks = await _taskStorage.loadAll();
     final due = tasks
-        .where((item) =>
-            item.status == EchoCommentTaskStatus.pending &&
-            !item.scheduledAt.isAfter(now))
+        .where(
+          (item) =>
+              item.status == EchoCommentTaskStatus.pending &&
+              !item.scheduledAt.isAfter(now),
+        )
         .toList();
     var published = 0;
     var skipped = 0;
@@ -265,19 +271,22 @@ class AutoEchoCommentService {
       return EchoCommentTaskStatus.skipped;
     }
 
-    final commentStorage =
-        EchoCommentStorageService(ownerId: task.echoOwnerId);
+    final commentStorage = EchoCommentStorageService(ownerId: task.echoOwnerId);
     final comments = await commentStorage.loadForEcho(task.echoId);
-    if (comments.any((item) =>
-        item.authorId == commenter.id &&
-        item.sourceType != EchoCommentSourceType.manualCharacterDebug)) {
+    if (comments.any(
+      (item) =>
+          item.authorId == commenter.id &&
+          item.sourceType != EchoCommentSourceType.manualCharacterDebug,
+    )) {
       await _skip(task, '该角色已经评论过这条 Echo');
       return EchoCommentTaskStatus.skipped;
     }
     if (comments
-            .where((item) =>
-                item.authorType == EchoCommentAuthorType.character &&
-                item.sourceType != EchoCommentSourceType.manualCharacterDebug)
+            .where(
+              (item) =>
+                  item.authorType == EchoCommentAuthorType.character &&
+                  item.sourceType != EchoCommentSourceType.manualCharacterDebug,
+            )
             .length >=
         _maxCommentsPerEcho) {
       await _skip(task, '本条 Echo 已达到自动评论上限');
@@ -315,18 +324,29 @@ class AutoEchoCommentService {
       now: now,
     );
     if (!decision.shouldComment) {
-      await _skip(
-        task,
-        '执行时重新判断跳过：${decision.reason}',
-      );
+      await _skip(task, '执行时重新判断跳过：${decision.reason}');
       return EchoCommentTaskStatus.skipped;
     }
     final userProfile = await UserProfileStorageService().loadProfile();
-    final authorName = author?.displayName ??
+    final authorName =
+        author?.displayName ??
         (echo.characterId == userEchoOwnerId
             ? userProfile.nickname
             : 'Echo 发布者');
     final generator = EchoCommentGenerationService();
+    final usedStyles = comments
+        .map((item) => item.commentStyle)
+        .whereType<EchoCommentStyle>()
+        .toSet();
+    final relationshipKind = relationship?.stage ==
+            CharacterRelationshipStage.friend
+        ? EchoRelationshipKind.friend
+        : EchoRelationshipKind.acquaintance;
+    final commentStyle = _diversity.chooseStyle(
+      seed: '${echo.id}|${commenter.id}|delayed',
+      used: usedStyles,
+      relationshipKind: relationshipKind,
+    );
     try {
       debugPrint(
         '[EchoComment] 开始生成评论 echoId=${echo.id} '
@@ -342,7 +362,8 @@ class AutoEchoCommentService {
         triggerReason: task.triggerReason,
         contentType: decision.contentType.name,
         activityLabel: decision.activityLabel,
-        styleHint: decision.styleHint,
+        styleHint:
+            '${decision.styleHint}\n本次评论风格：${_diversity.instruction(commentStyle)}。不得改成其他类型，也不得重复已有评论观点。',
       );
       final comment = EchoComment(
         id: 'auto_comment_${now.microsecondsSinceEpoch}_${commenter.id}',
@@ -354,6 +375,8 @@ class AutoEchoCommentService {
         content: content,
         createdAt: now,
         sourceType: EchoCommentSourceType.autoCharacter,
+        commentType: EchoCommentType.aiCharacter,
+        commentStyle: commentStyle,
         relatedLifeEventId: echo.sourceLifeEventId,
         relatedRelationshipId: relationship?.id ?? '',
         metadata: {
@@ -368,11 +391,7 @@ class AutoEchoCommentService {
         echo: echo,
         comment: comment,
       );
-      await _replyService.scheduleFor(
-        echo: echo,
-        comment: comment,
-        now: now,
-      );
+      await _replyService.scheduleFor(echo: echo, comment: comment, now: now);
       await _taskStorage.update(
         task.copyWith(
           status: EchoCommentTaskStatus.published,
@@ -394,8 +413,9 @@ class AutoEchoCommentService {
           status: terminal
               ? EchoCommentTaskStatus.failed
               : EchoCommentTaskStatus.pending,
-          scheduledAt:
-              terminal ? task.scheduledAt : now.add(const Duration(hours: 1)),
+          scheduledAt: terminal
+              ? task.scheduledAt
+              : now.add(const Duration(hours: 1)),
           attempts: attempts,
           lastError: error.toString(),
         ),
@@ -423,8 +443,9 @@ class AutoEchoCommentService {
       userEchoOwnerId,
       ...characters.map((item) => item.id),
     ]) {
-      final comments =
-          await EchoCommentStorageService(ownerId: ownerId).loadAll();
+      final comments = await EchoCommentStorageService(
+        ownerId: ownerId,
+      ).loadAll();
       count += comments.where((item) {
         return item.authorId == commenterId &&
             item.sourceType == EchoCommentSourceType.autoCharacter &&
@@ -444,8 +465,9 @@ class AutoEchoCommentService {
       userEchoOwnerId,
       ...characters.map((item) => item.id),
     ]) {
-      final comments =
-          await EchoCommentStorageService(ownerId: ownerId).loadAll();
+      final comments = await EchoCommentStorageService(
+        ownerId: ownerId,
+      ).loadAll();
       for (final item in comments) {
         if (item.authorId != commenterId ||
             item.sourceType != EchoCommentSourceType.autoCharacter) {
@@ -460,8 +482,7 @@ class AutoEchoCommentService {
   }
 
   Future<EchoItem?> _findEcho(String ownerId, String echoId) async {
-    final echoes =
-        await EchoStorageService(characterId: ownerId).loadItems();
+    final echoes = await EchoStorageService(characterId: ownerId).loadItems();
     for (final echo in echoes) {
       if (echo.id == echoId) return echo;
     }
@@ -495,10 +516,7 @@ class AutoEchoCommentService {
 
   Future<void> _skip(EchoCommentTask task, String reason) async {
     await _taskStorage.update(
-      task.copyWith(
-        status: EchoCommentTaskStatus.skipped,
-        skipReason: reason,
-      ),
+      task.copyWith(status: EchoCommentTaskStatus.skipped, skipReason: reason),
     );
     debugPrint(
       '[EchoComment] 跳过：$reason echoId=${task.echoId} '

@@ -20,6 +20,7 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textColor = textColorForRole(message.role);
+    final isRedPacket = message.type == MessageType.redPacket;
 
     return GestureDetector(
       onLongPress: onLongPress,
@@ -29,27 +30,35 @@ class MessageBubble extends StatelessWidget {
         ),
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 3.5),
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9.5),
+          padding: isRedPacket
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(horizontal: 13, vertical: 9.5),
           decoration: BoxDecoration(
-            color: _bubbleColor(message.role),
-            borderRadius: BorderRadius.circular(8),
+            color: isRedPacket
+                ? Colors.transparent
+                : _bubbleColor(message.role),
+            borderRadius: BorderRadius.circular(isRedPacket ? 18 : 8),
             border: Border.all(
-              color: Colors.black.withValues(alpha: 0.045),
+              color: isRedPacket
+                  ? Colors.transparent
+                  : Colors.black.withValues(alpha: 0.045),
               width: 0.55,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.025),
-                blurRadius: 2,
-                offset: const Offset(0, 1),
-              ),
-            ],
+            boxShadow: isRedPacket
+                ? const []
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.025),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (message.source == 'initiative') ...[
+              if (!message.isRecalled && message.source == 'initiative') ...[
                 Text(
                   '他主动发来的',
                   style: TextStyle(
@@ -65,7 +74,7 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Flexible(child: child),
-                  if (message.isFavorite) ...[
+                  if (!message.isRecalled && message.isFavorite) ...[
                     const SizedBox(width: 7),
                     const Icon(
                       Icons.favorite_rounded,

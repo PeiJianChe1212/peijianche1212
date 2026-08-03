@@ -7,7 +7,7 @@ import '../../models/ai_character.dart';
 import '../../models/echo_item.dart';
 import '../../services/echo_image_storage_service.dart';
 import '../../services/echo_storage_service.dart';
-import '../../services/auto_echo_comment_service.dart';
+import '../../services/echo_social_interaction_service.dart';
 
 class EchoComposePage extends StatefulWidget {
   const EchoComposePage({
@@ -83,7 +83,10 @@ class _EchoComposePageState extends State<EchoComposePage> {
       );
       await EchoStorageService(characterId: widget.character.id).addItem(echo);
       try {
-        await AutoEchoCommentService().scheduleForEcho(echo, now: now);
+        await const EchoSocialInteractionService().generateForEcho(
+          echo,
+          now: now,
+        );
       } catch (_) {
         // 评论系统失败不能影响 Echo 本身发布。
       }

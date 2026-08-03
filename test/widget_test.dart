@@ -5,6 +5,6 @@ void main() {
   testWidgets('应用可以启动并显示主页', (WidgetTester tester) async {
     await tester.pumpWidget(const PeiJianCheApp());
     expect(find.text('裴简澈'), findsWidgets);
-    expect(find.text('进入聊天'), findsOneWidget);
+    expect(find.text('聊天'), findsOneWidget);
   });
 }

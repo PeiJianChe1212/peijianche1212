@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/chat_message.dart';
 import 'message_bubble.dart';
 import 'renderers/image_message_renderer.dart';
+import 'renderers/red_packet_message_renderer.dart';
 import 'renderers/text_message_renderer.dart';
 
 /// 聊天消息的统一渲染入口。
@@ -18,6 +19,8 @@ class MessageRenderer extends StatelessWidget {
     required this.userAvatar,
     this.onAssistantAvatarTap,
     this.onUserAvatarTap,
+    this.onRedPacketTap,
+    this.currentViewerId = 'user',
   });
 
   final ChatMessage message;
@@ -26,6 +29,8 @@ class MessageRenderer extends StatelessWidget {
   final Widget userAvatar;
   final VoidCallback? onAssistantAvatarTap;
   final VoidCallback? onUserAvatarTap;
+  final VoidCallback? onRedPacketTap;
+  final String currentViewerId;
 
   @override
   Widget build(BuildContext context) {
@@ -112,11 +117,31 @@ class MessageRenderer extends StatelessWidget {
   }
 
   Widget _buildMessageContent() {
+    if (message.isRecalled) {
+      return Text(
+        message.role == 'user' ? '你撤回了一条消息' : '对方撤回了一条消息',
+        style: const TextStyle(
+          color: Color(0xFF8A8A8A),
+          fontSize: 14,
+          height: 1.42,
+          fontWeight: FontWeight.w400,
+        ),
+      );
+    }
+
     switch (message.type) {
       case MessageType.text:
         return TextMessageRenderer(message: message);
       case MessageType.image:
         return ImageMessageRenderer(message: message);
+      case MessageType.redPacket:
+        final redPacket = message.redPacket;
+        if (redPacket == null) return TextMessageRenderer(message: message);
+        return RedPacketMessageRenderer(
+          data: redPacket,
+          currentViewerId: currentViewerId,
+          onTap: onRedPacketTap,
+        );
       case MessageType.voice:
       case MessageType.system:
       case MessageType.card:

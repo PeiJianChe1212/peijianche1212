@@ -23,11 +23,7 @@ class EchoCommentInteractionService {
     EchoComment? parentComment,
   }) async {
     try {
-      await _record(
-        echo: echo,
-        comment: comment,
-        parentComment: parentComment,
-      );
+      await _record(echo: echo, comment: comment, parentComment: parentComment);
     } catch (error) {
       // 关系写回永远不能反过来导致评论发布失败。
       debugPrint(
@@ -44,7 +40,8 @@ class EchoCommentInteractionService {
   }) async {
     if (comment.isDeleted ||
         comment.sourceType == EchoCommentSourceType.manualCharacterDebug ||
-        comment.authorType == EchoCommentAuthorType.system) {
+        comment.authorType == EchoCommentAuthorType.system ||
+        comment.authorType == EchoCommentAuthorType.world) {
       return;
     }
 
@@ -108,10 +105,7 @@ class EchoCommentInteractionService {
         'hasParentReply': parentComment != null,
       },
     );
-    await _storage.add(
-      interaction: interaction,
-      candidate: futureCandidate,
-    );
+    await _storage.add(interaction: interaction, candidate: futureCandidate);
     if (actorId != _userId && targetId != _userId) {
       await _writeRelationshipExperience(
         interaction: interaction,
@@ -145,10 +139,16 @@ class EchoCommentInteractionService {
       EchoCommentInteractionTone.invitation => 28,
       EchoCommentInteractionTone.neutral => 0,
     };
-    if (_containsAny(
-      echo.content,
-      ['第一次', '终于', '获奖', '夺冠', '完成', '毕业', '生日', '纪念日'],
-    )) {
+    if (_containsAny(echo.content, [
+      '第一次',
+      '终于',
+      '获奖',
+      '夺冠',
+      '完成',
+      '毕业',
+      '生日',
+      '纪念日',
+    ])) {
       score += 14;
     }
     return score.clamp(0, 100).toInt();
@@ -186,10 +186,7 @@ class EchoCommentInteractionService {
         comment.authorType != EchoCommentAuthorType.character ||
         actorId == _userId ||
         targetId == _userId ||
-        !_containsAny(
-          dialogueText,
-          ['下次', '一起', '带我', '约', '有空', '改天'],
-        )) {
+        !_containsAny(dialogueText, ['下次', '一起', '带我', '约', '有空', '改天'])) {
       return null;
     }
     final time = comment.createdAt;
@@ -225,8 +222,7 @@ class EchoCommentInteractionService {
       participantNames: [nameOf(actorId), nameOf(targetId)],
       type: switch (tone) {
         EchoCommentInteractionTone.support ||
-        EchoCommentInteractionTone.concern =>
-          SharedExperienceType.help,
+        EchoCommentInteractionTone.concern => SharedExperienceType.help,
         EchoCommentInteractionTone.celebration =>
           SharedExperienceType.celebration,
         _ => SharedExperienceType.conversation,
@@ -271,7 +267,7 @@ class EchoCommentInteractionService {
     return parent == null
         ? '在 Echo“${_short(echo.content)}”下$action：${_short(comment.content)}'
         : '围绕 Echo“${_short(echo.content)}”形成回复，$action：'
-            '${_short(parent.content)} / ${_short(comment.content)}';
+              '${_short(parent.content)} / ${_short(comment.content)}';
   }
 
   String _echoOwnerActorId(String ownerId) =>

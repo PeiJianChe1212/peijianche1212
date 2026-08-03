@@ -20,8 +20,8 @@ import 'shared_experience_storage_service.dart';
 /// 本服务只处理“是否评论、由谁评论、评论写什么”，不负责修改关系阶段。
 class RelationshipEchoCommentService {
   RelationshipEchoCommentService({http.Client? client})
-      : _client = client ?? http.Client(),
-        _ownsClient = client == null {
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null {
     _modelHub = ModelHub(client: _client);
   }
 
@@ -40,15 +40,18 @@ class RelationshipEchoCommentService {
   Future<EchoItem> tryAttachComment(EchoItem echo, {DateTime? now}) async {
     final time = now ?? DateTime.now();
     if (!echo.isFromSharedExperience) return echo;
-    if (echo.comments.any((item) =>
-        item.authorType == EchoCommentAuthorType.character &&
-        item.metadata['sourceSharedExperienceId'] ==
-            echo.sourceSharedExperienceId)) {
+    if (echo.comments.any(
+      (item) =>
+          item.authorType == EchoCommentAuthorType.character &&
+          item.metadata['sourceSharedExperienceId'] ==
+              echo.sourceSharedExperienceId,
+    )) {
       return echo;
     }
 
-    final experience =
-        await _experienceStorage.findById(echo.sourceSharedExperienceId);
+    final experience = await _experienceStorage.findById(
+      echo.sourceSharedExperienceId,
+    );
     if (experience == null ||
         !experience.containsParticipant(echo.characterId)) {
       return echo;
@@ -64,12 +67,16 @@ class RelationshipEchoCommentService {
     }).toList();
     if (candidates.isEmpty) return echo;
 
-    candidates.sort((a, b) =>
-        _stableScore(echo.id, a.id).compareTo(_stableScore(echo.id, b.id)));
+    candidates.sort(
+      (a, b) =>
+          _stableScore(echo.id, a.id).compareTo(_stableScore(echo.id, b.id)),
+    );
 
     for (final commenter in candidates) {
-      final relationship =
-          await _relationshipStorage.find(author.id, commenter.id);
+      final relationship = await _relationshipStorage.find(
+        author.id,
+        commenter.id,
+      );
       if (!_canCommentAtStage(relationship)) continue;
       if (!await _cooldownPassed(commenter.id, characters, time)) continue;
       if (!_passesChance(echo.id, commenter.id, relationship!.stage)) continue;
@@ -93,6 +100,7 @@ class RelationshipEchoCommentService {
         authorNameSnapshot: commenter.displayName,
         authorAvatarSnapshot: commenter.avatarPath,
         sourceType: EchoCommentSourceType.relationshipTriggered,
+        commentType: EchoCommentType.aiCharacter,
         relatedLifeEventId: echo.sourceLifeEventId,
         metadata: {'sourceSharedExperienceId': experience.id},
       );
@@ -164,7 +172,8 @@ class RelationshipEchoCommentService {
         messages: [
           {
             'role': 'system',
-            'content': '''
+            'content':
+                '''
 你是${commenter.displayName}，正在 PeiLink 的 Echo 评论区给${author.displayName}留一句评论。
 
 ${AiSocialProtocolService.compactRules}

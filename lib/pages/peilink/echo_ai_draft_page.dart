@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_character.dart';
@@ -10,7 +9,7 @@ import '../../services/character_scope_service.dart';
 import '../../services/character_settings_storage_service.dart';
 import '../../services/echo_generation_service.dart';
 import '../../services/echo_storage_service.dart';
-import '../../services/auto_echo_comment_service.dart';
+import '../../services/echo_social_interaction_service.dart';
 import '../../services/image_generation_service.dart';
 import '../../services/life_moment_storage_service.dart';
 import '../../services/life_event_pool_service.dart';
@@ -72,10 +71,7 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
     } catch (error, stackTrace) {
       debugPrint('================ Echo Draft Generate Error ================');
       debugPrint('[EchoDraft] 生成失败：$error');
-      debugPrintStack(
-        stackTrace: stackTrace,
-        label: '[EchoDraft] 异常堆栈',
-      );
+      debugPrintStack(stackTrace: stackTrace, label: '[EchoDraft] 异常堆栈');
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: error,
@@ -96,9 +92,12 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
   void _applyDraft(EchoDraft draft) {
     setState(() {
       _controller.text = draft.content;
-      _controller.selection = TextSelection.collapsed(offset: draft.content.length);
+      _controller.selection = TextSelection.collapsed(
+        offset: draft.content.length,
+      );
       _momentSummary = draft.momentSummary;
-      _imageRecommended = draft.shouldAttachImage && draft.imageScene.isNotEmpty;
+      _imageRecommended =
+          draft.shouldAttachImage && draft.imageScene.isNotEmpty;
       _imageScene = draft.imageScene;
       _generating = false;
     });
@@ -114,8 +113,11 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
 
     setState(() => _generatingImage = true);
     try {
-      final settings = await CharacterSettingsStorageService(characterId: widget.character.id).loadSettings();
-      final visualStyle = '''
+      final settings = await CharacterSettingsStorageService(
+        characterId: widget.character.id,
+      ).loadSettings();
+      final visualStyle =
+          '''
 ${settings.characterName}的生活摄影风格应来自人物设定：${settings.introduction}
 整体像本人用手机随手拍，真实、自然、不过度精修。不要海报感，不要文字排版，不要默认出现完整人物正脸。
 ''';
@@ -124,7 +126,9 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
         visualStyle: visualStyle,
         purpose: 'Echo 单张生活配图',
       );
-      final characterDirectory = await CharacterScopeService(widget.character.id).characterDirectory();
+      final characterDirectory = await CharacterScopeService(
+        widget.character.id,
+      ).characterDirectory();
       final target = Directory('${characterDirectory.path}/echo_images');
       final path = await _imageGenerationService.generateAndSave(
         prompt: prompt,
@@ -166,7 +170,10 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
       );
       await EchoStorageService(characterId: widget.character.id).addItem(echo);
       try {
-        await AutoEchoCommentService().scheduleForEcho(echo, now: now);
+        await const EchoSocialInteractionService().generateForEcho(
+          echo,
+          now: now,
+        );
       } catch (_) {
         // 评论系统失败不能影响 Echo 本身发布。
       }
@@ -207,14 +214,26 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
       appBar: AppBar(
         backgroundColor: const Color(0xFFF5F4F1),
         surfaceTintColor: Colors.transparent,
-        title: const Text('Echo 草稿', style: TextStyle(fontWeight: FontWeight.w600)),
+        title: const Text(
+          'Echo 草稿',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
         centerTitle: true,
         actions: [
           TextButton(
-            onPressed: _generating || _generatingImage || _publishing ? null : _publish,
+            onPressed: _generating || _generatingImage || _publishing
+                ? null
+                : _publish,
             child: _publishing
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('发布', style: TextStyle(fontWeight: FontWeight.w600)),
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(
+                    '发布',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
           ),
           const SizedBox(width: 6),
         ],
@@ -223,20 +242,38 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
           children: [
-            Text('${widget.character.characterName}遇到了一个想分享的瞬间', style: const TextStyle(color: Color(0xFF777777), fontSize: 13)),
+            Text(
+              '${widget.character.characterName}遇到了一个想分享的瞬间',
+              style: const TextStyle(color: Color(0xFF777777), fontSize: 13),
+            ),
             const SizedBox(height: 12),
             Container(
               constraints: const BoxConstraints(minHeight: 220),
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+              ),
               child: _buildDraftArea(),
             ),
-            if (!_generating && _errorText.isEmpty && _momentSummary.isNotEmpty) ...[
+            if (!_generating &&
+                _errorText.isEmpty &&
+                _momentSummary.isNotEmpty) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(color: const Color(0xFFEFEDE8), borderRadius: BorderRadius.circular(14)),
-                child: Text('这一刻值得发：$_momentSummary', style: const TextStyle(color: Color(0xFF666666), fontSize: 12, height: 1.5)),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFEDE8),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  '这一刻值得发：$_momentSummary',
+                  style: const TextStyle(
+                    color: Color(0xFF666666),
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
               ),
             ],
             if (!_generating && _errorText.isEmpty) ...[
@@ -247,11 +284,23 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
                 onPressed: _publishing ? null : _generate,
                 icon: const Icon(Icons.auto_awesome_outlined),
                 label: const Text('换一个瞬间'),
-                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
               ),
             ],
             const SizedBox(height: 14),
-            const Text('当前仍是草稿模式。先确认“值得分享的瞬间”和单张配图是否自然，再进入自动发布。', style: TextStyle(color: Color(0xFF999999), fontSize: 12, height: 1.5)),
+            const Text(
+              '当前仍是草稿模式。先确认“值得分享的瞬间”和单张配图是否自然，再进入自动发布。',
+              style: TextStyle(
+                color: Color(0xFF999999),
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
           ],
         ),
       ),
@@ -260,23 +309,51 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
 
   Widget _buildDraftArea() {
     if (_generating) {
-      return const Column(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(height: 34), CircularProgressIndicator(), SizedBox(height: 18), Text('正在从生活里挑一个值得分享的瞬间…', style: TextStyle(color: Color(0xFF777777))), SizedBox(height: 34)]);
+      return const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(height: 34),
+          CircularProgressIndicator(),
+          SizedBox(height: 18),
+          Text('正在从生活里挑一个值得分享的瞬间…', style: TextStyle(color: Color(0xFF777777))),
+          SizedBox(height: 34),
+        ],
+      );
     }
     if (_errorText.isNotEmpty) {
-      return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        const Icon(Icons.cloud_off_outlined, size: 42, color: Color(0xFF999999)),
-        const SizedBox(height: 12),
-        Text(_errorText, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF777777))),
-        const SizedBox(height: 16),
-        FilledButton.tonalIcon(onPressed: _generate, icon: const Icon(Icons.refresh_rounded), label: const Text('重新生成')),
-      ]);
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.cloud_off_outlined,
+            size: 42,
+            color: Color(0xFF999999),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _errorText,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFF777777)),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.tonalIcon(
+            onPressed: _generate,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('重新生成'),
+          ),
+        ],
+      );
     }
     return TextField(
       controller: _controller,
       minLines: 7,
       maxLines: 15,
       maxLength: 1200,
-      decoration: const InputDecoration(border: InputBorder.none, hintText: 'Echo 正文', counterText: ''),
+      decoration: const InputDecoration(
+        border: InputBorder.none,
+        hintText: 'Echo 正文',
+        counterText: '',
+      ),
     );
   }
 
@@ -284,41 +361,95 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
     if (_imagePath.isNotEmpty) {
       return Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.file(File(_imagePath), fit: BoxFit.cover)),
-          const SizedBox(height: 10),
-          Row(children: [
-            Expanded(child: OutlinedButton.icon(onPressed: _generatingImage ? null : _generateImage, icon: const Icon(Icons.refresh_rounded), label: const Text('重新生成'))),
-            const SizedBox(width: 10),
-            Expanded(child: TextButton.icon(onPressed: _removeImage, icon: const Icon(Icons.delete_outline), label: const Text('取消图片'))),
-          ]),
-        ]),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.file(File(_imagePath), fit: BoxFit.cover),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _generatingImage ? null : _generateImage,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('重新生成'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: _removeImage,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('取消图片'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       );
     }
 
     return Container(
       padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(_imageRecommended ? Icons.photo_camera_outlined : Icons.notes_rounded, color: const Color(0xFF777777)),
-          const SizedBox(width: 9),
-          Expanded(child: Text(_imageRecommended ? '这个瞬间适合配一张生活照' : '这个瞬间更适合纯文字', style: const TextStyle(fontWeight: FontWeight.w600))),
-        ]),
-        if (_imageScene.isNotEmpty) ...[
-          const SizedBox(height: 9),
-          Text(_imageScene, style: const TextStyle(color: Color(0xFF777777), fontSize: 12, height: 1.5)),
-        ],
-        if (_imageRecommended) ...[
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _generatingImage ? null : _generateImage,
-            icon: _generatingImage ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.image_outlined),
-            label: Text(_generatingImage ? '正在生成生活照…' : '生成单张配图'),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _imageRecommended
+                    ? Icons.photo_camera_outlined
+                    : Icons.notes_rounded,
+                color: const Color(0xFF777777),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  _imageRecommended ? '这个瞬间适合配一张生活照' : '这个瞬间更适合纯文字',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
           ),
+          if (_imageScene.isNotEmpty) ...[
+            const SizedBox(height: 9),
+            Text(
+              _imageScene,
+              style: const TextStyle(
+                color: Color(0xFF777777),
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ],
+          if (_imageRecommended) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _generatingImage ? null : _generateImage,
+              icon: _generatingImage
+                  ? const SizedBox(
+                      width: 17,
+                      height: 17,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.image_outlined),
+              label: Text(_generatingImage ? '正在生成生活照…' : '生成单张配图'),
+            ),
+          ],
         ],
-      ]),
+      ),
     );
   }
 }

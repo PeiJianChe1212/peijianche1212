@@ -144,26 +144,26 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _conversations.isEmpty && _groups.isEmpty
-                      ? const Center(child: Text('还没有聊天，点右上角“+”开始吧'))
-                      : RefreshIndicator(
-                          onRefresh: _loadConversationPreviews,
-                          child: ListView(
-                            padding: EdgeInsets.zero,
-                            children: [
-                              for (final group in _groups)
-                                _GroupConversationTile(
-                                  group: group,
-                                  charactersById: _charactersById,
-                                  onTap: () => _openGroup(group),
-                                ),
-                              for (final preview in _conversations)
-                                _ConversationTile(
-                                  preview: preview,
-                                  onTap: () => _openChat(preview),
-                                ),
-                            ],
-                          ),
-                        ),
+                  ? const Center(child: Text('还没有聊天，点右上角“+”开始吧'))
+                  : RefreshIndicator(
+                      onRefresh: _loadConversationPreviews,
+                      child: ListView(
+                        padding: EdgeInsets.zero,
+                        children: [
+                          for (final group in _groups)
+                            _GroupConversationTile(
+                              group: group,
+                              charactersById: _charactersById,
+                              onTap: () => _openGroup(group),
+                            ),
+                          for (final preview in _conversations)
+                            _ConversationTile(
+                              preview: preview,
+                              onTap: () => _openChat(preview),
+                            ),
+                        ],
+                      ),
+                    ),
             ),
           ),
         ],
@@ -194,6 +194,8 @@ class _ConversationPreview {
     switch (message.type) {
       case MessageType.image:
         return '[图片]';
+      case MessageType.redPacket:
+        return '[消息]';
       case MessageType.voice:
         return '[语音]';
       case MessageType.system:
@@ -235,10 +237,7 @@ class _ConversationPreview {
 }
 
 class _ConversationTile extends StatelessWidget {
-  const _ConversationTile({
-    required this.preview,
-    required this.onTap,
-  });
+  const _ConversationTile({required this.preview, required this.onTap});
 
   final _ConversationPreview preview;
   final VoidCallback onTap;
@@ -358,12 +357,7 @@ class _CharacterAvatar extends StatelessWidget {
     if (path.isNotEmpty && File(path).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(7),
-        child: Image.file(
-          File(path),
-          width: 54,
-          height: 54,
-          fit: BoxFit.cover,
-        ),
+        child: Image.file(File(path), width: 54, height: 54, fit: BoxFit.cover),
       );
     }
 
@@ -380,7 +374,6 @@ class _CharacterAvatar extends StatelessWidget {
       );
     }
 
-
     return Container(
       width: 54,
       height: 54,
@@ -388,14 +381,10 @@ class _CharacterAvatar extends StatelessWidget {
         color: const Color(0xFFE5EBEE),
         borderRadius: BorderRadius.circular(7),
       ),
-      child: const Icon(
-        Icons.auto_awesome_rounded,
-        color: Color(0xFF647C8B),
-      ),
+      child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF647C8B)),
     );
   }
 }
-
 
 class _GroupConversationTile extends StatelessWidget {
   const _GroupConversationTile({
@@ -412,9 +401,8 @@ class _GroupConversationTile extends StatelessWidget {
     final time = group.lastMessageAt;
     if (time == null) return '';
     final now = DateTime.now();
-    final isToday = time.year == now.year &&
-        time.month == now.month &&
-        time.day == now.day;
+    final isToday =
+        time.year == now.year && time.month == now.month && time.day == now.day;
     if (isToday) {
       return '${time.hour.toString().padLeft(2, '0')}:'
           '${time.minute.toString().padLeft(2, '0')}';

@@ -15,10 +15,13 @@ class RelationshipMemoryStorageService {
 
   Future<List<RelationshipMemory>> loadAll() async {
     final file = await _file();
-    if (!await file.exists()) return const [];
+    // Callers update the loaded collection before persisting it again. Keep the
+    // empty/error paths growable too, so the return contract is consistent
+    // with the successfully decoded path (`toList()`).
+    if (!await file.exists()) return <RelationshipMemory>[];
     try {
       final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! List) return const [];
+      if (decoded is! List) return <RelationshipMemory>[];
       return decoded
           .whereType<Map>()
           .map(RelationshipMemory.fromJson)
@@ -28,7 +31,7 @@ class RelationshipMemoryStorageService {
               item.characterIdA != item.characterIdB)
           .toList();
     } catch (_) {
-      return const [];
+      return <RelationshipMemory>[];
     }
   }
 

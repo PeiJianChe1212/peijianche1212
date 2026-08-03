@@ -30,6 +30,8 @@ import 'peilink/character_detail_page.dart';
 import '../widgets/chat/chat_input_bar.dart';
 import '../widgets/chat/chat_more_panel.dart';
 import '../widgets/chat/message_renderer.dart';
+import '../widgets/chat/red_packet_send_dialog.dart';
+import '../widgets/chat/renderers/red_packet_message_renderer.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -217,9 +219,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         !message.content.contains('建立羁绊')) {
       return message;
     }
-    return message.copyWith(
-      content: '你已与$_activeDisplayName建立羁绊，开始聊天吧。',
-    );
+    return message.copyWith(content: '你已与$_activeDisplayName建立羁绊，开始聊天吧。');
   }
 
   Future<void> _saveMessages() async {
@@ -525,13 +525,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _openCharacterSettings() async {
-    await Navigator.of(
-      context,
-    ).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => CharacterManagementPage(
-          characterId: _activeCharacter.id,
-        ),
+        builder: (_) =>
+            CharacterManagementPage(characterId: _activeCharacter.id),
       ),
     );
     await _loadChatSettings();
@@ -547,14 +544,34 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       isScrollControlled: true,
       builder: (sheetContext) => ChatMorePanel(
         onPickImage: _pickAndSendImage,
+        onRedPacket: _showRedPacketSendDialog,
         onUnavailable: (feature) => _showSnack('$feature功能敬请期待'),
       ),
     );
   }
 
+  Future<void> _showRedPacketSendDialog() async {
+    if (_isLoading || !mounted) return;
+    final draft = await showDialog<RedPacketDraft>(
+      context: context,
+      builder: (_) => const RedPacketSendDialog(),
+    );
+    if (draft == null || !mounted) return;
+
+    _hideActivitySubtitle();
+    final message = buildRedPacketMessage(
+      draft,
+      receiverId: _activeCharacter.id,
+    );
+    setState(() => _messages.add(message));
+    await _saveMessages();
+    _scrollToBottom();
+  }
+
   Future<void> _showMessageActions(int index) async {
     if (_isLoading || index < 0 || index >= _messages.length) return;
     final message = _messages[index];
+    if (message.isRecalled) return;
     HapticFeedback.selectionClick();
 
     final action = await showModalBottomSheet<String>(
@@ -570,6 +587,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 title: const Text('复制'),
                 onTap: () => Navigator.pop(sheetContext, 'copy'),
               ),
+              if (message.role == 'user')
+                ListTile(
+                  leading: const Icon(Icons.undo_rounded),
+                  title: const Text('撤回'),
+                  onTap: () => Navigator.pop(sheetContext, 'recall'),
+                ),
               if (message.role == 'assistant')
                 ListTile(
                   leading: const Icon(Icons.refresh_rounded),
@@ -607,6 +630,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         await Clipboard.setData(ClipboardData(text: message.content));
         _showSnack('已复制');
         break;
+      case 'recall':
+        await _recallMessage(message.id);
+        break;
       case 'regenerate':
         await _regenerateFrom(index);
         break;
@@ -617,6 +643,99 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         await _toggleFavorite(index);
         break;
     }
+  }
+
+  Future<void> _recallMessage(String messageId) async {
+    try {
+      final recalled = await _chatStorage.recallMessage(messageId);
+      if (!recalled || !mounted) {
+        if (mounted) _showSnack('消息撤回失败');
+        return;
+      }
+
+      final index = _messages.indexWhere((message) => message.id == messageId);
+      if (index < 0) return;
+      setState(() {
+        _messages[index] = _messages[index].copyWith(
+          messageStatus: MessageStatus.recalled,
+        );
+      });
+    } catch (error) {
+      debugPrint('撤回消息失败：$error');
+      _showSnack('消息撤回失败');
+    }
+  }
+
+  Future<void> _openRedPacket(String messageId) async {
+    final index = _messages.indexWhere((message) => message.id == messageId);
+    if (index < 0) return;
+    final existing = _messages[index].redPacket;
+    if (existing == null) return;
+
+    const currentUserId = 'user';
+    if (currentUserId == existing.senderId) {
+      await _showOwnRedPacketNotice();
+      return;
+    }
+    if (currentUserId != existing.receiverId) {
+      _showSnack('你不能领取这个红包');
+      return;
+    }
+
+    try {
+      final updatedMessage = existing.isOpened
+          ? _messages[index]
+          : await _chatStorage.openRedPacket(
+              messageId,
+              currentUserId: currentUserId,
+            );
+      if (updatedMessage == null || !mounted) {
+        if (mounted) _showSnack('红包打开失败');
+        return;
+      }
+
+      final updatedPacket = updatedMessage.redPacket;
+      if (updatedPacket == null) return;
+      final currentIndex = _messages.indexWhere(
+        (message) => message.id == messageId,
+      );
+      if (currentIndex >= 0 && !existing.isOpened) {
+        setState(() => _messages[currentIndex] = updatedMessage);
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (_) => RedPacketOpenedDialog(
+          data: updatedPacket,
+          senderName: _redPacketSenderName(updatedPacket.senderId),
+        ),
+      );
+    } catch (error) {
+      debugPrint('打开红包失败：$error');
+      _showSnack('红包打开失败');
+    }
+  }
+
+  Future<void> _showOwnRedPacketNotice() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('这是你发出的红包'),
+        content: const Text('等待对方领取'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _redPacketSenderName(String senderId) {
+    if (senderId == _activeCharacter.id) return _activeDisplayName;
+    if (senderId == 'user') return '你';
+    final normalized = senderId.trim();
+    return normalized.isEmpty ? '对方' : normalized;
   }
 
   Future<void> _regenerateFrom(int index) async {
@@ -918,6 +1037,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         assistantAvatar: _buildAvatar(isUser: false),
                         userAvatar: _buildAvatar(isUser: true),
                         onAssistantAvatarTap: _openActiveCharacterDetail,
+                        onRedPacketTap: () =>
+                            _openRedPacket(_messages[index].id),
+                        currentViewerId: 'user',
                       ),
                     ),
             ),

@@ -1,6 +1,13 @@
 import '../models/character_settings.dart';
 import '../models/user_profile.dart';
 import '../prompts/relationship_prompt.dart';
+import '../context_builder/character_context.dart';
+import '../context_builder/context_build_result.dart';
+import '../context_builder/conversation_context.dart';
+import '../context_builder/memory_context.dart';
+import '../context_builder/relationship_context.dart';
+import '../context_builder/response_strategy_context.dart';
+import '../models/chat_message.dart';
 
 enum ContextTask {
   chat,
@@ -97,6 +104,54 @@ class ContextBuilder {
   }
 
   static void clearCache() => _stableCache.clear();
+
+  /// 单聊模型请求的统一入口。
+  ///
+  /// 保持 v1 的 Prompt 内容与顺序，只把原先散落的拼接收口到五层上下文。
+  static ContextBuildResult buildChatRequest({
+    required CharacterContext character,
+    required RelationshipContext relationship,
+    required MemoryContext memory,
+    required ConversationContext conversation,
+    required ResponseStrategyContext responseStrategy,
+    required String Function(ChatMessage message) messageContent,
+  }) {
+    final stablePrompt = build(
+      task: ContextTask.chat,
+      settings: character.settings,
+      userProfile: character.userProfile,
+      styleExamples: character.styleExamples,
+    );
+    final relationshipPrompt = relationship.buildPromptSection();
+    final dynamicSections = <String>[
+      responseStrategy.dynamicPrompt,
+      relationshipPrompt,
+      responseStrategy.mediaRules,
+    ].where((value) => value.trim().isNotEmpty).join('\n\n');
+    final systemPrompt = '$stablePrompt\n\n$dynamicSections';
+    final requestMessages = <Map<String, dynamic>>[
+      {'role': 'system', 'content': systemPrompt},
+      ...conversation.recentMessages.map<Map<String, dynamic>>(
+        (message) => <String, dynamic>{
+          'role': message.role,
+          'content': messageContent(message),
+        },
+      ),
+    ];
+
+    // 不输出 Prompt 正文，避免角色设定和用户记忆进入日志。
+    // ignore: avoid_print
+    print(
+      '[ContextBuilder] chat request built: '
+      'character=${character.settings.characterName}, '
+      'memory=${memory.confirmedMemory.trim().isNotEmpty}, '
+      'conversationMessages=${conversation.recentMessages.length}',
+    );
+    return ContextBuildResult(
+      messages: requestMessages,
+      systemPrompt: systemPrompt,
+    );
+  }
 
   static String _stableContext({
     required ContextProfile profile,
