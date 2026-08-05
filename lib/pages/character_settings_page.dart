@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../conversation/conversation_engine.dart';
 import '../models/character_settings.dart';
 import '../services/character_settings_storage_service.dart';
-import '../services/memory_storage_service.dart';
-import '../services/prompt_builder.dart';
-import '../services/user_profile_storage_service.dart';
-import 'memory_page.dart';
+
+enum CharacterSettingsSection { persona, interaction }
 
 class CharacterSettingsPage extends StatefulWidget {
-  const CharacterSettingsPage({super.key});
+  const CharacterSettingsPage({super.key, required this.section});
+
+  final CharacterSettingsSection section;
 
   @override
   State<CharacterSettingsPage> createState() => _CharacterSettingsPageState();
@@ -17,8 +16,6 @@ class CharacterSettingsPage extends StatefulWidget {
 
 class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
   final _storage = CharacterSettingsStorageService();
-  final _profileStorage = UserProfileStorageService();
-  final _memoryStorage = MemoryStorageService();
 
   final _callNameController = TextEditingController();
   final _coreController = TextEditingController();
@@ -130,9 +127,9 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
         settings.coreProfile.isEmpty ||
         settings.behaviorStyle.isEmpty ||
         settings.forbiddenRules.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('对你的称呼、核心人设、行为规则和禁止事项不能为空')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('对你的称呼、核心人设、行为规则和禁止事项不能为空')));
       return;
     }
 
@@ -253,81 +250,6 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
     setState(() {});
   }
 
-  Future<void> _previewPrompt() async {
-    final profile = await _profileStorage.loadProfile();
-    final memoryPrompt = await _memoryStorage.buildPromptSection();
-    final settings = _currentSettings();
-
-    final conversationEngine = ConversationEngine.build(
-      messages: const [],
-      conversationMode: settings.conversationMode,
-    );
-
-    final preview = PromptBuilder.buildSystemPrompt(
-      characterSettings: settings,
-      userProfile: profile,
-      timeContext: '【当前时间】\n预览模式：实际聊天时会自动写入当前日期和时段。',
-      conversationEnginePrompt: conversationEngine.prompt,
-      personalityPrompt:
-          '【当前人格调节】\n主动程度 ${settings.initiative.toStringAsFixed(2)}，亲密表达 ${settings.intimacy.toStringAsFixed(2)}，嘴硬程度 ${settings.tsundere.toStringAsFixed(2)}。',
-      replyLengthPrompt: '当前回复长度：${settings.replyLength}',
-      memoryPrompt: memoryPrompt,
-    );
-
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height * 0.86,
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Row(
-                  children: [
-                    Icon(Icons.visibility_outlined),
-                    SizedBox(width: 10),
-                    Text(
-                      '最终 Prompt 预览',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Text(
-                  '这是当前角色设定、相处模式、用户资料和记忆拼接后的预览。',
-                  style: TextStyle(color: Colors.black54, height: 1.4),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF4F5F7),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      preview,
-                      style: const TextStyle(fontSize: 14, height: 1.55),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _sectionTitle(String title) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
     child: Text(
@@ -362,7 +284,10 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
                 const SizedBox(width: 10),
                 Text(
                   title,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
@@ -421,8 +346,14 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(lowLabel, style: const TextStyle(fontSize: 12, color: Colors.black45)),
-                  Text(highLabel, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+                  Text(
+                    lowLabel,
+                    style: const TextStyle(fontSize: 12, color: Colors.black45),
+                  ),
+                  Text(
+                    highLabel,
+                    style: const TextStyle(fontSize: 12, color: Colors.black45),
+                  ),
                 ],
               ),
             ],
@@ -438,15 +369,12 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('角色设置'),
+        title: Text(
+          widget.section == CharacterSettingsSection.persona ? '人设' : '相处方式',
+        ),
         backgroundColor: Colors.blue.shade100,
         surfaceTintColor: Colors.transparent,
         actions: [
-          IconButton(
-            tooltip: '预览最终 Prompt',
-            onPressed: _loading ? null : _previewPrompt,
-            icon: const Icon(Icons.visibility_outlined),
-          ),
           TextButton(
             onPressed: _loading || _saving ? null : _save,
             child: _saving
@@ -455,7 +383,10 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('保存', style: TextStyle(fontWeight: FontWeight.bold)),
+                : const Text(
+                    '保存',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
           ),
           const SizedBox(width: 4),
         ],
@@ -476,204 +407,200 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> {
                     style: const TextStyle(height: 1.5),
                   ),
                 ),
-                _sectionTitle('角色与关系'),
-                _editorCard(
-                  icon: Icons.alternate_email_rounded,
-                  title: '他对你的称呼',
-                  description: '这个称呼只属于当前角色，不会影响其他 AI。',
-                  controller: _callNameController,
-                  minLines: 1,
-                  maxLines: 1,
-                  helper: '例如：念念、老婆、小狐狸',
-                ),
-                _sectionTitle('相处方式'),
-                Card(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.tune_rounded),
-                        title: const Text('相处模式'),
-                        subtitle: Text(
-                          '${_modeTitles[_conversationMode]} · ${_modeDescriptions[_conversationMode]}',
-                        ),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: _showModeDialog,
-                      ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                      _sliderTile(
-                        icon: Icons.auto_awesome_outlined,
-                        title: '自由发挥',
-                        description: '越高越灵活，越低越稳定。建议保持在 0.68～0.78。',
-                        value: _temperature,
-                        onChanged: (value) => setState(() => _temperature = value),
-                        lowLabel: '更稳定',
-                        highLabel: '更灵活',
-                      ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                      _sliderTile(
-                        icon: Icons.forum_outlined,
-                        title: '主动程度',
-                        description: '控制他延续话题、追问细节和主动开启后续内容的程度。',
-                        value: _initiative,
-                        onChanged: (value) => setState(() => _initiative = value),
-                        lowLabel: '等你开口',
-                        highLabel: '主动接话',
-                      ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                      _sliderTile(
-                        icon: Icons.favorite_border_rounded,
-                        title: '亲密表达',
-                        description: '控制亲近感的表达频率，不等于反复亲亲抱抱。',
-                        value: _intimacy,
-                        onChanged: (value) => setState(() => _intimacy = value),
-                        lowLabel: '克制含蓄',
-                        highLabel: '明显亲近',
-                      ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                      _sliderTile(
-                        icon: Icons.sentiment_satisfied_alt_outlined,
-                        title: '嘴硬程度',
-                        description: '控制反问、轻微吃醋和嘴硬掩饰真实情绪的频率。',
-                        value: _tsundere,
-                        onChanged: (value) => setState(() => _tsundere = value),
-                        lowLabel: '坦率直接',
-                        highLabel: '嘴硬爱逗',
-                      ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(Icons.subject_outlined),
-                                SizedBox(width: 10),
-                                Text('回复长度', style: TextStyle(fontSize: 16)),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            SegmentedButton<String>(
-                              segments: _lengthTitles.entries
-                                  .map(
-                                    (entry) => ButtonSegment<String>(
-                                      value: entry.key,
-                                      label: Text(entry.value),
-                                    ),
-                                  )
-                                  .toList(),
-                              selected: {_replyLength},
-                              onSelectionChanged: (selection) {
-                                setState(() => _replyLength = selection.first);
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _sectionTitle('主动联系'),
-                Card(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  child: Column(
-                    children: [
-                      SwitchListTile(
-                        secondary: const Icon(Icons.notifications_active_outlined),
-                        title: const Text('允许主动联系'),
-                        subtitle: const Text('关闭后，当前角色不会主动发起新消息。'),
-                        value: _proactiveEnabled,
-                        onChanged: (value) => setState(() => _proactiveEnabled = value),
-                      ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                      SwitchListTile(
-                        secondary: const Icon(Icons.nightlight_outlined),
-                        title: const Text('允许深夜消息'),
-                        subtitle: const Text('关闭后，深夜时段不会主动打扰你。'),
-                        value: _lateNightMessages,
-                        onChanged: _proactiveEnabled
-                            ? (value) => setState(() => _lateNightMessages = value)
-                            : null,
-                      ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                      ListTile(
-                        leading: const Icon(Icons.mark_chat_unread_outlined),
-                        title: const Text('每天最多主动联系'),
-                        subtitle: Text('$_maxProactivePerDay 次'),
-                        trailing: DropdownButton<int>(
-                          value: _maxProactivePerDay,
-                          underline: const SizedBox.shrink(),
-                          items: List.generate(
-                            5,
-                            (index) => DropdownMenuItem<int>(
-                              value: index,
-                              child: Text('$index 次'),
-                            ),
+                if (widget.section == CharacterSettingsSection.interaction)
+                  _sectionTitle('相处方式'),
+                if (widget.section == CharacterSettingsSection.interaction)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.tune_rounded),
+                          title: const Text('相处模式'),
+                          subtitle: Text(
+                            '${_modeTitles[_conversationMode]} · ${_modeDescriptions[_conversationMode]}',
                           ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: _showModeDialog,
+                        ),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        _sliderTile(
+                          icon: Icons.auto_awesome_outlined,
+                          title: '自由发挥',
+                          description: '越高越灵活，越低越稳定。建议保持在 0.68～0.78。',
+                          value: _temperature,
+                          onChanged: (value) =>
+                              setState(() => _temperature = value),
+                          lowLabel: '更稳定',
+                          highLabel: '更灵活',
+                        ),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        _sliderTile(
+                          icon: Icons.forum_outlined,
+                          title: '主动程度',
+                          description: '控制他延续话题、追问细节和主动开启后续内容的程度。',
+                          value: _initiative,
+                          onChanged: (value) =>
+                              setState(() => _initiative = value),
+                          lowLabel: '等你开口',
+                          highLabel: '主动接话',
+                        ),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        _sliderTile(
+                          icon: Icons.favorite_border_rounded,
+                          title: '亲密表达',
+                          description: '控制亲近感的表达频率，不等于反复亲亲抱抱。',
+                          value: _intimacy,
+                          onChanged: (value) =>
+                              setState(() => _intimacy = value),
+                          lowLabel: '克制含蓄',
+                          highLabel: '明显亲近',
+                        ),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        _sliderTile(
+                          icon: Icons.sentiment_satisfied_alt_outlined,
+                          title: '嘴硬程度',
+                          description: '控制反问、轻微吃醋和嘴硬掩饰真实情绪的频率。',
+                          value: _tsundere,
+                          onChanged: (value) =>
+                              setState(() => _tsundere = value),
+                          lowLabel: '坦率直接',
+                          highLabel: '嘴硬爱逗',
+                        ),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.subject_outlined),
+                                  SizedBox(width: 10),
+                                  Text('回复长度', style: TextStyle(fontSize: 16)),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              SegmentedButton<String>(
+                                segments: _lengthTitles.entries
+                                    .map(
+                                      (entry) => ButtonSegment<String>(
+                                        value: entry.key,
+                                        label: Text(entry.value),
+                                      ),
+                                    )
+                                    .toList(),
+                                selected: {_replyLength},
+                                onSelectionChanged: (selection) {
+                                  setState(
+                                    () => _replyLength = selection.first,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (widget.section == CharacterSettingsSection.interaction)
+                  _sectionTitle('主动联系'),
+                if (widget.section == CharacterSettingsSection.interaction)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    child: Column(
+                      children: [
+                        SwitchListTile(
+                          secondary: const Icon(
+                            Icons.notifications_active_outlined,
+                          ),
+                          title: const Text('允许主动联系'),
+                          subtitle: const Text('关闭后，当前角色不会主动发起新消息。'),
+                          value: _proactiveEnabled,
+                          onChanged: (value) =>
+                              setState(() => _proactiveEnabled = value),
+                        ),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.nightlight_outlined),
+                          title: const Text('允许深夜消息'),
+                          subtitle: const Text('关闭后，深夜时段不会主动打扰你。'),
+                          value: _lateNightMessages,
                           onChanged: _proactiveEnabled
-                              ? (value) {
-                                  if (value != null) {
-                                    setState(() => _maxProactivePerDay = value);
-                                  }
-                                }
+                              ? (value) =>
+                                    setState(() => _lateNightMessages = value)
                               : null,
                         ),
-                      ),
-                    ],
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        ListTile(
+                          leading: const Icon(Icons.mark_chat_unread_outlined),
+                          title: const Text('每天最多主动联系'),
+                          subtitle: Text('$_maxProactivePerDay 次'),
+                          trailing: DropdownButton<int>(
+                            value: _maxProactivePerDay,
+                            underline: const SizedBox.shrink(),
+                            items: List.generate(
+                              5,
+                              (index) => DropdownMenuItem<int>(
+                                value: index,
+                                child: Text('$index 次'),
+                              ),
+                            ),
+                            onChanged: _proactiveEnabled
+                                ? (value) {
+                                    if (value != null) {
+                                      setState(
+                                        () => _maxProactivePerDay = value,
+                                      );
+                                    }
+                                  }
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                _sectionTitle('Memory'),
-                Card(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  child: ListTile(
-                    leading: const Icon(Icons.psychology_alt_outlined),
-                    title: Text('${settings.characterName}的 Memory'),
-                    subtitle: const Text('长期记忆、待审核记忆与记忆管理'),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const MemoryPage()),
-                      );
-                    },
+                if (widget.section == CharacterSettingsSection.persona)
+                  _sectionTitle('人设'),
+                if (widget.section == CharacterSettingsSection.persona)
+                  _editorCard(
+                    icon: Icons.badge_outlined,
+                    title: '核心人设',
+                    description: '身份、性格、关系中的稳定底色。尽量写长期不变的内容。',
+                    controller: _coreController,
+                    minLines: 8,
+                    maxLines: 18,
                   ),
-                ),
-                _sectionTitle('人设'),
-                _editorCard(
-                  icon: Icons.badge_outlined,
-                  title: '核心人设',
-                  description: '身份、性格、关系中的稳定底色。尽量写长期不变的内容。',
-                  controller: _coreController,
-                  minLines: 8,
-                  maxLines: 18,
-                ),
-                _editorCard(
-                  icon: Icons.record_voice_over_outlined,
-                  title: '说话与行为规则',
-                  description: '决定他如何接话、安慰、吃醋、开玩笑，以及回复节奏。',
-                  controller: _behaviorController,
-                  minLines: 8,
-                  maxLines: 18,
-                ),
-                _editorCard(
-                  icon: Icons.block_outlined,
-                  title: '禁止事项',
-                  description: '把最容易串味、油腻、模板化或让你不舒服的表达写在这里。',
-                  controller: _forbiddenController,
-                  minLines: 7,
-                  maxLines: 16,
-                ),
-                _editorCard(
-                  icon: Icons.chat_outlined,
-                  title: '示例对话',
-                  description:
-                      '每行使用“${settings.userCallName}：……”或“${settings.characterName}：……”。示例越自然，越容易稳定口吻。',
-                  controller: _examplesController,
-                  minLines: 12,
-                  maxLines: 24,
-                  helper:
-                      '例如：\n${settings.userCallName}：你今天心情怎么样？\n${settings.characterName}：还行。你怎么突然问这个？',
-                ),
+                if (widget.section == CharacterSettingsSection.persona)
+                  _editorCard(
+                    icon: Icons.record_voice_over_outlined,
+                    title: '说话与行为规则',
+                    description: '决定他如何接话、安慰、吃醋、开玩笑，以及回复节奏。',
+                    controller: _behaviorController,
+                    minLines: 8,
+                    maxLines: 18,
+                  ),
+                if (widget.section == CharacterSettingsSection.persona)
+                  _editorCard(
+                    icon: Icons.block_outlined,
+                    title: '禁止事项',
+                    description: '把最容易串味、油腻、模板化或让你不舒服的表达写在这里。',
+                    controller: _forbiddenController,
+                    minLines: 7,
+                    maxLines: 16,
+                  ),
+                if (widget.section == CharacterSettingsSection.persona)
+                  _editorCard(
+                    icon: Icons.chat_outlined,
+                    title: '示例对话',
+                    description:
+                        '每行使用“${settings.userCallName}：……”或“${settings.characterName}：……”。示例越自然，越容易稳定口吻。',
+                    controller: _examplesController,
+                    minLines: 12,
+                    maxLines: 24,
+                    helper:
+                        '例如：\n${settings.userCallName}：你今天心情怎么样？\n${settings.characterName}：还行。你怎么突然问这个？',
+                  ),
                 OutlinedButton.icon(
                   onPressed: _restoreDefaults,
                   icon: const Icon(Icons.restore_rounded),

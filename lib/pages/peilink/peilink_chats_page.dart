@@ -12,6 +12,11 @@ import '../../services/character_settings_storage_service.dart';
 import '../../services/chat_storage_service.dart';
 import '../../services/initiative_service.dart';
 import '../../services/group_chat_storage_service.dart';
+import '../../theme/app_dimensions.dart';
+import '../../theme/app_theme_background.dart';
+import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
+import '../../widgets/peilink/relationship_badge.dart';
 import '../chat_page.dart';
 import 'group_chat_page.dart';
 
@@ -109,64 +114,74 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-            child: Container(
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(9),
+    return ThemeBackgroundContainer(
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                14,
+                AppSpacing.xs,
+                14,
+                AppSpacing.sm,
               ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.search_rounded,
-                    color: Color(0xFFB7B7B7),
-                    size: 22,
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.5),
                   ),
-                  SizedBox(width: 7),
-                  Text(
-                    '搜索',
-                    style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 16),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: Container(
-              color: Colors.white,
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _conversations.isEmpty && _groups.isEmpty
-                  ? const Center(child: Text('还没有聊天，点右上角“+”开始吧'))
-                  : RefreshIndicator(
-                      onRefresh: _loadConversationPreviews,
-                      child: ListView(
-                        padding: EdgeInsets.zero,
-                        children: [
-                          for (final group in _groups)
-                            _GroupConversationTile(
-                              group: group,
-                              charactersById: _charactersById,
-                              onTap: () => _openGroup(group),
-                            ),
-                          for (final preview in _conversations)
-                            _ConversationTile(
-                              preview: preview,
-                              onTap: () => _openChat(preview),
-                            ),
-                        ],
-                      ),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.search_rounded,
+                      color: Color(0xFFB7B7B7),
+                      size: 19,
                     ),
+                    SizedBox(width: 7),
+                    Text(
+                      '搜索',
+                      style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
+            Expanded(
+              child: ColoredBox(
+                color: Colors.transparent,
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _conversations.isEmpty && _groups.isEmpty
+                    ? const Center(child: Text('还没有聊天，点右上角“+”开始吧'))
+                    : RefreshIndicator(
+                        onRefresh: _loadConversationPreviews,
+                        child: ListView(
+                          padding: const EdgeInsets.only(bottom: 84),
+                          children: [
+                            for (final group in _groups)
+                              _GroupConversationTile(
+                                group: group,
+                                charactersById: _charactersById,
+                                onTap: () => _openGroup(group),
+                              ),
+                            for (final preview in _conversations)
+                              _ConversationTile(
+                                preview: preview,
+                                onTap: () => _openChat(preview),
+                              ),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -245,13 +260,16 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final character = preview.character;
-    return InkWell(
+    final relationshipText = RelationshipBadge.displayTextFor(
+      character.relationship,
+    );
+    return _GlassConversationCard(
       onTap: onTap,
       child: SizedBox(
-        height: 78,
+        height: 64,
         child: Row(
           children: [
-            const SizedBox(width: 16),
+            const SizedBox(width: AppSpacing.lg),
             Stack(
               clipBehavior: Clip.none,
               children: [
@@ -284,16 +302,11 @@ class _ConversationTile extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(width: 13),
+            const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Container(
                 height: double.infinity,
                 padding: const EdgeInsets.only(right: 16),
-                decoration: const BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: Color(0xFFEDEDED), width: 0.7),
-                  ),
-                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -301,24 +314,36 @@ class _ConversationTile extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            character.displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF171717),
-                              fontSize: 17,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  character.displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.listTitle.copyWith(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const _StatusMark(label: 'AI · 在线'),
+                            ],
                           ),
-                          const SizedBox(height: 6),
+                          if (relationshipText != null) ...[
+                            const SizedBox(height: 1),
+                            RelationshipBadge(
+                              relationship: character.relationship,
+                            ),
+                          ],
+                          const SizedBox(height: 2),
                           Text(
                             preview.previewText,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF999999),
-                              fontSize: 14,
+                            style: AppTextStyles.supporting.copyWith(
+                              fontSize: 13,
                             ),
                           ),
                         ],
@@ -326,7 +351,7 @@ class _ConversationTile extends StatelessWidget {
                     ),
                     if (preview.timeText.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(left: 10, bottom: 29),
+                        padding: const EdgeInsets.only(left: 10, bottom: 24),
                         child: Text(
                           preview.timeText,
                           style: const TextStyle(
@@ -357,7 +382,12 @@ class _CharacterAvatar extends StatelessWidget {
     if (path.isNotEmpty && File(path).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(7),
-        child: Image.file(File(path), width: 54, height: 54, fit: BoxFit.cover),
+        child: Image.file(
+          File(path),
+          width: AppDimensions.avatarMedium,
+          height: AppDimensions.avatarMedium,
+          fit: BoxFit.cover,
+        ),
       );
     }
 
@@ -366,8 +396,8 @@ class _CharacterAvatar extends StatelessWidget {
         borderRadius: BorderRadius.circular(7),
         child: Image.asset(
           'assets/images/pei_avatar.jpg',
-          width: 54,
-          height: 54,
+          width: AppDimensions.avatarMedium,
+          height: AppDimensions.avatarMedium,
           fit: BoxFit.cover,
           alignment: const Alignment(0, -0.15),
         ),
@@ -375,8 +405,8 @@ class _CharacterAvatar extends StatelessWidget {
     }
 
     return Container(
-      width: 54,
-      height: 54,
+      width: AppDimensions.avatarMedium,
+      height: AppDimensions.avatarMedium,
       decoration: BoxDecoration(
         color: const Color(0xFFE5EBEE),
         borderRadius: BorderRadius.circular(7),
@@ -416,10 +446,10 @@ class _GroupConversationTile extends StatelessWidget {
         .map((id) => charactersById[id])
         .whereType<AiCharacter>()
         .toList();
-    return InkWell(
+    return _GlassConversationCard(
       onTap: onTap,
       child: SizedBox(
-        height: 78,
+        height: 64,
         child: Row(
           children: [
             const SizedBox(width: 16),
@@ -458,11 +488,6 @@ class _GroupConversationTile extends StatelessWidget {
               child: Container(
                 height: double.infinity,
                 padding: const EdgeInsets.only(right: 16),
-                decoration: const BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: Color(0xFFEDEDED), width: 0.7),
-                  ),
-                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -488,8 +513,8 @@ class _GroupConversationTile extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: Color(0xFF171717),
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w500,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
@@ -499,9 +524,11 @@ class _GroupConversationTile extends StatelessWidget {
                                   size: 16,
                                   color: Color(0xFFAAAAAA),
                                 ),
+                              const SizedBox(width: 6),
+                              const _StatusMark(label: '群聊'),
                             ],
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: AppSpacing.xxs),
                           Text(
                             group.lastMessage.isEmpty
                                 ? '群聊已创建'
@@ -510,7 +537,7 @@ class _GroupConversationTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Color(0xFF999999),
-                              fontSize: 14,
+                              fontSize: 13,
                             ),
                           ),
                         ],
@@ -518,7 +545,7 @@ class _GroupConversationTile extends StatelessWidget {
                     ),
                     if (_timeText.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(left: 10, bottom: 29),
+                        padding: const EdgeInsets.only(left: 10, bottom: 24),
                         child: Text(
                           _timeText,
                           style: const TextStyle(
@@ -538,6 +565,53 @@ class _GroupConversationTile extends StatelessWidget {
   }
 }
 
+class _GlassConversationCard extends StatelessWidget {
+  const _GlassConversationCard({required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7),
+      child: Semantics(
+        button: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusMark extends StatelessWidget {
+  const _StatusMark({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFDCECF2).withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusPill),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF52788A),
+          fontSize: 9.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 class _GroupAvatar extends StatelessWidget {
   const _GroupAvatar({required this.characters});
 
@@ -547,8 +621,8 @@ class _GroupAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final visible = characters.take(4).toList();
     return Container(
-      width: 54,
-      height: 54,
+      width: AppDimensions.avatarMedium,
+      height: AppDimensions.avatarMedium,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: const Color(0xFFE1E5E7),

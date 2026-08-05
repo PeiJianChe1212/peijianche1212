@@ -21,6 +21,7 @@ class MessageRenderer extends StatelessWidget {
     this.onUserAvatarTap,
     this.onRedPacketTap,
     this.currentViewerId = 'user',
+    this.showAvatar = true,
   });
 
   final ChatMessage message;
@@ -31,6 +32,7 @@ class MessageRenderer extends StatelessWidget {
   final VoidCallback? onUserAvatarTap;
   final VoidCallback? onRedPacketTap;
   final String currentViewerId;
+  final bool showAvatar;
 
   @override
   Widget build(BuildContext context) {
@@ -78,6 +80,7 @@ class MessageRenderer extends StatelessWidget {
     final bubble = MessageBubble(
       message: message,
       isUser: isUser,
+      showTail: showAvatar,
       onLongPress: onLongPress,
       child: _buildMessageContent(),
     );
@@ -86,32 +89,47 @@ class MessageRenderer extends StatelessWidget {
       return Align(alignment: Alignment.centerLeft, child: bubble);
     }
 
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Row(
-        mainAxisAlignment: isUser
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isUser) ...[
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onAssistantAvatarTap,
-              child: assistantAvatar,
-            ),
-            const SizedBox(width: 7),
+    return Padding(
+      padding: EdgeInsets.only(bottom: showAvatar ? 5 : 1),
+      child: Align(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: Row(
+          mainAxisAlignment: isUser
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isUser) ...[
+              Visibility(
+                visible: showAvatar,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onAssistantAvatarTap,
+                  child: assistantAvatar,
+                ),
+              ),
+              const SizedBox(width: 7),
+            ],
+            Flexible(child: bubble),
+            if (isUser) ...[
+              const SizedBox(width: 7),
+              Visibility(
+                visible: showAvatar,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onUserAvatarTap,
+                  child: userAvatar,
+                ),
+              ),
+            ],
           ],
-          Flexible(child: bubble),
-          if (isUser) ...[
-            const SizedBox(width: 7),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onUserAvatarTap,
-              child: userAvatar,
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

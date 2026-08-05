@@ -1,7 +1,10 @@
 import '../models/character_settings.dart';
+import '../models/character_archive.dart';
+import '../models/character_profile.dart';
 import '../models/user_profile.dart';
 import '../prompts/relationship_prompt.dart';
 import '../context_builder/character_context.dart';
+import '../context_builder/character_archive_context_builder.dart';
 import '../context_builder/context_build_result.dart';
 import '../context_builder/conversation_context.dart';
 import '../context_builder/memory_context.dart';
@@ -77,6 +80,8 @@ class ContextBuilder {
     String socialProtocol = '',
     String styleExamples = '',
     String sourceFacts = '',
+    CharacterProfile? characterProfile,
+    CharacterArchive? characterArchive,
   }) {
     final profile = profileFor(task);
     final sections = <String>[
@@ -86,6 +91,8 @@ class ContextBuilder {
         userProfile: userProfile,
         extensionProfile: extensionProfile,
         styleExamples: styleExamples,
+        characterProfile: characterProfile,
+        characterArchive: characterArchive,
       ),
     ];
 
@@ -121,10 +128,28 @@ class ContextBuilder {
       settings: character.settings,
       userProfile: character.userProfile,
       styleExamples: character.styleExamples,
+      characterProfile: character.profile,
+      characterArchive: character.archive,
+    );
+    final latestUserMessage = conversation.recentMessages
+        .where((message) => message.role == 'user')
+        .map(messageContent)
+        .lastOrNull;
+    final archivePrompt = character.archive == null
+        ? ''
+        : const CharacterArchiveContextBuilder().build(
+            archive: character.archive!,
+            latestUserMessage: latestUserMessage ?? '',
+          );
+    final relevantProfilePrompt = _relevantProfileContext(
+      character.profile,
+      latestUserMessage ?? '',
     );
     final relationshipPrompt = relationship.buildPromptSection();
     final dynamicSections = <String>[
       responseStrategy.dynamicPrompt,
+      relevantProfilePrompt,
+      archivePrompt,
       relationshipPrompt,
       responseStrategy.mediaRules,
     ].where((value) => value.trim().isNotEmpty).join('\n\n');
@@ -159,6 +184,8 @@ class ContextBuilder {
     required UserProfile? userProfile,
     required String extensionProfile,
     required String styleExamples,
+    CharacterProfile? characterProfile,
+    CharacterArchive? characterArchive,
   }) {
     final key = <Object?>[
       profile.name,
@@ -173,16 +200,23 @@ class ContextBuilder {
       userProfile?.toJson().toString() ?? '',
       extensionProfile,
       styleExamples,
+      characterProfile?.toJson().toString() ?? '',
+      _fixedArchiveBehavior(characterArchive),
     ].join('|');
 
     return _stableCache.putIfAbsent(key, () {
-      final sections = <String>[_coreIdentity(settings)];
+      final sections = <String>[
+        _coreIdentity(settings, characterProfile),
+        _personality(settings, characterProfile),
+      ];
 
       if (_usesUserProfile(profile) && userProfile != null) {
         sections.add(userProfile.toPromptSection());
       }
       if (_usesRelationshipBase(profile)) sections.add(relationshipPrompt);
-      if (_usesBehavior(profile)) sections.add(_behaviorRules(settings));
+      if (_usesBehavior(profile)) {
+        sections.add(_behaviorRules(settings, characterArchive));
+      }
       if (_usesAppearance(profile)) {
         final extension = extensionProfile.trim().isEmpty
             ? settings.introduction.trim()
@@ -199,23 +233,117 @@ class ContextBuilder {
     });
   }
 
-  static String _coreIdentity(CharacterSettings settings) => '''
-【核心身份｜永久层】
-角色本名：${settings.characterName}
-用户备注：${settings.remark}
-与用户关系：${settings.relation}
-角色对用户的常用称呼：${settings.userCallName}
+  static String _coreIdentity(
+    CharacterSettings settings,
+    CharacterProfile? profile,
+  ) {
+    String prefer(String current, String fallback) =>
+        current.trim().isNotEmpty ? current.trim() : fallback.trim();
+    final name = prefer(profile?.name ?? '', settings.characterName);
+    final identity = profile?.identity.trim() ?? '';
+    final newAppearance = profile == null
+        ? ''
+        : <String>[
+            profile.overallAppearance.trim(),
+            _labeled('发色', profile.hairColor),
+            _labeled('眼睛', profile.eyes),
+            _labeled('身材', profile.bodyType),
+            _labeled('穿衣风格', profile.clothingStyle),
+            _labeled('特殊标记', profile.specialMarks),
+            _labeled('气质', profile.aura),
+          ].where((value) => value.isNotEmpty).join('；');
+    final appearance = prefer(newAppearance, settings.introduction);
+    final lines = <String>[
+      _labeled('角色本名', name),
+      _labeled('用户备注', settings.remark),
+      _labeled('与用户关系', settings.relation),
+      _labeled('角色对用户的常用称呼', settings.userCallName),
+      _labeled('年龄', profile?.age ?? ''),
+      _labeled('身份', identity),
+      _labeled('职业', profile?.occupation ?? ''),
+      _labeled('外貌', appearance),
+    ].where((value) => value.isNotEmpty).join('\n');
+    return _limit('【核心身份｜永久层】\n$lines', 650);
+  }
 
-${settings.coreProfile}
-''';
+  static String _personality(
+    CharacterSettings settings,
+    CharacterProfile? profile,
+  ) {
+    final tags = profile?.personalityTags.trim() ?? '';
+    final description = profile?.personalityDescription.trim() ?? '';
+    final surface = profile?.surfacePersonality.trim() ?? '';
+    final deep = profile?.deepPersonality.trim() ?? '';
+    final fallback = settings.coreProfile.trim();
+    final lines = <String>[
+      _labeled('性格标签', tags),
+      _labeled('性格描述', description.isNotEmpty ? description : fallback),
+      _labeled('表层表现', surface),
+      _labeled('深层性格', deep),
+    ].where((value) => value.isNotEmpty).join('\n');
+    return lines.isEmpty ? '' : _limit('【性格设定｜固定发送】\n$lines', 350);
+  }
 
-  static String _behaviorRules(CharacterSettings settings) => '''
+  static String _behaviorRules(
+    CharacterSettings settings,
+    CharacterArchive? archive,
+  ) =>
+      '''
 【行为规则｜按任务加载】
 ${settings.behaviorStyle}
+主动程度：${settings.initiative}
+${_fixedArchiveBehavior(archive)}
 
 【禁止事项】
 ${settings.forbiddenRules}
 ''';
+
+  static String _fixedArchiveBehavior(CharacterArchive? archive) {
+    if (archive == null) return '';
+    final values = <String>[
+      _labeled('语言习惯', archive.value('languageHabits')),
+      _labeled('回复风格', archive.value('speakingStyle')),
+      _labeled('聊天节奏', archive.value('chatPace')),
+      _labeled('表达特点', archive.value('expressionTraits')),
+    ].where((value) => value.isNotEmpty).join('\n');
+    return _limit(values, 500);
+  }
+
+  static String _relevantProfileContext(
+    CharacterProfile? profile,
+    String latestUserMessage,
+  ) {
+    if (profile == null) return '';
+    final asksAboutPast = const [
+      '小时候',
+      '童年',
+      '少年',
+      '长大',
+      '成长',
+      '经历',
+      '过去',
+      '转折',
+    ].any(latestUserMessage.contains);
+    if (!asksAboutPast) return '';
+    final facts = <String>[
+      _labeled('家庭背景', profile.familyBackground),
+      _labeled('成长经历', profile.upbringing),
+      _labeled('重要经历', profile.importantExperiences),
+      _labeled('世界观', profile.worldview),
+    ].where((value) => value.isNotEmpty).join('\n');
+    return facts.isEmpty ? '' : _limit('【背景故事｜按需加载】\n$facts', 800);
+  }
+
+  static String _labeled(String label, String value) {
+    final clean = value.trim();
+    return clean.isEmpty ? '' : '$label：$clean';
+  }
+
+  static String _limit(String value, int maxCharacters) {
+    final clean = value.trim();
+    if (clean.length <= maxCharacters) return clean;
+    return '${clean.substring(0, maxCharacters - 1).trimRight()}…';
+  }
 
   static bool _usesUserProfile(ContextProfile profile) =>
       profile == ContextProfile.chat ||

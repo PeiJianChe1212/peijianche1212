@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../../models/red_packet_data.dart';
+import '../../../theme/app_theme_background.dart';
 
 class RedPacketMessageRenderer extends StatelessWidget {
   const RedPacketMessageRenderer({
@@ -21,7 +22,17 @@ class RedPacketMessageRenderer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final message = data.message.trim().isEmpty ? '恭喜发财' : data.message.trim();
-    final colors = _cardColors;
+    final isDarkTheme = ThemeBackgroundScope.of(context).isDark;
+    final colors = _cardColors(isDarkTheme);
+    final strongText = isDarkTheme
+        ? const Color(0xFFFFE4C5)
+        : const Color(0xFF8E4056);
+    final bodyText = isDarkTheme
+        ? Colors.white.withValues(alpha: 0.91)
+        : const Color(0xFF704553);
+    final mutedText = isDarkTheme
+        ? Colors.white.withValues(alpha: 0.82)
+        : const Color(0xFF936D79);
     return Semantics(
       button: onTap != null,
       label: '红包，$message，$_statusText',
@@ -42,7 +53,11 @@ class RedPacketMessageRenderer extends StatelessWidget {
                   colors: colors,
                 ),
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0x66F4D1AA)),
+                border: Border.all(
+                  color: isDarkTheme
+                      ? const Color(0x66F4D1AA)
+                      : const Color(0x99FFFFFF),
+                ),
                 boxShadow: const [
                   BoxShadow(
                     color: Color(0x360D1020),
@@ -71,23 +86,29 @@ class RedPacketMessageRenderer extends StatelessWidget {
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.10),
+                                color: Colors.white.withValues(
+                                  alpha: isDarkTheme ? 0.10 : 0.68,
+                                ),
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: const Color(0x88F8D7B1),
+                                  color: isDarkTheme
+                                      ? const Color(0x88F8D7B1)
+                                      : const Color(0x66C98396),
                                 ),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.card_giftcard_rounded,
-                                color: Color(0xFFFFDBB2),
+                                color: isDarkTheme
+                                    ? const Color(0xFFFFDBB2)
+                                    : const Color(0xFFB65D75),
                                 size: 21,
                               ),
                             ),
                             const SizedBox(width: 11),
-                            const Text(
+                            Text(
                               '红包',
                               style: TextStyle(
-                                color: Color(0xFFFFE4C5),
+                                color: strongText,
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 0.4,
@@ -97,7 +118,9 @@ class RedPacketMessageRenderer extends StatelessWidget {
                             Text(
                               'PEILINK',
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.38),
+                                color: isDarkTheme
+                                    ? Colors.white.withValues(alpha: 0.38)
+                                    : const Color(0x669A6675),
                                 fontSize: 8,
                                 letterSpacing: 2.1,
                               ),
@@ -110,7 +133,7 @@ class RedPacketMessageRenderer extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.91),
+                            color: bodyText,
                             fontSize: 13.5,
                             height: 1.35,
                             fontWeight: FontWeight.w500,
@@ -128,13 +151,15 @@ class RedPacketMessageRenderer extends StatelessWidget {
                                 color: const Color(0x14101320),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.22),
+                                  color: isDarkTheme
+                                      ? Colors.white.withValues(alpha: 0.22)
+                                      : const Color(0x55C88B9C),
                                 ),
                               ),
                               child: Text(
                                 _statusText,
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.82),
+                                  color: mutedText,
                                   fontSize: 11.5,
                                 ),
                               ),
@@ -144,7 +169,9 @@ class RedPacketMessageRenderer extends StatelessWidget {
                               data.isOpened
                                   ? Icons.check_circle_outline_rounded
                                   : Icons.arrow_forward_rounded,
-                              color: const Color(0xB8FFD6AD),
+                              color: isDarkTheme
+                                  ? const Color(0xB8FFD6AD)
+                                  : const Color(0xFFB65D75),
                               size: 17,
                             ),
                           ],
@@ -161,7 +188,16 @@ class RedPacketMessageRenderer extends StatelessWidget {
     );
   }
 
-  List<Color> get _cardColors {
+  List<Color> _cardColors(bool isDarkTheme) {
+    if (!isDarkTheme) {
+      if (data.isOpened) {
+        return const [Color(0xF2FFFFFF), Color(0xECF4EEF0)];
+      }
+      if (_sentByViewer) {
+        return const [Color(0xF5FFFFFF), Color(0xEEFCECF1)];
+      }
+      return const [Color(0xF5FFFFFF), Color(0xEEF7F0F3)];
+    }
     if (data.isOpened) {
       return const [Color(0xE832374B), Color(0xE824293A)];
     }

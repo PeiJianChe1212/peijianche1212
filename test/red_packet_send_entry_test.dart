@@ -14,6 +14,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ChatMorePanel(
+            onUserPersona: () {},
             onPickImage: () {},
             onRedPacket: () => opened = true,
             onUnavailable: (_) {},

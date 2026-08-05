@@ -5,6 +5,7 @@ enum PromptContextType {
   conversation,
   relationship,
   cooldown,
+  event,
   chatFlow,
   personalityStyle,
   replyStrategy,
@@ -18,6 +19,7 @@ abstract final class PromptContextPriority {
   static const int conversation = 300;
   static const int relationship = 400;
   static const int cooldown = 450;
+  static const int event = 475;
   static const int chatFlow = 500;
   static const int personalityStyle = 600;
   static const int replyStrategy = 700;
@@ -50,6 +52,13 @@ class PromptContext {
     type: PromptContextType.cooldown,
     content: content,
     priority: PromptContextPriority.cooldown,
+  );
+
+  factory PromptContext.redPacketEvent(String content) => PromptContext(
+    id: 'red_packet_event',
+    type: PromptContextType.event,
+    content: content,
+    priority: PromptContextPriority.event,
   );
 
   factory PromptContext.personalityStyle(String content) => PromptContext(

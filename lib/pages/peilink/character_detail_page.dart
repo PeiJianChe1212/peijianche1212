@@ -9,8 +9,8 @@ import '../../models/echo_item.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/character_settings_storage_service.dart';
 import '../../services/echo_storage_service.dart';
+import '../../widgets/peilink/relationship_badge.dart';
 import '../chat_page.dart';
-import 'character_management_page.dart';
 import 'character_profile_edit_page.dart';
 import 'peilink_echo_page.dart';
 
@@ -42,7 +42,9 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
     final settings = await CharacterSettingsStorageService(
       characterId: character.id,
     ).loadSettings();
-    final echo = await EchoStorageService(characterId: character.id).loadItems();
+    final echo = await EchoStorageService(
+      characterId: character.id,
+    ).loadItems();
 
     if (!mounted) return;
     setState(() {
@@ -60,17 +62,6 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
       context,
       MaterialPageRoute(builder: (_) => const ChatPage()),
     );
-    await _load();
-  }
-
-  Future<void> _openManagement() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CharacterManagementPage(characterId: _character.id),
-      ),
-    );
-    if (!mounted) return;
     await _load();
   }
 
@@ -95,7 +86,12 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   Widget _avatar({double size = 76}) {
     final path = _character.avatarPath.trim();
     if (path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(File(path), width: size, height: size, fit: BoxFit.cover);
+      return Image.file(
+        File(path),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+      );
     }
     if (_character.isBuiltIn) {
       return Image.asset(
@@ -128,22 +124,7 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
-          title: Text(
-            _settings.displayName,
-            style: const TextStyle(
-              color: Color(0xFF171717),
-              fontSize: 19,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          centerTitle: true,
-          actions: [
-            IconButton(
-              tooltip: '角色设置',
-              onPressed: _loading ? null : _openManagement,
-              icon: const Icon(Icons.more_horiz_rounded),
-            ),
-          ],
+          title: const SizedBox.shrink(),
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -152,49 +133,35 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
                 children: [
                   Container(
                     color: Colors.white,
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+                    child: Column(
                       children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(9),
-                          child: _avatar(),
-                        ),
-                        const SizedBox(width: 17),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _settings.displayName,
-                                style: const TextStyle(
-                                  color: Color(0xFF171717),
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              if (_settings.remark.trim().isNotEmpty)
-                                _ProfileLine(
-                                  label: '本名',
-                                  value: _settings.characterName,
-                                ),
-                              _ProfileLine(
-                                label: 'PeiLink',
-                                value: _character.peiLinkId.trim().isEmpty
-                                    ? _character.id
-                                    : _character.peiLinkId,
-                              ),
-                            ],
+                        ClipOval(child: _avatar(size: 88)),
+                        const SizedBox(height: 13),
+                        Text(
+                          _settings.displayName,
+                          style: const TextStyle(
+                            color: Color(0xFF171717),
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'PeiLink ID：${_character.peiLinkId.trim().isEmpty ? _character.id : _character.peiLinkId}',
+                          style: const TextStyle(
+                            color: Color(0xFF777777),
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        RelationshipBadge(relationship: _settings.relation),
                       ],
                     ),
                   ),
                   const SizedBox(height: 10),
-                  _InfoTile(
-                    title: '朋友资料',
-                    subtitle: '备注、生日、纪念日和角色基本信息',
+                  _FriendInfoCard(
+                    settings: _settings,
                     onTap: _openBasicProfile,
                   ),
                   const SizedBox(height: 10),
@@ -258,33 +225,10 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   }
 }
 
-class _ProfileLine extends StatelessWidget {
-  const _ProfileLine({required this.label, required this.value});
+class _FriendInfoCard extends StatelessWidget {
+  const _FriendInfoCard({required this.settings, required this.onTap});
 
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
-      child: Text(
-        '$label：$value',
-        style: const TextStyle(color: Color(0xFF777777), fontSize: 14),
-      ),
-    );
-  }
-}
-
-class _InfoTile extends StatelessWidget {
-  const _InfoTile({
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
+  final CharacterSettings settings;
   final VoidCallback onTap;
 
   @override
@@ -294,32 +238,61 @@ class _InfoTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 15, 14, 15),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(20, 15, 14, 13),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 17)),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: Color(0xFF999999),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
+              const Text(
+                '朋友资料',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: Color(0xFFB7B7B7),
+              const SizedBox(height: 10),
+              _ProfileValueRow(label: '备注', value: settings.remark),
+              _ProfileValueRow(label: '生日', value: settings.birthday),
+              _ProfileValueRow(label: '纪念日', value: settings.anniversary),
+              _ProfileValueRow(
+                label: '关系',
+                value: settings.relation,
+                showChevron: true,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ProfileValueRow extends StatelessWidget {
+  const _ProfileValueRow({
+    required this.label,
+    required this.value,
+    this.showChevron = false,
+  });
+
+  final String label;
+  final String value;
+  final bool showChevron;
+
+  @override
+  Widget build(BuildContext context) {
+    final displayValue = value.trim().isEmpty ? '未设置' : value.trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
+          Text(
+            displayValue,
+            style: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+          ),
+          if (showChevron)
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 19,
+              color: Color(0xFFB7B7B7),
+            ),
+        ],
       ),
     );
   }
@@ -386,10 +359,7 @@ class _EchoTile extends StatelessWidget {
                         ),
                       ),
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: Color(0xFFB7B7B7),
-              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFFB7B7B7)),
             ],
           ),
         ),

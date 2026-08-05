@@ -33,12 +33,12 @@ abstract final class HomeVisualTokens {
   static const double blurCard = 18;
   static const double blurButton = 14;
 
-  static const Color backgroundTop = Color(0xFF293F55);
-  static const Color backgroundMiddle = Color(0xFF121C28);
-  static const Color backgroundBottom = Color(0xFF080D14);
-  static const Color ambientBlue = Color(0xFF7EB6D8);
-  static const Color ambientViolet = Color(0xFF9A91C7);
-  static const Color ambientWarm = Color(0xFFD4A79D);
+  static const Color backgroundTop = Color(0xFF6978A8);
+  static const Color backgroundMiddle = Color(0xFF3F4D76);
+  static const Color backgroundBottom = Color(0xFF252E4B);
+  static const Color ambientBlue = Color(0xFF9DB8F2);
+  static const Color ambientViolet = Color(0xFFC0AEF2);
+  static const Color ambientWarm = Color(0xFFE2C7DF);
 
   static const List<BoxShadow> heroShadow = [
     BoxShadow(color: Color(0x66000000), blurRadius: 38, offset: Offset(0, 20)),

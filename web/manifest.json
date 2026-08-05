@@ -1,6 +1,6 @@
 {
-    "name": "peijianche_app",
-    "short_name": "peijianche_app",
+    "name": "PeiLink",
+    "short_name": "PeiLink",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

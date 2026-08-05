@@ -1,5 +1,5 @@
 name: peijianche_app
-description: "裴简澈"
+description: "PeiLink — 蓝蝴蝶陪伴世界"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -63,6 +63,9 @@ flutter:
   assets:
     - assets/images/
     - assets/images/app_icons/
+    - assets/images/brand/
+    - assets/backgrounds/
+    - assets/backgrounds/simple_pack/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

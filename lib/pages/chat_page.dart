@@ -8,10 +8,13 @@ import 'package:image_picker/image_picker.dart';
 import '../models/activity_status.dart';
 import '../models/ai_character.dart';
 import '../models/chat_message.dart';
+import '../models/red_packet_data.dart';
 import '../models/character_settings.dart';
 import '../models/user_profile.dart';
 import '../services/activity_context_service.dart';
 import '../services/activity_service.dart';
+import '../services/ai_red_packet_event_service.dart';
+import '../services/ai_red_packet_opportunity_service.dart';
 import '../services/character_registry_service.dart';
 import '../services/chat_image_task_manager.dart';
 import '../services/chat_image_request_router_service.dart';
@@ -25,13 +28,15 @@ import '../services/multimodal_service.dart';
 import '../services/character_settings_storage_service.dart';
 import '../services/today_service.dart';
 import '../services/user_profile_storage_service.dart';
-import 'peilink/character_management_page.dart';
 import 'peilink/character_detail_page.dart';
-import '../widgets/chat/chat_input_bar.dart';
-import '../widgets/chat/chat_more_panel.dart';
+import 'peilink/chat_settings_page.dart';
+import 'peilink/character_user_profile_page.dart';
+import '../widgets/chat/chat_input_area.dart';
+import '../theme/app_theme_background.dart';
 import '../widgets/chat/message_renderer.dart';
 import '../widgets/chat/red_packet_send_dialog.dart';
 import '../widgets/chat/renderers/red_packet_message_renderer.dart';
+import '../widgets/peilink/relationship_badge.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -74,6 +79,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _isGeneratingImage = false;
   bool _showActivitySubtitle = true;
   bool _isRegenerating = false;
+  bool _showMoreFunctions = false;
   DateTime? _previousSeenAt;
   bool _conversationTraceRecorded = false;
   UserProfile _profile = const UserProfile();
@@ -437,7 +443,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _requestReply() async {
+  Future<void> _requestReply({String transientEventContext = ''}) async {
     try {
       final reply = await _deepSeekService.sendMessage(
         messages: List<ChatMessage>.from(_messages),
@@ -447,7 +453,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         initiative: _initiative,
         intimacy: _intimacy,
         tsundere: _tsundere,
+        characterId: _activeCharacter.id,
+        transientEventContext: transientEventContext,
       );
+      if (reply.trim().isEmpty) {
+        if (!mounted) return;
+        _hideActivitySubtitle();
+        setState(() {
+          _isLoading = false;
+          _isRegenerating = false;
+        });
+        return;
+      }
       final readingDelay = Duration(
         milliseconds: (350 + reply.length * 7).clamp(650, 1800).toInt(),
       );
@@ -465,6 +482,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         await _lifeTraceService.recordConversation();
       }
       _scrollToBottom();
+      if (transientEventContext.trim().isEmpty) {
+        await _maybeSendAiRedPacket();
+      }
     } on TimeoutException {
       await _handleRequestError('连接超时了，稍后再试一次。');
     } on SocketException {
@@ -482,6 +502,45 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _isRegenerating = false;
     });
     _showSnack(message);
+  }
+
+  Future<void> _maybeSendAiRedPacket() async {
+    try {
+      final snapshot = List<ChatMessage>.from(_messages);
+      final opportunity = await _deepSeekService.evaluateRedPacketOpportunity(
+        messages: snapshot,
+      );
+      if (!opportunity.shouldSendRedPacket || !mounted) return;
+
+      final amount = const AiRedPacketOpportunityService().amountInCents(
+        opportunity,
+      );
+      if (amount <= 0) return;
+      final message = ChatMessage(
+        role: 'assistant',
+        content: '',
+        source: 'ai_red_packet_opportunity',
+        type: MessageType.redPacket,
+        redPacket: RedPacketData(
+          amount: amount,
+          message: opportunity.kind.name == 'specialEvent'
+              ? '给你的小庆祝'
+              : '今天要对自己好一点',
+          senderId: _activeCharacter.id,
+          receiverId: 'user',
+        ),
+        metadata: {
+          'opportunityReason': opportunity.reason,
+          'opportunityKind': opportunity.kind.name,
+          'futureGiftIntent': opportunity.futureGiftIntent,
+        },
+      );
+      setState(() => _messages.add(message));
+      await _saveMessages();
+      _scrollToBottom();
+    } catch (error) {
+      debugPrint('AI red packet opportunity skipped: $error');
+    }
   }
 
   Future<ActivityStatus> _refreshActivity({DateTime? now}) async {
@@ -527,8 +586,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _openCharacterSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            CharacterManagementPage(characterId: _activeCharacter.id),
+        builder: (_) => ChatSettingsPage(character: _activeCharacter),
       ),
     );
     await _loadChatSettings();
@@ -536,22 +594,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     await _refreshActivity();
   }
 
-  Future<void> _showMorePanel() async {
+  void _toggleMorePanel() {
     if (_isLoading) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) => ChatMorePanel(
-        onPickImage: _pickAndSendImage,
-        onRedPacket: _showRedPacketSendDialog,
-        onUnavailable: (feature) => _showSnack('$feature功能敬请期待'),
-      ),
-    );
+    _inputFocusNode.unfocus();
+    setState(() => _showMoreFunctions = !_showMoreFunctions);
+    if (_showMoreFunctions) _scrollToBottom();
+  }
+
+  void _closeMorePanel() {
+    if (!_showMoreFunctions || !mounted) return;
+    setState(() => _showMoreFunctions = false);
   }
 
   Future<void> _showRedPacketSendDialog() async {
     if (_isLoading || !mounted) return;
+    _closeMorePanel();
     final draft = await showDialog<RedPacketDraft>(
       context: context,
       builder: (_) => const RedPacketSendDialog(),
@@ -566,6 +623,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     setState(() => _messages.add(message));
     await _saveMessages();
     _scrollToBottom();
+
+    final event = await AiRedPacketEventService(
+      characterId: _activeCharacter.id,
+      storage: _chatStorage,
+    ).receive(message);
+    if (event == null || !mounted) return;
+
+    final index = _messages.indexWhere((item) => item.id == message.id);
+    if (index >= 0) {
+      setState(() => _messages[index] = event.message);
+    }
+    if (!event.shouldGenerateReply || !await _deepSeekService.hasApiKey) return;
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _isRegenerating = false;
+    });
+    await _requestReply(transientEventContext: event.buildContext());
   }
 
   Future<void> _showMessageActions(int index) async {
@@ -931,137 +1006,196 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  String? get _lastSeenText {
-    final previous = _previousSeenAt;
-    if (previous == null) return null;
-    final now = DateTime.now();
-    final difference = now.difference(previous);
-    if (difference.inMinutes < 2) return '刚刚还见过你';
-    if (difference.inHours < 1) return '上次见你：${difference.inMinutes}分钟前';
-    if (difference.inHours < 24) return '上次见你：${difference.inHours}小时前';
-    if (difference.inDays == 1) return '上次见你：昨天';
-    return '上次见你：${previous.month}月${previous.day}日';
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF0F0F0),
-      appBar: AppBar(
-        titleSpacing: 0,
-        toolbarHeight: 62,
-        title: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: _showActivityDetails,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            child: Column(
+    return ThemeBackgroundContainer(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          titleSpacing: 0,
+          toolbarHeight: 62,
+          title: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: _showActivityDetails,
+            child: Row(
               children: [
-                Text(
-                  _activeDisplayName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 17,
+                _buildAvatar(isUser: false, size: 34),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _activeDisplayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16.5,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      _ChatIdentityStatus(
+                        relationship: _activeCharacter.relationship,
+                      ),
+                    ],
                   ),
-                ),
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  child: _showActivitySubtitle
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 1),
-                          child: AnimatedOpacity(
-                            opacity: _showActivitySubtitle ? 1 : 0,
-                            duration: const Duration(milliseconds: 180),
-                            child: Column(
-                              children: [
-                                Text(
-                                  _activity.displayText,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                                if (_lastSeenText != null)
-                                  Text(
-                                    _lastSeenText!,
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      color: Colors.black.withValues(
-                                        alpha: 0.48,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
                 ),
               ],
             ),
           ),
-        ),
-        backgroundColor: const Color(0xFFF0F0F0),
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-        actions: [
-          IconButton(
-            tooltip: '角色设置',
-            icon: const Icon(Icons.more_horiz_rounded),
-            onPressed: _openCharacterSettings,
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: _messages.isEmpty
-                  ? const Center(
-                      child: Text(
-                        '还没有聊天记录',
-                        style: TextStyle(color: Colors.black38, fontSize: 14),
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) => MessageRenderer(
-                        message: _messages[index],
-                        onLongPress: () => _showMessageActions(index),
-                        assistantAvatar: _buildAvatar(isUser: false),
-                        userAvatar: _buildAvatar(isUser: true),
-                        onAssistantAvatarTap: _openActiveCharacterDetail,
-                        onRedPacketTap: () =>
-                            _openRedPacket(_messages[index].id),
-                        currentViewerId: 'user',
-                      ),
-                    ),
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: false,
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
+          actions: [
+            IconButton(
+              tooltip: '角色设置',
+              icon: const Icon(Icons.more_horiz_rounded),
+              onPressed: _openCharacterSettings,
             ),
-            if (_isLoading)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(11, 3, 11, 8),
-                child: _TypingIndicator(
-                  isRegenerating: _isRegenerating,
-                  isGeneratingImage: _isGeneratingImage,
-                  avatar: _buildAvatar(isUser: false, size: 38),
-                  displayName: _activeDisplayName,
-                ),
-              ),
-            ChatInputBar(
-              controller: _controller,
-              focusNode: _inputFocusNode,
-              isLoading: _isLoading,
-              onSend: _sendMessage,
-              onMore: _showMorePanel,
-            ),
+            const SizedBox(width: 4),
           ],
         ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: _messages.isEmpty
+                    ? const Center(
+                        child: Text(
+                          '还没有聊天记录',
+                          style: TextStyle(color: Colors.black38, fontSize: 14),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final message = _messages[index];
+                          final previous = index > 0
+                              ? _messages[index - 1]
+                              : null;
+                          final showAvatar =
+                              previous == null ||
+                              previous.role != message.role ||
+                              previous.type == MessageType.system ||
+                              message.type == MessageType.system;
+                          return MessageRenderer(
+                            message: message,
+                            showAvatar: showAvatar,
+                            onLongPress: () => _showMessageActions(index),
+                            assistantAvatar: _buildAvatar(isUser: false),
+                            userAvatar: _buildAvatar(isUser: true),
+                            onAssistantAvatarTap: _openActiveCharacterDetail,
+                            onRedPacketTap: () => _openRedPacket(message.id),
+                            currentViewerId: 'user',
+                          );
+                        },
+                      ),
+              ),
+              if (_isLoading)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(11, 3, 11, 8),
+                  child: _TypingIndicator(
+                    isRegenerating: _isRegenerating,
+                    isGeneratingImage: _isGeneratingImage,
+                    avatar: _buildAvatar(isUser: false, size: 38),
+                    displayName: _activeDisplayName,
+                  ),
+                ),
+              ChatInputArea(
+                controller: _controller,
+                focusNode: _inputFocusNode,
+                isLoading: _isLoading,
+                isMorePanelOpen: _showMoreFunctions,
+                onSend: _sendMessage,
+                onMore: _toggleMorePanel,
+                onInputTap: _closeMorePanel,
+                onUserPersona: () {
+                  _closeMorePanel();
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => CharacterUserProfilePage(
+                        characterId: _activeCharacter.id,
+                        characterName: _activeDisplayName,
+                      ),
+                    ),
+                  );
+                },
+                onPickImage: () {
+                  _closeMorePanel();
+                  _pickAndSendImage();
+                },
+                onRedPacket: _showRedPacketSendDialog,
+                onUnavailable: (feature) => _showSnack('$feature功能敬请期待'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatIdentityStatus extends StatelessWidget {
+  const _ChatIdentityStatus({required this.relationship});
+
+  final String relationship;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasRelationship =
+        RelationshipBadge.displayTextFor(relationship) != null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (hasRelationship) ...[
+          Flexible(child: RelationshipBadge(relationship: relationship)),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 5),
+            child: Text(
+              '·',
+              style: TextStyle(color: Color(0xFF9EA7AC), fontSize: 11),
+            ),
+          ),
+        ],
+        const _AiOnlinePill(),
+      ],
+    );
+  }
+}
+
+class _AiOnlinePill extends StatelessWidget {
+  const _AiOnlinePill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('chat-ai-online-pill'),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE6F3ED).withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, size: 5, color: Color(0xFF43A875)),
+          SizedBox(width: 4),
+          Text(
+            'AI在线',
+            style: TextStyle(
+              color: Color(0xFF3F8062),
+              fontSize: 10.5,
+              height: 1.1,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1085,7 +1219,7 @@ class _SquareAvatar extends StatelessWidget {
       height: size,
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white, width: 1.3),
         boxShadow: [
           BoxShadow(
@@ -1114,7 +1248,7 @@ class _AvatarPlaceholder extends StatelessWidget {
     height: size,
     decoration: BoxDecoration(
       color: const Color(0xFFE5EBEE),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
     ),
     child: Icon(
       Icons.auto_awesome_rounded,

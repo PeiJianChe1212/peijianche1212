@@ -33,7 +33,8 @@ class ChatMessage {
   bool get isRecalled => messageStatus == MessageStatus.recalled;
   bool get isPendingRedPacket =>
       type == MessageType.redPacket && redPacket?.isOpened != true;
-  bool get isVisibleInConversationContext => !isRecalled && !isPendingRedPacket;
+  bool get isVisibleInConversationContext =>
+      !isRecalled && type != MessageType.redPacket;
 
   ChatMessage copyWith({
     String? role,

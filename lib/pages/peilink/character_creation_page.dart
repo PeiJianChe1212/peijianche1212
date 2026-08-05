@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -8,11 +7,15 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../models/ai_character.dart';
+import '../../models/character_archive.dart';
+import '../../models/character_profile.dart';
+import '../../services/character_archive_storage_service.dart';
 import '../../models/character_settings.dart';
 import '../../services/character_avatar_storage_service.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/auto_echo_service.dart';
 import '../../services/character_settings_storage_service.dart';
+import '../../services/character_profile_storage_service.dart';
 
 class CharacterCreationPage extends StatefulWidget {
   const CharacterCreationPage({super.key});
@@ -29,10 +32,44 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _personaController = TextEditingController();
-  final TextEditingController _introductionController = TextEditingController();
-  final TextEditingController _behaviorController = TextEditingController();
-  final TextEditingController _forbiddenController = TextEditingController();
-  final TextEditingController _examplesController = TextEditingController();
+  final Map<String, TextEditingController> _fields = {
+    for (final key in const [
+      'name',
+      'age',
+      'gender',
+      'height',
+      'birthday',
+      'identity',
+      'occupation',
+      'location',
+      'overallAppearance',
+      'hairColor',
+      'eyes',
+      'bodyType',
+      'clothingStyle',
+      'specialMarks',
+      'aura',
+      'personalityTags',
+      'personalityDescription',
+      'surfacePersonality',
+      'deepPersonality',
+      'familyBackground',
+      'upbringing',
+      'importantExperiences',
+      'worldview',
+      'relationship',
+      'howMet',
+      'currentStage',
+      'likes',
+      'smallHabits',
+      'inLove',
+      'importantPrinciples',
+      'dailyState',
+      'currentState',
+      'languageHabits',
+    ])
+      key: TextEditingController(),
+  };
 
   bool _saving = false;
   String _portraitSourcePath = '';
@@ -42,10 +79,9 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
   void dispose() {
     _nameController.dispose();
     _personaController.dispose();
-    _introductionController.dispose();
-    _behaviorController.dispose();
-    _forbiddenController.dispose();
-    _examplesController.dispose();
+    for (final controller in _fields.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -80,76 +116,12 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
     if (bytes != null && mounted) setState(() => _avatarBytes = bytes);
   }
 
-  Future<void> _openAdvancedSettings() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: const Color(0xFFF6F6F7),
-      builder: (sheetContext) {
-        final bottom = MediaQuery.viewInsetsOf(sheetContext).bottom;
-        return Padding(
-          padding: EdgeInsets.fromLTRB(18, 0, 18, bottom + 24),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  '高级设置',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  '这些内容用于约束长期相处方式，不会展示在角色资料页。',
-                  style: TextStyle(color: Colors.black54, height: 1.45),
-                ),
-                const SizedBox(height: 18),
-                _InputCard(
-                  label: '行为规则',
-                  hint: '例如：先回应用户真正说的事情；保持自然口语；允许简短回复。',
-                  controller: _behaviorController,
-                  minLines: 5,
-                  maxLines: 9,
-                  maxLength: 1600,
-                ),
-                const SizedBox(height: 14),
-                _InputCard(
-                  label: '禁止事项',
-                  hint: '例如：不要使用括号动作；不要强行把普通话题变成情话。',
-                  controller: _forbiddenController,
-                  minLines: 5,
-                  maxLines: 9,
-                  maxLength: 1600,
-                ),
-                const SizedBox(height: 14),
-                _InputCard(
-                  label: '示例对话',
-                  hint: '用户：今天有点累。\n角色：先歇会儿，别硬撑。',
-                  controller: _examplesController,
-                  minLines: 6,
-                  maxLines: 12,
-                  maxLength: 2400,
-                ),
-                const SizedBox(height: 18),
-                FilledButton(
-                  onPressed: () => Navigator.pop(sheetContext),
-                  child: const Text('完成'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _createCharacter() async {
     if (_saving) return;
     FocusScope.of(context).unfocus();
 
     final name = _nameController.text.trim();
     final persona = _personaController.text.trim();
-    final introduction = _introductionController.text.trim();
     if (name.isEmpty) {
       _showMessage('请填写角色名称。');
       return;
@@ -186,26 +158,74 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
         remark: '',
         avatarPath: avatarPath,
         portraitPath: portraitPath,
-        introduction: introduction,
+        introduction: _value('overallAppearance').isEmpty
+            ? persona
+            : _value('overallAppearance'),
         persona: persona,
         createdAt: now,
       );
-      await _registry.addCharacter(character);
 
       final defaults = CharacterSettings.fromAiCharacter(character);
       final settings = defaults.copyWith(
-        introduction: introduction,
+        introduction: _value('overallAppearance').isEmpty
+            ? persona
+            : _value('overallAppearance'),
         coreProfile: persona,
-        behaviorStyle: _behaviorController.text.trim().isEmpty
-            ? defaults.behaviorStyle
-            : _behaviorController.text.trim(),
-        forbiddenRules: _forbiddenController.text.trim().isEmpty
-            ? defaults.forbiddenRules
-            : _forbiddenController.text.trim(),
-        exampleDialogues: _examplesController.text.trim(),
+        relation: _value('relationship').isEmpty
+            ? defaults.relation
+            : _value('relationship'),
       );
-      await CharacterSettingsStorageService(characterId: characterId)
-          .saveSettings(settings);
+      await CharacterSettingsStorageService(
+        characterId: characterId,
+      ).saveSettings(settings);
+      await CharacterProfileStorageService(characterId: characterId).save(
+        CharacterProfile(
+          characterId: characterId,
+          name: _value('name'),
+          age: _value('age'),
+          gender: _value('gender'),
+          height: _value('height'),
+          birthday: _value('birthday'),
+          identity: _value('identity'),
+          occupation: _value('occupation'),
+          location: _value('location'),
+          overallAppearance: _value('overallAppearance'),
+          hairColor: _value('hairColor'),
+          eyes: _value('eyes'),
+          bodyType: _value('bodyType'),
+          clothingStyle: _value('clothingStyle'),
+          specialMarks: _value('specialMarks'),
+          aura: _value('aura'),
+          personalityTags: _value('personalityTags'),
+          personalityDescription: _value('personalityDescription').isEmpty
+              ? persona
+              : _value('personalityDescription'),
+          surfacePersonality: _value('surfacePersonality'),
+          deepPersonality: _value('deepPersonality'),
+          familyBackground: _value('familyBackground'),
+          upbringing: _value('upbringing'),
+          importantExperiences: _value('importantExperiences'),
+          worldview: _value('worldview'),
+          relationship: _value('relationship'),
+          howMet: _value('howMet'),
+          currentStage: _value('currentStage'),
+        ),
+      );
+      await CharacterArchiveStorageService(characterId: characterId).save(
+        CharacterArchive(
+          characterId: characterId,
+          values: {
+            'likes': _value('likes'),
+            'smallHabits': _value('smallHabits'),
+            'inLove': _value('inLove'),
+            'importantPrinciples': _value('importantPrinciples'),
+            'dailyState': _value('dailyState'),
+            'currentState': _value('currentState'),
+            'languageHabits': _value('languageHabits'),
+          },
+        ),
+      );
+      await _registry.addCharacter(character);
       try {
         await AutoEchoService().generateInitialEcho(character, now: now);
       } catch (_) {
@@ -226,10 +246,13 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  String _value(String key) => _fields[key]!.text.trim();
+
   @override
   Widget build(BuildContext context) {
-    final portraitFile =
-        _portraitSourcePath.isEmpty ? null : File(_portraitSourcePath);
+    final portraitFile = _portraitSourcePath.isEmpty
+        ? null
+        : File(_portraitSourcePath);
     final hasPortrait = portraitFile != null && portraitFile.existsSync();
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -272,16 +295,23 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                               child: hasPortrait
                                   ? null
                                   : const Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
-                                        Icon(Icons.add_rounded,
-                                            size: 46, color: Color(0xFF8D959D)),
+                                        Icon(
+                                          Icons.add_rounded,
+                                          size: 46,
+                                          color: Color(0xFF8D959D),
+                                        ),
                                         SizedBox(height: 10),
-                                        Text('创建形象',
-                                            style: TextStyle(
-                                                color: Color(0xFF8D959D),
-                                                fontSize: 17,
-                                                fontWeight: FontWeight.w600)),
+                                        Text(
+                                          '创建形象',
+                                          style: TextStyle(
+                                            color: Color(0xFF8D959D),
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
                                       ],
                                     ),
                             ),
@@ -301,16 +331,22 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                                       ? null
                                       : MemoryImage(_avatarBytes!),
                                   child: _avatarBytes == null
-                                      ? const Icon(Icons.crop_rounded,
-                                          color: Color(0xFF7C858D))
+                                      ? const Icon(
+                                          Icons.crop_rounded,
+                                          color: Color(0xFF7C858D),
+                                        )
                                       : null,
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              const Text('聊天头像预览',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      fontSize: 12, color: Colors.black54)),
+                              const Text(
+                                '聊天头像预览',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black54,
+                                ),
+                              ),
                               TextButton(
                                 onPressed: _saving ? null : _editAvatar,
                                 child: const Text('调整'),
@@ -321,44 +357,93 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    _sectionTitle('角色名称'),
+                    _sectionTitle('基础信息'),
                     _InputCard(
-                      label: '名称',
+                      label: '角色名称（必填）',
                       hint: '请填写角色名称',
                       controller: _nameController,
                       maxLength: 20,
                     ),
-                    const SizedBox(height: 20),
-                    _sectionTitle('角色设定'),
+                    const SizedBox(height: 12),
                     _InputCard(
-                      label: '人物设定',
-                      hint: '角色的性格、身份、说话风格，以及与用户的关系等。请使用“用户”称呼与角色对话的人。',
+                      label: '角色简介 / 核心人设（必填）',
+                      hint: '例如：银白短发，蓝色眼睛。性格冷淡，但对亲近的人温柔。',
                       controller: _personaController,
-                      minLines: 10,
-                      maxLines: 18,
-                      maxLength: 6000,
+                      minLines: 5,
+                      maxLines: 10,
+                      maxLength: 2400,
                     ),
-                    const SizedBox(height: 20),
-                    _sectionTitle('角色简介（选填）'),
-                    _InputCard(
-                      label: '一句介绍',
-                      hint: '例如：每天都会等你回家。',
-                      controller: _introductionController,
-                      maxLength: 20,
+                    const SizedBox(height: 12),
+                    _ExpansionCard(
+                      title: '更多基础资料',
+                      subtitle: '姓名、年龄、身份等均为选填',
+                      fields: _inputFields(const [
+                        ('name', '姓名'),
+                        ('age', '年龄'),
+                        ('gender', '性别'),
+                        ('height', '身高'),
+                        ('birthday', '生日'),
+                        ('identity', '身份'),
+                        ('occupation', '职业'),
+                        ('location', '所在地'),
+                      ]),
                     ),
-                    const SizedBox(height: 20),
-                    _sectionTitle('高级设置'),
-                    Material(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      child: ListTile(
-                        onTap: _saving ? null : _openAdvancedSettings,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 9),
-                        title: const Text('行为规则、禁止事项与示例对话'),
-                        subtitle: const Text('可选，未填写时使用 PeiLink 默认规则'),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                      ),
+                    const SizedBox(height: 24),
+                    _sectionTitle('详细资料（选填）'),
+                    _ExpansionCard(
+                      title: '外貌设定',
+                      subtitle: '整体外貌、发色、穿衣风格与气质',
+                      fields: _inputFields(const [
+                        ('overallAppearance', '整体外貌'),
+                        ('hairColor', '发色'),
+                        ('eyes', '眼睛'),
+                        ('bodyType', '身材'),
+                        ('clothingStyle', '穿衣风格'),
+                        ('specialMarks', '特殊标记'),
+                        ('aura', '气质'),
+                      ]),
+                    ),
+                    _ExpansionCard(
+                      title: '性格设定',
+                      subtitle: '标签、描述、表层表现与深层性格',
+                      fields: _inputFields(const [
+                        ('personalityTags', '性格标签'),
+                        ('personalityDescription', '性格描述'),
+                        ('surfacePersonality', '表层表现'),
+                        ('deepPersonality', '深层性格'),
+                      ], long: true),
+                    ),
+                    _ExpansionCard(
+                      title: '背景故事',
+                      subtitle: '家庭、成长、经历与世界观',
+                      fields: _inputFields(const [
+                        ('familyBackground', '家庭背景'),
+                        ('upbringing', '成长经历'),
+                        ('importantExperiences', '重要经历'),
+                        ('worldview', '世界观'),
+                      ], long: true),
+                    ),
+                    _ExpansionCard(
+                      title: '关系资料',
+                      subtitle: '与用户的关系、相识方式与当前阶段',
+                      fields: _inputFields(const [
+                        ('relationship', '与用户关系'),
+                        ('howMet', '相识方式'),
+                        ('currentStage', '当前阶段'),
+                      ], long: true),
+                    ),
+                    _ExpansionCard(
+                      title: '角色档案',
+                      subtitle: '喜好、习惯、情感、价值观与生活表达',
+                      fields: _inputFields(const [
+                        ('likes', '喜好'),
+                        ('smallHabits', '习惯'),
+                        ('inLove', '情感模式'),
+                        ('importantPrinciples', '价值观'),
+                        ('dailyState', '日常生活'),
+                        ('currentState', '世界设定'),
+                        ('languageHabits', '语言表达'),
+                      ], long: true),
                     ),
                   ],
                 ),
@@ -380,11 +465,17 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                             width: 22,
                             height: 22,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2.2, color: Colors.white),
+                              strokeWidth: 2.2,
+                              color: Colors.white,
+                            ),
                           )
-                        : const Text('创建角色',
+                        : const Text(
+                            '创建角色',
                             style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w700)),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -396,10 +487,91 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
   }
 
   Widget _sectionTitle(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 0, 4, 9),
-        child: Text(text,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-      );
+    padding: const EdgeInsets.fromLTRB(4, 0, 4, 9),
+    child: Text(
+      text,
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+    ),
+  );
+
+  List<_CreationField> _inputFields(
+    List<(String, String)> definitions, {
+    bool long = false,
+  }) => definitions
+      .map(
+        (field) => _CreationField(
+          label: field.$2,
+          controller: _fields[field.$1]!,
+          minLines: long ? 2 : 1,
+          maxLines: long ? 5 : 1,
+        ),
+      )
+      .toList();
+}
+
+class _CreationField {
+  const _CreationField({
+    required this.label,
+    required this.controller,
+    required this.minLines,
+    required this.maxLines,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final int minLines;
+  final int maxLines;
+}
+
+class _ExpansionCard extends StatelessWidget {
+  const _ExpansionCard({
+    required this.title,
+    required this.subtitle,
+    required this.fields,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<_CreationField> fields;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      color: Colors.white.withValues(alpha: 0.82),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+        childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(subtitle),
+        children: fields
+            .map(
+              (field) => Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: TextField(
+                  controller: field.controller,
+                  minLines: field.minLines,
+                  maxLines: field.maxLines,
+                  decoration: InputDecoration(
+                    labelText: field.label,
+                    filled: true,
+                    fillColor: const Color(0xFFF6F7F8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
 }
 
 class _InputCard extends StatelessWidget {
@@ -506,9 +678,9 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _loadingImage = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('读取图片失败：$error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('读取图片失败：$error')));
     }
   }
 
@@ -535,8 +707,9 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     setState(() => _saving = true);
     try {
       await Future<void>.delayed(const Duration(milliseconds: 40));
-      final boundary = _captureKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
+      final boundary =
+          _captureKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary == null) throw StateError('头像预览尚未准备好。');
       final image = await boundary.toImage(pixelRatio: 2.5);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -547,8 +720,9 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('$error')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
     }
   }
 

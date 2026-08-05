@@ -12,7 +12,6 @@ import '../../services/auto_echo_comment_reply_service.dart';
 import '../../services/echo_comment_storage_service.dart';
 import '../../services/echo_comment_interaction_service.dart';
 import '../../services/echo_comment_reaction_storage_service.dart';
-import '../../services/character_registry_service.dart';
 import '../../widgets/echo/ai_verified_badge.dart';
 
 class EchoCommentsPage extends StatefulWidget {
@@ -223,79 +222,6 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
     } catch (error) {
       _showMessage('删除失败：$error');
     }
-  }
-
-  Future<void> addDebugCharacterComment() async {
-    final characters = await CharacterRegistryService().loadCharacters();
-    if (!mounted || characters.isEmpty) {
-      _showMessage('还没有可用于调试的角色。');
-      return;
-    }
-    final character = await showModalBottomSheet<AiCharacter>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const ListTile(
-              title: Text('选择评论身份'),
-              subtitle: Text('仅用于测试角色名、头像、回复与存储'),
-            ),
-            for (final item in characters)
-              ListTile(
-                title: Text(item.displayName),
-                subtitle: Text(item.characterName),
-                onTap: () => Navigator.pop(sheetContext, item),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (character == null || !mounted) return;
-
-    final input = TextEditingController();
-    final content = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('以 ${character.displayName} 评论'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          minLines: 1,
-          maxLines: 4,
-          maxLength: 500,
-          decoration: const InputDecoration(hintText: '输入调试评论'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, input.text.trim()),
-            child: const Text('发布'),
-          ),
-        ],
-      ),
-    );
-    input.dispose();
-    if (content == null || content.isEmpty) return;
-
-    final now = DateTime.now();
-    final comment = EchoComment(
-      id: 'debug_comment_${now.microsecondsSinceEpoch}',
-      echoId: _echo.id,
-      authorType: EchoCommentAuthorType.character,
-      authorId: character.id,
-      authorNameSnapshot: character.displayName,
-      authorAvatarSnapshot: character.avatarPath,
-      content: content,
-      createdAt: now,
-      sourceType: EchoCommentSourceType.manualCharacterDebug,
-      commentType: EchoCommentType.aiCharacter,
-    );
-    await EchoCommentStorageService(ownerId: widget.ownerId).add(comment);
-    await _setEcho(_echo.copyWith(comments: [..._echo.comments, comment]));
   }
 
   void _showMessage(String text) {

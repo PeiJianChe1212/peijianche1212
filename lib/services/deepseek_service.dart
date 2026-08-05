@@ -5,7 +5,9 @@ import 'package:http/http.dart' as http;
 import '../ai/model_hub.dart';
 import '../conversation/conversation_engine.dart';
 import '../models/ai_character.dart';
+import '../models/ai_red_packet_opportunity.dart';
 import '../models/chat_message.dart';
+import '../models/character_settings.dart';
 import '../models/pending_memory.dart';
 import '../context_builder/character_context.dart';
 import '../context_builder/cooldown_context.dart';
@@ -21,14 +23,18 @@ import '../prompt_composer/prompt_context.dart';
 import 'activity_context_service.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
+import 'character_archive_storage_service.dart';
+import 'character_profile_storage_service.dart';
 import 'echo_chat_context_service.dart';
 import 'character_registry_service.dart';
 import 'character_relationship_context_service.dart';
 import 'ai_social_protocol_service.dart';
+import 'ai_red_packet_opportunity_service.dart';
 import 'context_builder.dart';
 import 'prompt_builder.dart';
 import 'relationship_cooldown_service.dart';
 import 'shared_world_event_service.dart';
+import 'transient_event_reply_guard.dart';
 import 'user_profile_storage_service.dart';
 
 class DeepSeekService {
@@ -57,6 +63,7 @@ class DeepSeekService {
     required double intimacy,
     required double tsundere,
     String? characterId,
+    String transientEventContext = '',
   }) async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
@@ -97,18 +104,22 @@ class DeepSeekService {
         break;
       }
     }
-    final relationshipPrompt = currentCharacter == null
-        ? ''
-        : await CharacterRelationshipContextService().buildPromptSection(
-            currentCharacter: currentCharacter,
-            allCharacters: registeredCharacters,
-          );
-    final socialProtocolPrompt = currentCharacter == null
-        ? ''
-        : AiSocialProtocolService.buildPromptSection(
-            currentCharacter: currentCharacter,
-            allCharacters: registeredCharacters,
-          );
+    currentCharacter ??= await CharacterRegistryService().loadActiveCharacter();
+    final characterProfile = await CharacterProfileStorageService(
+      characterId: currentCharacter.id,
+    ).load(character: currentCharacter, legacySettings: characterSettings);
+    final characterArchive = await CharacterArchiveStorageService(
+      characterId: currentCharacter.id,
+    ).load();
+    final relationshipPrompt = await CharacterRelationshipContextService()
+        .buildPromptSection(
+          currentCharacter: currentCharacter,
+          allCharacters: registeredCharacters,
+        );
+    final socialProtocolPrompt = AiSocialProtocolService.buildPromptSection(
+      currentCharacter: currentCharacter,
+      allCharacters: registeredCharacters,
+    );
 
     final conversationEngine = ConversationEngine.build(
       messages: validConversation,
@@ -134,6 +145,8 @@ class DeepSeekService {
       character: CharacterContext(
         settings: characterSettings,
         userProfile: userProfile,
+        profile: characterProfile,
+        archive: characterArchive,
         styleExamples: PromptBuilder.buildStyleExamplesPrompt(
           characterSettings,
         ),
@@ -170,6 +183,7 @@ class DeepSeekService {
     );
     final modelContext = PromptComposer(baseContext: context)
         .addContext(PromptContext.cooldown(cooldownContext.toPromptSection()))
+        .addContext(PromptContext.redPacketEvent(transientEventContext))
         .addContext(PromptContext.chatFlow(chatFlowPlan.toPromptSection()))
         .addContext(
           PromptContext.personalityStyle(personalityStyle.toPromptSection()),
@@ -180,13 +194,38 @@ class DeepSeekService {
         .compose();
 
     final provider = await _modelHub.chatProvider();
-    final content = await provider.complete(
-      messages: modelContext.messages,
-      temperature: temperature,
-      maxTokens: _getMaxTokens(replyLength, conversationMode),
-      topP: _getTopP(temperature),
-    );
+    Future<String> complete(List<Map<String, dynamic>> messages) {
+      return provider.complete(
+        messages: messages,
+        temperature: temperature,
+        maxTokens: _getMaxTokens(replyLength, conversationMode),
+        topP: _getTopP(temperature),
+      );
+    }
+
+    final content = transientEventContext.trim().isEmpty
+        ? await complete(modelContext.messages)
+        : await TransientEventReplyGuard.completeWithEmptyReplyFallback(
+            messages: modelContext.messages,
+            complete: complete,
+            localFallback: () => _buildRedPacketFallback(characterSettings),
+          );
     return _cleanReply(content);
+  }
+
+  Future<AiRedPacketOpportunity> evaluateRedPacketOpportunity({
+    required List<ChatMessage> messages,
+  }) async {
+    final provider = await _modelHub.chatProvider();
+    return const AiRedPacketOpportunityService().evaluate(
+      messages: messages,
+      complete: (requestMessages) => provider.complete(
+        messages: requestMessages,
+        temperature: 0.15,
+        maxTokens: 160,
+        topP: 0.8,
+      ),
+    );
   }
 
   String _messageContentForModel(ChatMessage message) {
@@ -213,6 +252,16 @@ class DeepSeekService {
     if (caption.isNotEmpty) parts.add('用户随图片说：$caption');
     parts.add('请按照当前角色的说话方式自然回应图片和用户的话，不要复述识图报告。');
     return parts.join('\n');
+  }
+
+  String _buildRedPacketFallback(CharacterSettings settings) {
+    if (settings.tsundere >= 0.68) {
+      return '……我收下了。下次别这么乱花。';
+    }
+    if (settings.intimacy >= 0.66) {
+      return '收到了。谢谢你，这份心意我会好好收着。';
+    }
+    return '我收到了，谢谢你。你的心意我记下了。';
   }
 
   Future<String> composeImageMessage({required String userRequest}) async {

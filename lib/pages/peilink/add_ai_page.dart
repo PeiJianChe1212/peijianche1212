@@ -7,9 +7,9 @@ class AddAiPage extends StatelessWidget {
   const AddAiPage({super.key});
 
   void _showComingSoon(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$feature会在后面的版本开放。')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$feature会在后面的版本开放。')));
   }
 
   Future<void> _openCreation(BuildContext context) async {
@@ -61,7 +61,7 @@ class AddAiPage extends StatelessWidget {
             ),
             _AddOption(
               icon: Icons.qr_code_scanner_rounded,
-              iconColor: Color(0xFF07C160),
+              iconColor: Color(0xFF7D89E6),
               title: '扫描分享码',
               subtitle: '扫描别人分享的角色二维码',
               onTap: () => _showComingSoon(context, '扫描分享码'),

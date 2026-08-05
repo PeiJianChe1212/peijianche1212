@@ -1,36 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../services/auto_echo_service.dart';
 import 'api_settings_page.dart';
 
-class SettingsPage extends StatefulWidget {
+class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
-
-  @override
-  State<SettingsPage> createState() => _SettingsPageState();
-}
-
-class _SettingsPageState extends State<SettingsPage> {
-  bool _testingEcho = false;
-
-  Future<void> _generateTestEcho() async {
-    if (_testingEcho) return;
-    setState(() => _testingEcho = true);
-    try {
-      final item = await AutoEchoService().generateTestEcho();
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('测试 Echo 已生成：${item.content}')));
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('生成测试 Echo 失败：$error')));
-    } finally {
-      if (mounted) setState(() => _testingEcho = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,34 +52,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     context,
                     MaterialPageRoute(builder: (_) => const ApiSettingsPage()),
                   ),
-                ),
-                const Divider(height: 1, indent: 70),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  leading: const _SettingsIcon(
-                    icon: Icons.auto_awesome_rounded,
-                    color: Color(0xFF9A6884),
-                    background: Color(0xFFF5EAF1),
-                  ),
-                  title: const Text(
-                    'Echo 测试',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: const Text('立即为当前角色生成一条测试生活动态'),
-                  trailing: _testingEcho
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(
-                          Icons.play_circle_outline_rounded,
-                          color: Colors.black38,
-                        ),
-                  onTap: _testingEcho ? null : _generateTestEcho,
                 ),
               ],
             ),

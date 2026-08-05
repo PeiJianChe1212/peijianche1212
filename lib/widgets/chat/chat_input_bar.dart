@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_dimensions.dart';
+import '../../theme/app_text_styles.dart';
+
 class ChatInputBar extends StatelessWidget {
   const ChatInputBar({
     super.key,
@@ -8,6 +11,8 @@ class ChatInputBar extends StatelessWidget {
     required this.isLoading,
     required this.onSend,
     required this.onMore,
+    this.isMorePanelOpen = false,
+    this.onInputTap,
   });
 
   final TextEditingController controller;
@@ -15,21 +20,27 @@ class ChatInputBar extends StatelessWidget {
   final bool isLoading;
   final VoidCallback onSend;
   final VoidCallback onMore;
+  final bool isMorePanelOpen;
+  final VoidCallback? onInputTap;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 5, 10, 8),
+      padding: const EdgeInsets.fromLTRB(10, 3, 10, 5),
       child: SafeArea(
         top: false,
         child: Material(
-          color: const Color(0xFFF7F7F7).withValues(alpha: 0.96),
-          elevation: 4,
-          shadowColor: Colors.black.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(24),
+          color: Colors.white.withValues(alpha: 0.76),
+          elevation: 0,
           clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppDimensions.radiusLarge),
+            side: BorderSide(
+              color: const Color(0xFF8793E8).withValues(alpha: 0.20),
+            ),
+          ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(7, 5, 7, 5),
+            padding: const EdgeInsets.fromLTRB(7, 3, 7, 3),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -37,29 +48,26 @@ class ChatInputBar extends StatelessWidget {
                   child: TextField(
                     controller: controller,
                     focusNode: focusNode,
+                    onTap: onInputTap,
                     minLines: 1,
                     maxLines: 5,
                     textInputAction: TextInputAction.newline,
                     decoration: const InputDecoration(
-                      hintText: '输入消息',
+                      hintText: '说点什么…',
                       hintStyle: TextStyle(
                         color: Color(0xFF9DA1A6),
                         fontSize: 16,
                       ),
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: 11,
-                        vertical: 8,
+                        vertical: 6,
                       ),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
                       isDense: true,
                     ),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      height: 1.35,
-                      color: Color(0xFF171717),
-                    ),
+                    style: AppTextStyles.bodyCompact,
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -69,16 +77,21 @@ class ChatInputBar extends StatelessWidget {
                     final hasText = controller.text.trim().isNotEmpty;
                     if (hasText) {
                       return SizedBox(
-                        height: 38,
+                        height: AppDimensions.inputControlHeight,
                         child: FilledButton(
                           onPressed: isLoading ? null : onSend,
                           style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF07C160),
-                            disabledBackgroundColor: const Color(0xFFB8DCC8),
+                            backgroundColor: const Color(0xFF7D89E6),
+                            disabledBackgroundColor: const Color(0xFFC9CEEC),
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            minimumSize: const Size(0, 38),
+                            minimumSize: const Size(
+                              0,
+                              AppDimensions.inputControlHeight,
+                            ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(19),
+                              borderRadius: BorderRadius.circular(
+                                AppDimensions.radiusPill,
+                              ),
                             ),
                           ),
                           child: const Text(
@@ -90,14 +103,21 @@ class ChatInputBar extends StatelessWidget {
                     }
 
                     return IconButton(
-                      tooltip: '更多功能',
+                      tooltip: isMorePanelOpen ? '收起功能栏' : '更多功能',
                       onPressed: isLoading ? null : onMore,
-                      icon: const Icon(Icons.add_circle_outline_rounded, size: 30),
-                      color: const Color(0xFF2C2C2C),
+                      icon: AnimatedRotation(
+                        turns: isMorePanelOpen ? 0.125 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: const Icon(
+                          Icons.add_circle_outline_rounded,
+                          size: 27,
+                        ),
+                      ),
+                      color: const Color(0xFF6975CF),
                       padding: const EdgeInsets.all(4),
                       constraints: const BoxConstraints(
-                        minWidth: 38,
-                        minHeight: 38,
+                        minWidth: AppDimensions.inputControlHeight,
+                        minHeight: AppDimensions.inputControlHeight,
                       ),
                     );
                   },

@@ -1,14 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../models/ai_character.dart';
-import '../../models/character_settings.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/character_scope_service.dart';
-import '../../services/character_settings_storage_service.dart';
 import '../../services/session_reset_service.dart';
+import '../../theme/app_theme_background.dart';
 import '../character_settings_page.dart';
 import '../memory_page.dart';
-import 'character_profile_edit_page.dart';
+import 'character_profile_home_page.dart';
 
 class CharacterManagementPage extends StatefulWidget {
   const CharacterManagementPage({super.key, required this.characterId});
@@ -23,13 +24,9 @@ class CharacterManagementPage extends StatefulWidget {
 class _CharacterManagementPageState extends State<CharacterManagementPage> {
   final CharacterRegistryService _registry = CharacterRegistryService();
 
-  CharacterSettings _settings = CharacterSettings.defaults();
   AiCharacter _character = AiCharacter.peiJianChe();
   bool _loading = true;
   bool _deleting = false;
-
-  CharacterSettingsStorageService get _storage =>
-      CharacterSettingsStorageService(characterId: _character.id);
 
   SessionResetService get _sessionReset =>
       SessionResetService(characterId: _character.id);
@@ -46,61 +43,12 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
       (item) => item.id == widget.characterId,
       orElse: AiCharacter.peiJianChe,
     );
-    final settings = await CharacterSettingsStorageService(
-      characterId: character.id,
-    ).loadSettings();
-
     if (!mounted) return;
     setState(() {
       _character = character;
-      _settings = settings;
       _loading = false;
     });
   }
-
-  Future<void> _openProfileEdit() async {
-    final changed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CharacterProfileEditPage(characterId: _character.id),
-      ),
-    );
-    if (changed == true) await _load();
-  }
-
-  Future<void> _editCallName() async {
-    var editedValue = _settings.userCallName;
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('他对你的专属称呼'),
-        content: TextFormField(
-          initialValue: _settings.userCallName,
-          autofocus: true,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(hintText: '例如：念念、小狐狸、林小姐'),
-          onChanged: (value) => editedValue = value,
-          onFieldSubmitted: (value) =>
-              Navigator.pop(dialogContext, value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, editedValue.trim()),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-
-    if (value == null || value.isEmpty) return;
-    await _storage.saveSettings(_settings.copyWith(userCallName: value));
-    await _load();
-  }
-
 
   Future<void> _openMemory() async {
     await Navigator.push(
@@ -109,10 +57,12 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
     );
   }
 
-  Future<void> _openPersonaAndConversation() async {
+  Future<void> _openSettingsSection(CharacterSettingsSection section) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const CharacterSettingsPage()),
+      MaterialPageRoute(
+        builder: (_) => CharacterSettingsPage(section: section),
+      ),
     );
     await _load();
   }
@@ -150,8 +100,7 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
                     ),
                     actions: [
                       TextButton(
-                        onPressed: () =>
-                            Navigator.pop(dialogContext, false),
+                        onPressed: () => Navigator.pop(dialogContext, false),
                         child: const Text('取消'),
                       ),
                       FilledButton(
@@ -183,9 +132,7 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('删除${_character.characterName}？'),
-        content: const Text(
-          '角色资料、聊天、Memory、Today 和所有独立数据都会一起删除。这个操作无法撤销。',
-        ),
+        content: const Text('角色资料、聊天、Memory、Today 和所有独立数据都会一起删除。这个操作无法撤销。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -215,9 +162,7 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
             TextField(
               autofocus: true,
               onChanged: (value) => typedName = value.trim(),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(border: OutlineInputBorder()),
             ),
           ],
         ),
@@ -275,77 +220,104 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F4F4),
-      appBar: AppBar(
-        title: const Text('角色设置'),
-        centerTitle: true,
-        backgroundColor: const Color(0xFFF4F4F4),
-        surfaceTintColor: Colors.transparent,
+    return ThemeBackgroundContainer(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text('角色管理'),
+          centerTitle: true,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.only(top: 10, bottom: 30),
+                children: [
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        CircleAvatar(
+                          radius: 34,
+                          backgroundImage:
+                              _character.avatarPath.isNotEmpty &&
+                                  File(_character.avatarPath).existsSync()
+                              ? FileImage(File(_character.avatarPath))
+                              : _character.isBuiltIn
+                              ? const AssetImage('assets/images/pei_avatar.jpg')
+                              : null,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _character.displayName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _Tile(
+                    title: '角色资料',
+                    subtitle: '基础、外貌、性格、背景与关系资料',
+                    onTap: () => Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            CharacterProfileHomePage(character: _character),
+                      ),
+                    ),
+                  ),
+                  _Tile(
+                    title: '相处方式',
+                    subtitle: '回复节奏、主动程度、亲密表达与聊天偏好',
+                    onTap: () => _openSettingsSection(
+                      CharacterSettingsSection.interaction,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _Tile(
+                    title: 'Memory',
+                    subtitle: '${_character.characterName}独立保存的长期记忆',
+                    onTap: _openMemory,
+                  ),
+                  _Tile(
+                    title: '心声',
+                    subtitle: '看看他最近没有说出口的话',
+                    onTap: () => _soon('心声'),
+                  ),
+                  const SizedBox(height: 10),
+                  _Tile(
+                    title: '导出角色',
+                    subtitle: '以后可生成角色文件或分享码',
+                    onTap: () => _soon('导出角色'),
+                  ),
+                  const SizedBox(height: 10),
+                  _Tile(
+                    title: '清理与重置',
+                    subtitle: '清空聊天，或重新开始这段关系',
+                    onTap: _showCleanupOptions,
+                  ),
+                  const SizedBox(height: 10),
+                  _Tile(
+                    title: _character.isBuiltIn ? '内置角色不可删除' : '删除角色',
+                    subtitle: _character.isBuiltIn
+                        ? '裴简澈是 PeiLink 的内置角色'
+                        : '永久删除角色及其所有独立数据',
+                    destructive: !_character.isBuiltIn,
+                    enabled: !_character.isBuiltIn && !_deleting,
+                    onTap: _deleteCharacter,
+                  ),
+                ],
+              ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.only(top: 10, bottom: 30),
-              children: [
-                _Tile(
-                  title: '编辑备注与资料',
-                  subtitle: _settings.remark.trim().isEmpty
-                      ? '当前没有备注'
-                      : '当前备注：${_settings.remark}',
-                  onTap: _openProfileEdit,
-                ),
-                _Tile(
-                  title: '他对你的专属称呼',
-                  subtitle: _settings.userCallName,
-                  onTap: _editCallName,
-                ),
-                const SizedBox(height: 10),
-                _Tile(
-                  title: '人设与相处方式',
-                  subtitle: '人设、回复节奏、主动程度和亲密表达',
-                  onTap: _openPersonaAndConversation,
-                ),
-                const SizedBox(height: 10),
-                _Tile(
-                  title: 'Memory',
-                  subtitle: '${_character.characterName}独立保存的长期记忆',
-                  onTap: _openMemory,
-                ),
-                _Tile(
-                  title: '共同回忆',
-                  subtitle: '纪念日、重要事件和聊天留下的痕迹',
-                  onTap: () => _soon('共同回忆'),
-                ),
-                _Tile(
-                  title: '心声',
-                  subtitle: '看看他最近没有说出口的话',
-                  onTap: () => _soon('心声'),
-                ),
-                const SizedBox(height: 10),
-                _Tile(
-                  title: '导出角色',
-                  subtitle: '以后可生成角色文件或分享码',
-                  onTap: () => _soon('导出角色'),
-                ),
-                const SizedBox(height: 10),
-                _Tile(
-                  title: '清理与重置',
-                  subtitle: '清空聊天，或重新开始这段关系',
-                  onTap: _showCleanupOptions,
-                ),
-                const SizedBox(height: 10),
-                _Tile(
-                  title: _character.isBuiltIn ? '内置角色不可删除' : '删除角色',
-                  subtitle: _character.isBuiltIn
-                      ? '裴简澈是 PeiLink 的内置角色'
-                      : '永久删除角色及其所有独立数据',
-                  destructive: !_character.isBuiltIn,
-                  enabled: !_character.isBuiltIn && !_deleting,
-                  onTap: _deleteCharacter,
-                ),
-              ],
-            ),
     );
   }
 }
@@ -370,18 +342,15 @@ class _Tile extends StatelessWidget {
     final foreground = !enabled
         ? const Color(0xFFAAAAAA)
         : destructive
-            ? const Color(0xFFFA5151)
-            : const Color(0xFF171717);
+        ? const Color(0xFFFA5151)
+        : const Color(0xFF171717);
 
     return Container(
       color: Colors.white,
       child: ListTile(
         enabled: enabled,
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-        title: Text(
-          title,
-          style: TextStyle(color: foreground, fontSize: 16),
-        ),
+        title: Text(title, style: TextStyle(color: foreground, fontSize: 16)),
         subtitle: subtitle == null
             ? null
             : Text(

@@ -1,4 +1,6 @@
 import '../models/character_settings.dart';
+import '../models/character_archive.dart';
+import '../models/character_profile.dart';
 import '../models/user_profile.dart';
 
 /// Character Context 的输入。
@@ -8,10 +10,14 @@ class CharacterContext {
   const CharacterContext({
     required this.settings,
     required this.userProfile,
+    this.profile,
+    this.archive,
     this.styleExamples = '',
   });
 
   final CharacterSettings settings;
   final UserProfile userProfile;
+  final CharacterProfile? profile;
+  final CharacterArchive? archive;
   final String styleExamples;
 }

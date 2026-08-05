@@ -23,6 +23,7 @@ import '../../services/echo_storage_service.dart';
 import '../../services/echo_visitor_storage_service.dart';
 import '../../services/shared_experience_storage_service.dart';
 import '../../services/user_profile_storage_service.dart';
+import '../../theme/app_theme_background.dart';
 import '../../widgets/echo/echo_interaction_bar.dart';
 import '../../widgets/echo/ai_verified_badge.dart';
 import '../../widgets/echo/echo_recent_visitors_strip.dart';
@@ -41,6 +42,7 @@ class PeiLinkEchoPage extends StatefulWidget {
     super.key,
     this.character,
     this.showPublicTimeline = false,
+    this.embedded = false,
   });
 
   /// 传入角色时显示该角色的个人 Echo。
@@ -49,6 +51,9 @@ class PeiLinkEchoPage extends StatefulWidget {
 
   /// 为 true 时显示所有角色与用户发布的公共 Echo 时间线。
   final bool showPublicTimeline;
+
+  /// 嵌入 PeiLink 一级 Tab 时不显示返回入口。
+  final bool embedded;
 
   @override
   State<PeiLinkEchoPage> createState() => _PeiLinkEchoPageState();
@@ -633,15 +638,17 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _isCharacterSpace
-            ? _buildCharacterSpace()
-            : _buildClassicEcho(),
+    return ThemeBackgroundContainer(
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _isCharacterSpace
+              ? _buildCharacterSpace()
+              : _buildClassicEcho(),
+        ),
       ),
     );
   }
@@ -658,7 +665,9 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
               avatar: _avatar(),
               displayName: _displayName,
               signature: _signature,
-              onBack: () => Navigator.maybePop(context),
+              onBack: widget.embedded
+                  ? null
+                  : () => Navigator.maybePop(context),
               onCreate: _showCreateMenu,
               onOpenCover: _openCoverPreview,
             ),
@@ -2356,7 +2365,7 @@ class _EchoLifeHeader extends StatelessWidget {
   final Widget avatar;
   final String displayName;
   final String signature;
-  final VoidCallback onBack;
+  final VoidCallback? onBack;
   final VoidCallback onCreate;
   final VoidCallback onOpenCover;
 
@@ -2389,15 +2398,16 @@ class _EchoLifeHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              Positioned(
-                top: MediaQuery.paddingOf(context).top + 4,
-                left: 6,
-                child: IconButton(
-                  onPressed: onBack,
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                  color: Colors.white,
+              if (onBack != null)
+                Positioned(
+                  top: MediaQuery.paddingOf(context).top + 4,
+                  left: 6,
+                  child: IconButton(
+                    onPressed: onBack,
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                    color: Colors.white,
+                  ),
                 ),
-              ),
               Positioned(
                 top: MediaQuery.paddingOf(context).top + 4,
                 right: 6,

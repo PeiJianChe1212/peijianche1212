@@ -72,7 +72,7 @@ class _ProfileTextEditPageState extends State<ProfileTextEditPage> {
             child: FilledButton(
               onPressed: _canSave ? _save : null,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF07C160),
+                backgroundColor: const Color(0xFF7D89E6),
                 disabledBackgroundColor: const Color(0xFFE2E2E2),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 minimumSize: const Size(0, 40),
@@ -149,7 +149,7 @@ class _ProfileGenderEditPageState extends State<ProfileGenderEditPage> {
                   ? null
                   : () => Navigator.pop(context, _value),
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF07C160),
+                backgroundColor: const Color(0xFF7D89E6),
                 disabledBackgroundColor: const Color(0xFFE2E2E2),
                 minimumSize: const Size(0, 40),
               ),
@@ -188,7 +188,11 @@ class _ProfileGenderEditPageState extends State<ProfileGenderEditPage> {
 }
 
 class _GenderTile extends StatelessWidget {
-  const _GenderTile({required this.title, required this.selected, required this.onTap});
+  const _GenderTile({
+    required this.title,
+    required this.selected,
+    required this.onTap,
+  });
   final String title;
   final bool selected;
   final VoidCallback onTap;
@@ -198,7 +202,7 @@ class _GenderTile extends StatelessWidget {
     return ListTile(
       title: Text(title, style: const TextStyle(fontSize: 18)),
       trailing: selected
-          ? const Icon(Icons.check_rounded, color: Color(0xFF07C160))
+          ? const Icon(Icons.check_rounded, color: Color(0xFF7D89E6))
           : null,
       onTap: onTap,
     );
