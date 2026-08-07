@@ -43,9 +43,9 @@ class HomeGlass extends StatelessWidget {
   };
 
   double get _opacity => switch (level) {
-    HomeGlassLevel.main => 0.145,
-    HomeGlassLevel.card => 0.105,
-    HomeGlassLevel.button => 0.115,
+    HomeGlassLevel.main => 0.460,
+    HomeGlassLevel.card => 0.340,
+    HomeGlassLevel.button => 0.300,
   };
 
   List<BoxShadow> get _shadow => switch (level) {
@@ -57,7 +57,8 @@ class HomeGlass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(_radius);
-    final baseTint = tint ?? Colors.white;
+    final baseTint = Color.lerp(Colors.white, tint ?? Colors.white, 0.12)!;
+    final opacity = surfaceOpacity ?? _opacity;
 
     return ClipRRect(
       borderRadius: radius,
@@ -72,20 +73,16 @@ class HomeGlass extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                baseTint.withValues(
-                  alpha: (surfaceOpacity ?? _opacity) + 0.045,
-                ),
-                baseTint.withValues(alpha: surfaceOpacity ?? _opacity),
-                Colors.white.withValues(
-                  alpha: (surfaceOpacity ?? _opacity) * 0.52,
-                ),
+                baseTint.withValues(alpha: (opacity + 0.18).clamp(0, 1)),
+                baseTint.withValues(alpha: opacity),
+                Colors.white.withValues(alpha: opacity * 0.62),
               ],
               stops: const [0, 0.48, 1],
             ),
             borderRadius: radius,
             border: Border.all(
               color: Colors.white.withValues(
-                alpha: level == HomeGlassLevel.main ? 0.20 : 0.14,
+                alpha: level == HomeGlassLevel.main ? 0.76 : 0.58,
               ),
             ),
             boxShadow: shadows ?? _shadow,
@@ -102,7 +99,7 @@ class HomeGlass extends StatelessWidget {
                     gradient: LinearGradient(
                       colors: [
                         Colors.transparent,
-                        Colors.white.withValues(alpha: 0.46),
+                        Colors.white.withValues(alpha: 0.92),
                         Colors.transparent,
                       ],
                     ),
