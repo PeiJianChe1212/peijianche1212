@@ -240,9 +240,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  String get _timeText =>
-      '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}';
-
   ActivityStatus get _activity =>
       _resolvedActivity ??
       _activityService.current(now: _now, characterId: _homeCharacter.id);
@@ -335,44 +332,49 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     ];
 
+    final overlayStyle =
+        (_pageIndex == 0
+                ? SystemUiOverlayStyle.light
+                : SystemUiOverlayStyle.dark)
+            .copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+              systemNavigationBarIconBrightness: _pageIndex == 0
+                  ? Brightness.light
+                  : Brightness.dark,
+            );
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
+      value: overlayStyle,
       child: Scaffold(
-        backgroundColor: const Color(0xFF10151D),
+        backgroundColor: HomeVisualTokens.backgroundMiddle,
         body: Stack(
           children: [
             const Positioned.fill(child: _DesktopBackground()),
-            SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: HomeVisualTokens.statusBarPadding,
-                    child: _DesktopStatusBar(time: _timeText),
+            Positioned.fill(
+              child: PageView.builder(
+                controller: _pageController,
+                physics: const BouncingScrollPhysics(),
+                itemCount: pages.length,
+                onPageChanged: (value) => setState(() => _pageIndex = value),
+                itemBuilder: (_, index) => AnimatedSwitcher(
+                  duration: _motionDuration,
+                  child: KeyedSubtree(
+                    key: ValueKey('${_homeCharacter.id}-$index'),
+                    child: pages[index],
                   ),
-                  Expanded(
-                    child: PageView.builder(
-                      controller: _pageController,
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: pages.length,
-                      onPageChanged: (value) =>
-                          setState(() => _pageIndex = value),
-                      itemBuilder: (_, index) => AnimatedSwitcher(
-                        duration: _motionDuration,
-                        child: KeyedSubtree(
-                          key: ValueKey('${_homeCharacter.id}-$index'),
-                          child: pages[index],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, bottom: 10),
-                    child: _PageIndicator(
-                      count: pages.length,
-                      currentIndex: _pageIndex,
-                    ),
-                  ),
-                ],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.paddingOf(context).bottom + 8,
+              child: IgnorePointer(
+                child: _PageIndicator(
+                  count: pages.length,
+                  currentIndex: _pageIndex,
+                ),
               ),
             ),
           ],
@@ -431,7 +433,7 @@ class _CharacterDesktopPage extends StatelessWidget {
             onTap: onOpenCharacter,
           ),
           Positioned(
-            top: 24,
+            top: MediaQuery.paddingOf(context).top + 12,
             left: 22,
             right: 22,
             child: _AiDesktopHeader(
@@ -442,7 +444,7 @@ class _CharacterDesktopPage extends StatelessWidget {
           Positioned(
             left: 18,
             right: 18,
-            bottom: 14,
+            bottom: MediaQuery.paddingOf(context).bottom + 30,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -459,14 +461,14 @@ class _CharacterDesktopPage extends StatelessWidget {
                     _QuickAction(
                       icon: Icons.chat_bubble_rounded,
                       label: '聊天',
-                      caption: '继续陪伴',
+                      caption: '继续交流',
                       badgeCount: unreadCount,
                       onTap: onChat,
                     ),
                     _QuickAction(
                       icon: Icons.auto_awesome_rounded,
                       label: 'Echo',
-                      caption: '他的回声',
+                      caption: '他的生活回声',
                       assetPath: 'assets/images/app_icons/echo.png',
                       onTap: onEcho,
                     ),
@@ -507,19 +509,19 @@ class _AiDesktopHeader extends StatelessWidget {
             children: [
               Image.asset(
                 'assets/images/brand/peilink_logo_lockup.png',
-                height: 58,
+                height: 42,
                 alignment: Alignment.centerLeft,
                 filterQuality: FilterQuality.high,
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: 2),
               const Text(
                 '有人在这里生活',
                 style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.35,
-                  shadows: [Shadow(color: Color(0xB3000000), blurRadius: 14)],
+                  color: Color(0xAFFFFFFF),
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.65,
+                  shadows: [Shadow(color: Color(0x66000000), blurRadius: 10)],
                 ),
               ),
             ],
@@ -563,7 +565,12 @@ class _LifeDesktopPage extends StatelessWidget {
       ),
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+        padding: EdgeInsets.fromLTRB(
+          18,
+          MediaQuery.paddingOf(context).top + 12,
+          18,
+          MediaQuery.paddingOf(context).bottom + 42,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -579,7 +586,7 @@ class _LifeDesktopPage extends StatelessWidget {
                           const Text(
                             '生活世界',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: HomeVisualTokens.inkPrimary,
                               fontSize: 28,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.5,
@@ -598,7 +605,7 @@ class _LifeDesktopPage extends StatelessWidget {
                       const Text(
                         '观察他正在经历的今天',
                         style: TextStyle(
-                          color: Color(0x7AFFFFFF),
+                          color: HomeVisualTokens.inkSecondary,
                           fontSize: 12.5,
                         ),
                       ),
@@ -741,64 +748,88 @@ class _AppsDesktopPage extends StatelessWidget {
           child: child,
         ),
       ),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  '应用空间',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.5,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0x2EFFFFFF), Color(0x1CE7E0F4), Color(0x0FCBD8F1)],
+            stops: [0, 0.48, 1],
+          ),
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            18,
+            MediaQuery.paddingOf(context).top + 10,
+            18,
+            MediaQuery.paddingOf(context).bottom + 42,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    color: HomeVisualTokens.brandViolet.withValues(alpha: 0.82),
+                    size: 14,
                   ),
-                ),
-                const SizedBox(width: 9),
-                Image.asset(
-                  'assets/images/brand/peilink_butterfly.png',
-                  width: 29,
-                  height: 29,
-                  fit: BoxFit.contain,
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '常用与未来应用，一目了然',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.46),
-                fontSize: 12.5,
+                  const SizedBox(width: 8),
+                  const Text(
+                    '应用空间',
+                    style: TextStyle(
+                      color: HomeVisualTokens.inkPrimary,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Image.asset(
+                    'assets/images/brand/peilink_butterfly.png',
+                    width: 25,
+                    height: 25,
+                    fit: BoxFit.contain,
+                    opacity: const AlwaysStoppedAnimation(0.82),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 17),
-            _PeiLinkAppPortal(entry: peiLink),
-            const SizedBox(height: 18),
-            _AppSection(
-              title: '生活',
-              caption: '记录与感受',
-              icon: Icons.favorite_border_rounded,
-              entries: lifeApps,
-            ),
-            const SizedBox(height: 13),
-            _AppSection(
-              title: '系统',
-              caption: '管理这个世界',
-              icon: Icons.tune_rounded,
-              entries: systemApps,
-            ),
-            const SizedBox(height: 13),
-            _AppSection(
-              title: '未来',
-              caption: '等待开启的空间',
-              icon: Icons.auto_awesome_outlined,
-              entries: futureApps,
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                '常用与未来应用，一目了然',
+                style: TextStyle(
+                  color: HomeVisualTokens.inkSecondary,
+                  fontSize: 12.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _PeiLinkAppPortal(entry: peiLink),
+              const SizedBox(height: 10),
+              _AppSection(
+                title: '生活',
+                caption: '记录与感受',
+                icon: Icons.favorite_border_rounded,
+                entries: lifeApps,
+              ),
+              const SizedBox(height: 9),
+              _AppSection(
+                title: '系统',
+                caption: '管理这个世界',
+                icon: Icons.tune_rounded,
+                entries: systemApps,
+              ),
+              const SizedBox(height: 9),
+              _AppSection(
+                title: '未来',
+                caption: '等待开启的空间',
+                icon: Icons.auto_awesome_outlined,
+                entries: futureApps,
+              ),
+              const SizedBox(height: 10),
+              const _AppsAtmosphereCard(),
+            ],
+          ),
         ),
       ),
     );
@@ -859,7 +890,7 @@ class _DesktopBackgroundState extends State<_DesktopBackground>
                   child: _AmbientOrb(
                     size: 300,
                     color: HomeVisualTokens.ambientBlue,
-                    opacity: 0.16,
+                    opacity: 0.22,
                   ),
                 ),
                 Positioned(
@@ -868,7 +899,7 @@ class _DesktopBackgroundState extends State<_DesktopBackground>
                   child: _AmbientOrb(
                     size: 310,
                     color: HomeVisualTokens.ambientViolet,
-                    opacity: 0.085,
+                    opacity: 0.16,
                   ),
                 ),
                 Positioned(
@@ -877,7 +908,7 @@ class _DesktopBackgroundState extends State<_DesktopBackground>
                   child: _AmbientOrb(
                     size: 290,
                     color: HomeVisualTokens.ambientWarm,
-                    opacity: 0.07,
+                    opacity: 0.12,
                   ),
                 ),
                 Positioned.fill(
@@ -887,7 +918,7 @@ class _DesktopBackgroundState extends State<_DesktopBackground>
                         center: const Alignment(0.15, -0.65),
                         radius: 1.05,
                         colors: [
-                          Colors.white.withValues(alpha: 0.035),
+                          Colors.white.withValues(alpha: 0.42),
                           Colors.transparent,
                         ],
                       ),
@@ -931,43 +962,6 @@ class _AmbientOrb extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DesktopStatusBar extends StatelessWidget {
-  const _DesktopStatusBar({required this.time});
-
-  final String time;
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTextStyle(
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.15,
-        shadows: [Shadow(color: Color(0x52000000), blurRadius: 7)],
-      ),
-      child: IconTheme(
-        data: IconThemeData(
-          color: Colors.white.withValues(alpha: 0.92),
-          size: 17,
-          shadows: const [Shadow(color: Color(0x52000000), blurRadius: 7)],
-        ),
-        child: Row(
-          children: [
-            Text(time),
-            const Spacer(),
-            const Icon(Icons.signal_cellular_alt_rounded, size: 16),
-            const SizedBox(width: 5),
-            const Icon(Icons.wifi_rounded, size: 17),
-            const SizedBox(width: 5),
-            const Icon(Icons.battery_full_rounded, size: 19),
-          ],
         ),
       ),
     );
@@ -1083,11 +1077,11 @@ class _CharacterHeroCard extends StatelessWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Color(0x59050A11),
-                      Color(0x0D050A11),
-                      Color(0x1F06111A),
-                      Color(0xD9070C14),
-                      Color(0xFA070B12),
+                      Color(0x3D050A11),
+                      Color(0x05050A11),
+                      Color(0x1206111A),
+                      Color(0xB5070C14),
+                      Color(0xE8070B12),
                     ],
                     stops: [0, 0.22, 0.48, 0.76, 1],
                   ),
@@ -1105,8 +1099,8 @@ class _CharacterHeroCard extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Color(0x8A050911),
-                          Color(0x3D050911),
+                          Color(0x5C050911),
+                          Color(0x24050911),
                           Colors.transparent,
                         ],
                         stops: [0, 0.48, 1],
@@ -1150,19 +1144,19 @@ class _CharacterLifePanel extends StatelessWidget {
     return HomeGlass(
       level: HomeGlassLevel.main,
       borderRadius: 25,
-      tint: const Color(0xFFB6A9D6),
+      tint: const Color(0xFFF4F0FA),
       blurSigma: 30,
-      surfaceOpacity: 0.075,
+      surfaceOpacity: 0.145,
       shadows: const [
         BoxShadow(
-          color: Color(0x52000000),
-          blurRadius: 28,
-          offset: Offset(0, 14),
+          color: Color(0x30070A12),
+          blurRadius: 32,
+          offset: Offset(0, 16),
         ),
         BoxShadow(
-          color: Color(0x179F91C8),
-          blurRadius: 18,
-          offset: Offset(0, -3),
+          color: Color(0x3CFFFFFF),
+          blurRadius: 22,
+          offset: Offset(0, -4),
         ),
       ],
       child: Material(
@@ -1171,7 +1165,7 @@ class _CharacterLifePanel extends StatelessWidget {
           borderRadius: BorderRadius.circular(25),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 13),
+            padding: const EdgeInsets.fromLTRB(17, 14, 17, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1192,7 +1186,7 @@ class _CharacterLifePanel extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: Colors.white,
-                                    fontSize: 20,
+                                    fontSize: 24,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: -0.3,
                                   ),
@@ -1276,39 +1270,49 @@ class _CharacterLifePanel extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 13),
+                const SizedBox(height: 11),
                 Container(
                   height: 1,
                   color: Colors.white.withValues(alpha: 0.10),
                 ),
-                const SizedBox(height: 11),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _LifeStatusItem(
-                        label: '正在',
-                        value: activity.displayText,
-                        accent: const Color(0xFFE1B3D9),
-                        onTap: onActivityTap,
-                      ),
+                const SizedBox(height: 9),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.075),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.12),
                     ),
-                    _LifeStatusDivider(),
-                    const Expanded(
-                      child: _LifeStatusItem(
-                        label: '生活片段',
-                        value: '整理生活资料',
-                        accent: Color(0xFF9FCBE6),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _LifeStatusItem(
+                          label: '当前状态',
+                          value: activity.displayText,
+                          accent: const Color(0xFFE1B3D9),
+                          onTap: onActivityTap,
+                        ),
                       ),
-                    ),
-                    _LifeStatusDivider(),
-                    const Expanded(
-                      child: _LifeStatusItem(
-                        label: '今日心情',
-                        value: '平静',
-                        accent: Color(0xFFC1B4E9),
+                      _LifeStatusDivider(),
+                      const Expanded(
+                        child: _LifeStatusItem(
+                          label: '正在经历',
+                          value: '整理生活资料',
+                          accent: Color(0xFF9FCBE6),
+                        ),
                       ),
-                    ),
-                  ],
+                      _LifeStatusDivider(),
+                      const Expanded(
+                        child: _LifeStatusItem(
+                          label: '此刻心情',
+                          value: '平静',
+                          accent: Color(0xFFC1B4E9),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -1332,7 +1336,8 @@ class _CharacterStatusText extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
         color: Colors.white.withValues(alpha: 0.66),
-        fontSize: 11.5,
+        fontSize: 12.5,
+        height: 1.3,
       ),
     );
   }
@@ -1374,9 +1379,9 @@ class _CharacterAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 43,
-      height: 43,
-      padding: const EdgeInsets.all(1.5),
+      width: 52,
+      height: 52,
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.white.withValues(alpha: 0.42),
@@ -1414,7 +1419,8 @@ class _LifeStatusItem extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.42),
-              fontSize: 9.5,
+              fontSize: 8.5,
+              letterSpacing: 0.2,
             ),
           ),
           const SizedBox(height: 5),
@@ -1437,7 +1443,7 @@ class _LifeStatusItem extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 11,
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1499,27 +1505,45 @@ class _QuickActionDock extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 334),
-        child: HomeGlass(
-          level: HomeGlassLevel.main,
-          borderRadius: 25,
-          tint: const Color(0xFF9991C6),
-          padding: const EdgeInsets.fromLTRB(7, 7, 7, 8),
-          child: SizedBox(
-            height: 72,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var index = 0; index < actions.length; index++) ...[
-                  Expanded(child: actions[index]),
-                  if (index != actions.length - 1)
-                    Container(
-                      width: 1,
-                      margin: const EdgeInsets.symmetric(vertical: 12),
-                      color: Colors.white.withValues(alpha: 0.075),
-                    ),
+        constraints: const BoxConstraints(maxWidth: 354),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x36090B14),
+                blurRadius: 38,
+                offset: Offset(0, 19),
+              ),
+              BoxShadow(
+                color: Color(0x48FFFFFF),
+                blurRadius: 26,
+                offset: Offset(0, -4),
+              ),
+            ],
+          ),
+          child: HomeGlass(
+            level: HomeGlassLevel.main,
+            borderRadius: 30,
+            tint: const Color(0xFFF7F3FC),
+            surfaceOpacity: 0.225,
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 9),
+            child: SizedBox(
+              height: 82,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var index = 0; index < actions.length; index++) ...[
+                    Expanded(child: actions[index]),
+                    if (index != actions.length - 1)
+                      Container(
+                        width: 1,
+                        margin: const EdgeInsets.symmetric(vertical: 14),
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -1575,8 +1599,8 @@ class _QuickAction extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      width: 31,
-                      height: 31,
+                      width: 38,
+                      height: 38,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
@@ -1586,7 +1610,7 @@ class _QuickAction extends StatelessWidget {
                             tint.withValues(alpha: 0.16),
                           ],
                         ),
-                        borderRadius: BorderRadius.circular(11),
+                        borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: Colors.white.withValues(alpha: 0.16),
                         ),
@@ -1599,9 +1623,9 @@ class _QuickAction extends StatelessWidget {
                         ],
                       ),
                       child: assetPath == null
-                          ? Icon(icon, color: Colors.white, size: 18)
+                          ? Icon(icon, color: Colors.white, size: 20)
                           : ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(13),
                               child: Image.asset(
                                 assetPath!,
                                 fit: BoxFit.cover,
@@ -1609,7 +1633,7 @@ class _QuickAction extends StatelessWidget {
                               ),
                             ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 5),
                     Text(
                       label,
                       maxLines: 1,
@@ -1617,7 +1641,7 @@ class _QuickAction extends StatelessWidget {
                       softWrap: false,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 11.5,
+                        fontSize: 12.5,
                         height: 1.15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1630,7 +1654,7 @@ class _QuickAction extends StatelessWidget {
                       softWrap: false,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.38),
-                        fontSize: 8,
+                        fontSize: 8.5,
                         height: 1.1,
                       ),
                     ),
@@ -1673,7 +1697,7 @@ class _LifeLiveIndicator extends StatelessWidget {
         Text(
           isSleeping ? '安静运行中' : '世界运行中',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.54),
+            color: HomeVisualTokens.inkSecondary,
             fontSize: 10.5,
             fontWeight: FontWeight.w600,
           ),
@@ -1705,7 +1729,7 @@ class _TodayWorldCard extends StatelessWidget {
       onTap: onTap,
       level: HomeGlassLevel.main,
       borderRadius: 28,
-      tint: const Color(0xFF87AFC8),
+      tint: const Color(0xFFF3F5FA),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 17, 16, 17),
         child: Row(
@@ -1716,7 +1740,7 @@ class _TodayWorldCard extends StatelessWidget {
                 Text(
                   '${now.month}月${now.day}日',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: HomeVisualTokens.inkPrimary,
                     fontSize: 25,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.6,
@@ -1726,7 +1750,7 @@ class _TodayWorldCard extends StatelessWidget {
                 Text(
                   '$_weekday · 今日世界',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.48),
+                    color: HomeVisualTokens.inkSecondary,
                     fontSize: 11,
                   ),
                 ),
@@ -1736,7 +1760,7 @@ class _TodayWorldCard extends StatelessWidget {
             Container(
               width: 1,
               height: 52,
-              color: Colors.white.withValues(alpha: 0.10),
+              color: HomeVisualTokens.inkTertiary.withValues(alpha: 0.22),
             ),
             const SizedBox(width: 15),
             Expanded(
@@ -1748,7 +1772,7 @@ class _TodayWorldCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: HomeVisualTokens.inkPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1758,7 +1782,7 @@ class _TodayWorldCard extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.cloud_outlined,
-                        color: Colors.white.withValues(alpha: 0.46),
+                        color: HomeVisualTokens.inkSecondary,
                         size: 14,
                       ),
                       const SizedBox(width: 5),
@@ -1768,7 +1792,7 @@ class _TodayWorldCard extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.42),
+                            color: HomeVisualTokens.inkTertiary,
                             fontSize: 10.5,
                           ),
                         ),
@@ -1780,7 +1804,7 @@ class _TodayWorldCard extends StatelessWidget {
             ),
             Icon(
               Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.34),
+              color: HomeVisualTokens.inkTertiary,
             ),
           ],
         ),
@@ -1812,7 +1836,7 @@ class _LifeSectionHeader extends StatelessWidget {
               Text(
                 eyebrow,
                 style: TextStyle(
-                  color: const Color(0xFFA8CDE2).withValues(alpha: 0.62),
+                  color: HomeVisualTokens.brandBlue.withValues(alpha: 0.72),
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.4,
@@ -1822,7 +1846,7 @@ class _LifeSectionHeader extends StatelessWidget {
               Text(
                 title,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: HomeVisualTokens.inkPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1832,10 +1856,7 @@ class _LifeSectionHeader extends StatelessWidget {
         ),
         Text(
           caption,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.34),
-            fontSize: 10,
-          ),
+          style: TextStyle(color: HomeVisualTokens.inkTertiary, fontSize: 10),
         ),
       ],
     );
@@ -1868,7 +1889,7 @@ class _TodayLifeFragment extends StatelessWidget {
       onTap: onTap,
       level: HomeGlassLevel.card,
       borderRadius: 25,
-      tint: const Color(0xFFA49AC6),
+      tint: const Color(0xFFF5F1FA),
       child: Padding(
         padding: const EdgeInsets.all(17),
         child: Column(
@@ -1880,7 +1901,7 @@ class _TodayLifeFragment extends StatelessWidget {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.09),
+                    color: Colors.white.withValues(alpha: 0.58),
                     borderRadius: BorderRadius.circular(15),
                   ),
                   alignment: Alignment.center,
@@ -1899,7 +1920,7 @@ class _TodayLifeFragment extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: HomeVisualTokens.inkPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1910,7 +1931,7 @@ class _TodayLifeFragment extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.46),
+                          color: HomeVisualTokens.inkSecondary,
                           fontSize: 11,
                           height: 1.35,
                         ),
@@ -1921,7 +1942,10 @@ class _TodayLifeFragment extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            Container(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+            Container(
+              height: 1,
+              color: HomeVisualTokens.inkTertiary.withValues(alpha: 0.18),
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -1934,7 +1958,7 @@ class _TodayLifeFragment extends StatelessWidget {
                 Text(
                   '1 · 17',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.82),
+                    color: HomeVisualTokens.inkPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1946,7 +1970,7 @@ class _TodayLifeFragment extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.36),
+                      color: HomeVisualTokens.inkTertiary,
                       fontSize: 10.5,
                     ),
                   ),
@@ -1954,7 +1978,7 @@ class _TodayLifeFragment extends StatelessWidget {
                 Text(
                   '查看今天',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.50),
+                    color: HomeVisualTokens.brandBlue,
                     fontSize: 10.5,
                   ),
                 ),
@@ -2006,7 +2030,7 @@ class _LifeTimeline extends StatelessWidget {
     return HomeGlass(
       level: HomeGlassLevel.card,
       borderRadius: 25,
-      tint: const Color(0xFF88A9BC),
+      tint: const Color(0xFFF2F5FA),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 13),
       child: traces.isEmpty
           ? Row(
@@ -2015,7 +2039,7 @@ class _LifeTimeline extends StatelessWidget {
                   width: 9,
                   height: 9,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.22),
+                    color: HomeVisualTokens.brandBlue.withValues(alpha: 0.38),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -2023,7 +2047,7 @@ class _LifeTimeline extends StatelessWidget {
                 Text(
                   '这里还很安静，生活正在慢慢发生。',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.44),
+                    color: HomeVisualTokens.inkSecondary,
                     fontSize: 12,
                   ),
                 ),
@@ -2042,7 +2066,7 @@ class _LifeTimeline extends StatelessWidget {
                         child: Text(
                           _timeText(trace.occurredAt),
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.34),
+                            color: HomeVisualTokens.inkTertiary,
                             fontSize: 10,
                           ),
                         ),
@@ -2058,7 +2082,7 @@ class _LifeTimeline extends StatelessWidget {
                                 color: const Color(0xFFAED2E4),
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.34),
+                                  color: HomeVisualTokens.inkTertiary,
                                 ),
                                 boxShadow: const [
                                   BoxShadow(
@@ -2072,7 +2096,8 @@ class _LifeTimeline extends StatelessWidget {
                               Expanded(
                                 child: Container(
                                   width: 1,
-                                  color: Colors.white.withValues(alpha: 0.10),
+                                  color: HomeVisualTokens.inkTertiary
+                                      .withValues(alpha: 0.20),
                                 ),
                               ),
                           ],
@@ -2098,7 +2123,7 @@ class _LifeTimeline extends StatelessWidget {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
-                                        color: Colors.white,
+                                        color: HomeVisualTokens.inkPrimary,
                                         fontSize: 12.5,
                                         height: 1.35,
                                         fontWeight: FontWeight.w600,
@@ -2113,7 +2138,7 @@ class _LifeTimeline extends StatelessWidget {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.42),
+                                  color: HomeVisualTokens.inkSecondary,
                                   fontSize: 10.5,
                                   height: 1.42,
                                 ),
@@ -2141,7 +2166,7 @@ class _WorldEnvironmentCard extends StatelessWidget {
     return HomeGlass(
       level: HomeGlassLevel.card,
       borderRadius: 25,
-      tint: const Color(0xFF789BB0),
+      tint: const Color(0xFFF1F5FA),
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
@@ -2191,14 +2216,11 @@ class _EnvironmentItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Icon(icon, color: const Color(0xFFB8D7E7), size: 19),
+        Icon(icon, color: HomeVisualTokens.brandBlue, size: 19),
         const SizedBox(height: 7),
         Text(
           label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.36),
-            fontSize: 9.5,
-          ),
+          style: TextStyle(color: HomeVisualTokens.inkTertiary, fontSize: 9.5),
         ),
         const SizedBox(height: 3),
         Text(
@@ -2206,7 +2228,7 @@ class _EnvironmentItem extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: Colors.white,
+            color: HomeVisualTokens.inkPrimary,
             fontSize: 11,
             fontWeight: FontWeight.w600,
           ),
@@ -2223,7 +2245,76 @@ class _EnvironmentDivider extends StatelessWidget {
       width: 1,
       height: 48,
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      color: Colors.white.withValues(alpha: 0.08),
+      color: HomeVisualTokens.inkTertiary.withValues(alpha: 0.18),
+    );
+  }
+}
+
+class _AppsAtmosphereCard extends StatelessWidget {
+  const _AppsAtmosphereCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return HomeGlass(
+      level: HomeGlassLevel.card,
+      borderRadius: 29,
+      tint: const Color(0xFFE4DCF2),
+      surfaceOpacity: 0.38,
+      padding: const EdgeInsets.fromLTRB(17, 9, 12, 9),
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          children: [
+            Container(
+              width: 5,
+              height: 30,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFBFC8FF), Color(0xFFBFAEE8)],
+                ),
+              ),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Text(
+                '每一个应用，\n都是他们生活的一部分。',
+                style: TextStyle(
+                  color: HomeVisualTokens.inkSecondary,
+                  fontSize: 11.5,
+                  height: 1.42,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.25,
+                ),
+              ),
+            ),
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [Color(0x2ED9D4FF), Color(0x00D9D4FF)],
+                    ),
+                  ),
+                ),
+                Image.asset(
+                  'assets/images/brand/peilink_butterfly.png',
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.contain,
+                  opacity: const AlwaysStoppedAnimation(0.72),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2256,50 +2347,96 @@ class _PeiLinkAppPortal extends StatelessWidget {
     return HomeGlassButton(
       onTap: entry.onTap,
       level: HomeGlassLevel.main,
-      borderRadius: 27,
-      tint: entry.tint,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(15, 14, 16, 14),
-        child: Row(
+      borderRadius: 31,
+      tint: const Color(0xFFF2F0FA),
+      child: SizedBox(
+        height: 104,
+        child: Stack(
           children: [
-            _AppIconSurface(entry: entry, size: 56, iconSize: 26),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Positioned(
+              top: -54,
+              right: -30,
+              child: Container(
+                width: 150,
+                height: 150,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      entry.tint.withValues(alpha: 0.20),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(17, 12, 16, 12),
+              child: Row(
                 children: [
-                  const Text(
-                    'PeiLink',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
+                  _AppIconSurface(entry: entry, size: 74, iconSize: 33),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.52),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'SYSTEM CORE',
+                            style: TextStyle(
+                              color: HomeVisualTokens.brandBlue,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        const Text(
+                          'PeiLink',
+                          style: TextStyle(
+                            color: HomeVisualTokens.inkPrimary,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '连接角色、消息与共同世界',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: HomeVisualTokens.inkSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '连接角色、消息与共同世界',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.44),
-                      fontSize: 11,
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.62),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.arrow_forward_rounded,
+                      color: HomeVisualTokens.brandBlue,
+                      size: 18,
                     ),
                   ),
                 ],
-              ),
-            ),
-            Container(
-              width: 31,
-              height: 31,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.arrow_forward_rounded,
-                color: Colors.white.withValues(alpha: 0.64),
-                size: 17,
               ),
             ),
           ],
@@ -2326,20 +2463,34 @@ class _AppSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return HomeGlass(
       level: HomeGlassLevel.card,
-      borderRadius: 25,
-      tint: const Color(0xFF8EA5B8),
-      padding: const EdgeInsets.fromLTRB(15, 13, 15, 14),
+      borderRadius: 29,
+      tint: const Color(0xFFF5F3FA),
+      surfaceOpacity: 0.40,
+      padding: const EdgeInsets.fromLTRB(15, 11, 15, 11),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, color: Colors.white.withValues(alpha: 0.64), size: 16),
-              const SizedBox(width: 7),
+              Container(
+                width: 29,
+                height: 29,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.64),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  icon,
+                  color: HomeVisualTokens.brandViolet,
+                  size: 15,
+                ),
+              ),
+              const SizedBox(width: 9),
               Text(
                 title,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: HomeVisualTokens.inkPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -2351,14 +2502,14 @@ class _AppSection extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.30),
+                    color: HomeVisualTokens.inkTertiary,
                     fontSize: 9.5,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 7),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2385,34 +2536,53 @@ class _DesktopAppIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return HomeGlassButton(
-      onTap: entry.onTap,
-      level: HomeGlassLevel.button,
-      borderRadius: 20,
-      tint: entry.tint,
-      child: SizedBox(
-        width: double.infinity,
-        height: 84,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _AppIconSurface(entry: entry, size: 40, iconSize: 19),
-              const SizedBox(height: 8),
-              Text(
-                entry.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10.5,
-                  height: 1.15,
-                  fontWeight: FontWeight.w600,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: entry.onTap,
+        borderRadius: BorderRadius.circular(22),
+        splashColor: entry.tint.withValues(alpha: 0.10),
+        highlightColor: HomeVisualTokens.brandBlue.withValues(alpha: 0.06),
+        child: SizedBox(
+          width: double.infinity,
+          height: 80,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 53,
+                  height: 53,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.56),
+                    borderRadius: BorderRadius.circular(19),
+                    boxShadow: [
+                      BoxShadow(
+                        color: entry.tint.withValues(alpha: 0.18),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: _AppIconSurface(entry: entry, size: 43, iconSize: 21),
                 ),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Text(
+                  entry.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: HomeVisualTokens.inkPrimary,
+                    fontSize: 10.5,
+                    height: 1.15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2441,26 +2611,20 @@ class _AppIconSurface extends StatelessWidget {
           )
         : DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color(0xFFE9ECFF),
-                  entry.tint.withValues(alpha: 0.88),
-                ],
+              color: Colors.white.withValues(alpha: 0.52),
+              borderRadius: BorderRadius.circular(size * 0.30),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.86),
+                width: 0.8,
               ),
-              borderRadius: BorderRadius.circular(size * 0.27),
             ),
             child: Padding(
-              padding: EdgeInsets.all(size * 0.08),
-              child: ColorFiltered(
-                colorFilter: const ColorFilter.mode(
-                  Color(0xFF747FE1),
-                  BlendMode.modulate,
-                ),
+              padding: EdgeInsets.all(size * 0.055),
+              child: Opacity(
+                opacity: 0.82,
                 child: Image.asset(
                   entry.assetPath!,
-                  fit: BoxFit.contain,
+                  fit: BoxFit.cover,
                   alignment: Alignment.center,
                   filterQuality: FilterQuality.high,
                   errorBuilder: (_, _, _) => _FutureAppPlaceholder(
@@ -2476,7 +2640,7 @@ class _AppIconSurface extends StatelessWidget {
     final displayedImage = entry.assetPath == null
         ? image
         : ClipRRect(
-            borderRadius: BorderRadius.circular(size * 0.27),
+            borderRadius: BorderRadius.circular(size * 0.30),
             child: image,
           );
 
@@ -2492,9 +2656,9 @@ class _AppIconSurface extends StatelessWidget {
               decoration: BoxDecoration(
                 boxShadow: [
                   BoxShadow(
-                    color: entry.tint.withValues(alpha: 0.16),
-                    blurRadius: 11,
-                    offset: const Offset(0, 5),
+                    color: const Color(0xFF697294).withValues(alpha: 0.18),
+                    blurRadius: 16,
+                    offset: const Offset(0, 7),
                   ),
                 ],
               ),
@@ -2528,17 +2692,9 @@ class _FutureAppPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: RadialGradient(
-          center: const Alignment(-0.35, -0.45),
-          radius: 1.15,
-          colors: [
-            Colors.white.withValues(alpha: 0.30),
-            tint.withValues(alpha: 0.68),
-            const Color(0xFF443671).withValues(alpha: 0.82),
-          ],
-        ),
+        color: Colors.white.withValues(alpha: 0.58),
         borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.88)),
       ),
       child: Stack(
         alignment: Alignment.center,
@@ -2548,7 +2704,7 @@ class _FutureAppPlaceholder extends StatelessWidget {
             right: 7,
             child: Icon(
               Icons.star_rounded,
-              color: Colors.white.withValues(alpha: 0.55),
+              color: tint.withValues(alpha: 0.48),
               size: 6,
             ),
           ),
@@ -2557,11 +2713,11 @@ class _FutureAppPlaceholder extends StatelessWidget {
             bottom: 8,
             child: Icon(
               Icons.star_rounded,
-              color: const Color(0xFFB8E5FF).withValues(alpha: 0.48),
+              color: HomeVisualTokens.brandBlue.withValues(alpha: 0.36),
               size: 4,
             ),
           ),
-          Icon(icon, color: Colors.white, size: iconSize),
+          Icon(icon, color: tint.withValues(alpha: 0.72), size: iconSize),
         ],
       ),
     );
@@ -2615,9 +2771,9 @@ class _PageIndicator extends StatelessWidget {
           height: 6,
           margin: const EdgeInsets.symmetric(horizontal: 3),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(
-              alpha: index == currentIndex ? 0.88 : 0.25,
-            ),
+            color: index == currentIndex
+                ? HomeVisualTokens.brandBlue
+                : HomeVisualTokens.inkTertiary.withValues(alpha: 0.34),
             borderRadius: BorderRadius.circular(4),
           ),
         ),
