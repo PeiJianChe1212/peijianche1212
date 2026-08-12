@@ -7,6 +7,7 @@ import 'package:peijianche_app/models/chat_message.dart';
 import 'package:peijianche_app/prompt_composer/prompt_composer.dart';
 import 'package:peijianche_app/prompt_composer/prompt_context.dart';
 import 'package:peijianche_app/reply_strategy/reply_goal.dart';
+import 'package:peijianche_app/reply_strategy/reply_strategy.dart';
 import 'package:peijianche_app/reply_strategy/reply_strategy_engine.dart';
 
 void main() {
@@ -48,9 +49,15 @@ void main() {
 
       expect(flow.intent, ReplyIntent.care);
       expect(strategy.goal, ReplyGoal.comfort);
+      expect(strategy.length, StrategyLength.medium);
       expect(strategy.question, isFalse);
       expect(result.systemPrompt, contains('goal=comfort'));
       expect(result.systemPrompt, contains('question=false'));
+      expect(result.systemPrompt, contains('普通聊天默认组织成 2 到 5 句'));
+      expect(
+        result.systemPrompt.indexOf('普通聊天默认组织成 2 到 5 句'),
+        greaterThan(result.systemPrompt.indexOf('【Chat Flow｜本轮回复节奏】')),
+      );
     });
 
     test('按明确优先级编排，当前回复策略最高', () {

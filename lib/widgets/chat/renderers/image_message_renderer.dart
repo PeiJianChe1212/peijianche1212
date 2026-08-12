@@ -33,7 +33,7 @@ class ImageMessageRenderer extends StatelessWidget {
                   child: Image.file(
                     file,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const _MissingImage(),
+                    errorBuilder: (_, _, _) => const _MissingImage(),
                   ),
                 )
               : const _MissingImage(),

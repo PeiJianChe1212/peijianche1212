@@ -670,9 +670,11 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _transformationController.value = Matrix4.identity()
-          ..translate(
+          ..translateByDouble(
             -(_imageWidth - _viewportSize) / 2,
             -(_imageHeight - _viewportSize) / 2,
+            0,
+            1,
           );
       });
     } catch (error) {
@@ -697,8 +699,8 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     final y = translation.y.clamp(minY, 0.0).toDouble();
 
     _transformationController.value = Matrix4.identity()
-      ..translate(x, y)
-      ..scale(scale);
+      ..translateByDouble(x, y, 0, 1)
+      ..scaleByDouble(scale, scale, scale, 1);
   }
 
   Future<void> _save() async {

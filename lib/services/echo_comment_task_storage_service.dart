@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/echo_comment_task.dart';
 
@@ -22,11 +22,13 @@ class EchoCommentTaskStorageService {
       final tasks = decoded
           .whereType<Map>()
           .map(EchoCommentTask.fromJson)
-          .where((item) =>
-              item.id.isNotEmpty &&
-              item.echoId.isNotEmpty &&
-              item.echoOwnerId.isNotEmpty &&
-              item.commenterId.isNotEmpty)
+          .where(
+            (item) =>
+                item.id.isNotEmpty &&
+                item.echoId.isNotEmpty &&
+                item.echoOwnerId.isNotEmpty &&
+                item.commenterId.isNotEmpty,
+          )
           .toList();
       tasks.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
       return tasks;

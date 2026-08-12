@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/relationship_memory.dart';
 
@@ -25,10 +25,12 @@ class RelationshipMemoryStorageService {
       return decoded
           .whereType<Map>()
           .map(RelationshipMemory.fromJson)
-          .where((item) =>
-              item.characterIdA.isNotEmpty &&
-              item.characterIdB.isNotEmpty &&
-              item.characterIdA != item.characterIdB)
+          .where(
+            (item) =>
+                item.characterIdA.isNotEmpty &&
+                item.characterIdB.isNotEmpty &&
+                item.characterIdA != item.characterIdB,
+          )
           .toList();
     } catch (_) {
       return <RelationshipMemory>[];
@@ -65,8 +67,10 @@ class RelationshipMemoryStorageService {
   Future<void> removeForCharacter(String characterId) async {
     final items = await loadAll();
     final before = items.length;
-    items.removeWhere((item) =>
-        item.characterIdA == characterId || item.characterIdB == characterId);
+    items.removeWhere(
+      (item) =>
+          item.characterIdA == characterId || item.characterIdB == characterId,
+    );
     if (before != items.length) await saveAll(items);
   }
 }

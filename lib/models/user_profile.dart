@@ -1,13 +1,13 @@
 class UserProfile {
   const UserProfile({
-    this.nickname = '念念',
-    this.peiLinkId = '一只小狐念',
+    this.nickname = '未设置',
+    this.peiLinkId = '未设置',
     this.gender = '',
     this.region = '',
     this.signature = '',
-    this.peiCallName = '念念',
+    this.peiCallName = '未填写',
     this.birthday = '',
-    this.identity = '裴简澈的恋人',
+    this.identity = '未填写',
     this.workAndSchedule = '',
     this.likes = '',
     this.dislikes = '',
@@ -89,14 +89,14 @@ class UserProfile {
     }
 
     return UserProfile(
-      nickname: read('nickname', '念念'),
-      peiLinkId: read('peiLinkId', '一只小狐念'),
+      nickname: read('nickname', '未设置'),
+      peiLinkId: read('peiLinkId', '未设置'),
       gender: json['gender']?.toString().trim() ?? '',
       region: json['region']?.toString().trim() ?? '',
       signature: json['signature']?.toString().trim() ?? '',
-      peiCallName: read('peiCallName', '念念'),
+      peiCallName: read('peiCallName', '未填写'),
       birthday: json['birthday']?.toString().trim() ?? '',
-      identity: read('identity', '裴简澈的恋人'),
+      identity: read('identity', '未填写'),
       workAndSchedule: json['workAndSchedule']?.toString().trim() ?? '',
       likes: json['likes']?.toString().trim() ?? '',
       dislikes: json['dislikes']?.toString().trim() ?? '',

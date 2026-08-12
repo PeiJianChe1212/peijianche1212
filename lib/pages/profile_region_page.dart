@@ -45,10 +45,8 @@ class ProfileRegionPage extends StatelessWidget {
     final first = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => _SimpleChoicePage(
-          title: title,
-          values: data.keys.toList(),
-        ),
+        builder: (_) =>
+            _SimpleChoicePage(title: title, values: data.keys.toList()),
       ),
     );
     if (!context.mounted || first == null) return;
@@ -177,7 +175,7 @@ class _SimpleChoicePage extends StatelessWidget {
     appBar: AppBar(title: Text(title), centerTitle: true),
     body: ListView.separated(
       itemCount: values.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, indent: 20),
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 20),
       itemBuilder: (_, index) => ListTile(
         tileColor: Colors.white,
         title: Text(values[index]),

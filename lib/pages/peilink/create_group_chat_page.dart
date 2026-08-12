@@ -54,7 +54,10 @@ class _CreateGroupChatPageState extends State<CreateGroupChatPage> {
         .where((character) => _selectedIds.contains(character.id))
         .toList();
     final customName = _nameController.text.trim();
-    final defaultName = selected.map((item) => item.displayName).take(3).join('、');
+    final defaultName = selected
+        .map((item) => item.displayName)
+        .take(3)
+        .join('、');
     final group = GroupChat(
       id: id,
       name: customName.isEmpty ? defaultName : customName,
@@ -136,10 +139,8 @@ class _CreateGroupChatPageState extends State<CreateGroupChatPage> {
                     color: Colors.white,
                     child: ListView.separated(
                       itemCount: _characters.length,
-                      separatorBuilder: (_, __) => const Divider(
-                        height: 1,
-                        indent: 76,
-                      ),
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, indent: 76),
                       itemBuilder: (context, index) {
                         final character = _characters[index];
                         final selected = _selectedIds.contains(character.id);

@@ -22,14 +22,16 @@ import '../services/world_tick_service.dart';
 import '../widgets/home/home_glass.dart';
 import '../widgets/home/home_visual_tokens.dart';
 import 'chat_page.dart';
-import 'peilink/character_detail_page.dart';
+import 'peilink/ai_creation_center_page.dart';
 import 'peilink/peilink_echo_page.dart';
 import 'peilink/peilink_home_page.dart';
 import 'settings_page.dart';
 import 'today_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.initialHasVisibleCharacter});
+
+  final bool? initialHasVisibleCharacter;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -59,18 +61,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   List<LifeTrace> _recentTraces = const [];
   AiCharacter _homeCharacter = AiCharacter.peiJianChe();
   bool _homeCharacterLoading = true;
+  bool _hasVisibleCharacter = false;
+
+  static final AiCharacter _emptyCharacter = AiCharacter(
+    id: 'empty',
+    characterName: '暂无角色',
+    remark: '',
+    relationship: '暂无关系',
+    createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+  );
+  static const ActivityStatus _emptyActivity = ActivityStatus(
+    id: 'waiting',
+    label: '等待连接',
+    emoji: '',
+    detail: '',
+    promptGuidance: '',
+  );
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _advanceWorld(markForeground: true);
-    _refreshInitiative();
-    _recordCurrentActivity();
-    _loadRecentTraces();
-    _loadHomeCharacter();
+    if (widget.initialHasVisibleCharacter == false) {
+      _homeCharacterLoading = false;
+    } else {
+      _loadHomeCharacter();
+    }
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (!mounted) return;
+      if (!_hasVisibleCharacter) return;
       final now = DateTime.now();
       setState(() => _now = now);
       await _recordCurrentActivity(now: now);
@@ -126,13 +145,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _loadHomeCharacter() async {
     try {
+      final characters = await _characterRegistry.loadCharacters();
+      if (!mounted) return;
+      if (characters.isEmpty) {
+        setState(() {
+          _hasVisibleCharacter = false;
+          _homeCharacterLoading = false;
+        });
+        return;
+      }
       final character = await _homeCharacterStorage.loadCharacter();
       if (!mounted) return;
       setState(() {
         _homeCharacter = character;
+        _hasVisibleCharacter = true;
         _resolvedActivity = null;
         _homeCharacterLoading = false;
       });
+      await _advanceWorld(markForeground: true);
       await _recordCurrentActivity();
       await _refreshInitiative();
       await _loadRecentTraces();
@@ -144,18 +174,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _openHomeCharacter() async {
-    await _characterRegistry.setActiveCharacter(_homeCharacter.id);
-    if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CharacterDetailPage()),
-    );
-    await _loadHomeCharacter();
+    await _openChatForCharacter(_homeCharacter);
   }
 
   Future<void> _chooseHomeCharacter() async {
     final characters = await _characterRegistry.loadCharacters();
     if (!mounted) return;
+    if (characters.isEmpty) {
+      await _openCharacterCreation();
+      return;
+    }
     final selected = await showModalBottomSheet<AiCharacter>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -178,6 +206,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _loadRecentTraces();
   }
 
+  Future<void> _openChat() async {
+    if (!_hasVisibleCharacter) {
+      await _openPeiLink();
+      return;
+    }
+    final characters = await _characterRegistry.loadCharacters();
+    if (!mounted) return;
+    if (characters.isEmpty) {
+      await _openPeiLink();
+      return;
+    }
+    final activeId = await _characterRegistry.loadActiveCharacterId();
+    final recentCharacter = characters.firstWhere(
+      (character) => character.id == activeId,
+      orElse: () => _homeCharacter,
+    );
+    await _openChatForCharacter(recentCharacter);
+  }
+
   Future<void> _openPeiLink() async {
     await Navigator.push(
       context,
@@ -187,15 +234,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _loadRecentTraces();
   }
 
-  Future<void> _openChat() async {
-    await _characterRegistry.setActiveCharacter(_homeCharacter.id);
+  Future<void> _openChatForCharacter(AiCharacter character) async {
+    await _characterRegistry.setActiveCharacter(character.id);
     if (!mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const ChatPage()),
+      MaterialPageRoute(
+        builder: (_) =>
+            ChatPage(backDestinationBuilder: (_) => const PeiLinkHomePage()),
+      ),
     );
     await _refreshInitiative();
     await _loadRecentTraces();
+  }
+
+  Future<void> _openCharacterCreation() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AiCreationCenterPage()),
+    );
+    if (!mounted) return;
+    await _loadHomeCharacter();
   }
 
   Future<void> _openEcho() async {
@@ -216,6 +275,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshInitiative({DateTime? now}) async {
+    if (!_hasVisibleCharacter) return;
     try {
       final service = InitiativeService(characterId: _homeCharacter.id);
       await service.maybeLeaveMessage(now: now);
@@ -229,6 +289,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _loadRecentTraces() async {
+    if (!_hasVisibleCharacter) return;
     try {
       final traces = await LifeTraceService(
         characterId: _homeCharacter.id,
@@ -265,6 +326,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _recordCurrentActivity({DateTime? now}) async {
+    if (!_hasVisibleCharacter) return;
     try {
       final time = now ?? DateTime.now();
       final activity = await _refreshActivity(now: time);
@@ -277,6 +339,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _showActivityDetails() async {
+    if (!_hasVisibleCharacter) return;
     final activity = _activity;
     await TodayService(
       characterId: _homeCharacter.id,
@@ -296,6 +359,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _loadRecentTraces();
   }
 
+  void _openLifeDesktop() {
+    _pageController.animateToPage(
+      1,
+      duration: HomeVisualTokens.motionPage,
+      curve: HomeVisualTokens.motionEmphasizedCurve,
+    );
+  }
+
   void _showPlaceholder(String label) {
     ScaffoldMessenger.of(
       context,
@@ -304,25 +375,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final hasCharacter = _hasVisibleCharacter || _homeCharacterLoading;
+    final desktopCharacter = hasCharacter ? _homeCharacter : _emptyCharacter;
+    final desktopActivity = hasCharacter ? _activity : _emptyActivity;
     final pages = <Widget>[
       _CharacterDesktopPage(
-        character: _homeCharacter,
+        character: desktopCharacter,
         loading: _homeCharacterLoading,
-        greeting: _greeting,
-        activity: _activity,
+        hasCharacter: hasCharacter,
+        greeting: hasCharacter ? _greeting : '暂无动态',
+        activity: desktopActivity,
         unreadCount: _unreadCount,
-        onOpenCharacter: _openHomeCharacter,
-        onChooseCharacter: _chooseHomeCharacter,
+        traces: hasCharacter ? _recentTraces : const [],
+        onOpenCharacter: hasCharacter ? _openHomeCharacter : () {},
+        onChooseCharacter: hasCharacter
+            ? _chooseHomeCharacter
+            : _openCharacterCreation,
         onActivityTap: _showActivityDetails,
         onChat: _openChat,
         onCall: () => _showPlaceholder('电话'),
         onEcho: _openEcho,
+        onOpenLife: _openLifeDesktop,
       ),
       _LifeDesktopPage(
         now: _now,
-        activity: _activity,
-        traces: _recentTraces,
+        activity: desktopActivity,
+        hasCharacter: hasCharacter,
+        traces: hasCharacter ? _recentTraces : const [],
         onActivityTap: _showActivityDetails,
+        onAnniversaryTap: () => _showPlaceholder('\u7eaa\u5ff5\u65e5'),
+        onRecentTap: _openEcho,
+        onSettingsTap: _openSettings,
+        onAppTap: _showPlaceholder,
       ),
       _AppsDesktopPage(
         unreadCount: _unreadCount,
@@ -360,7 +444,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 itemBuilder: (_, index) => AnimatedSwitcher(
                   duration: _motionDuration,
                   child: KeyedSubtree(
-                    key: ValueKey('${_homeCharacter.id}-$index'),
+                    key: ValueKey(
+                      '${hasCharacter ? _homeCharacter.id : 'empty'}-$index',
+                    ),
                     child: pages[index],
                   ),
                 ),
@@ -384,32 +470,183 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 }
 
+// Retained only as a rollback-safe fallback; the live no-role path now uses
+// the original character desktop with placeholder data.
+// ignore: unused_element
+class _EmptyCharacterDesktopPage extends StatelessWidget {
+  const _EmptyCharacterDesktopPage({required this.onCreate});
+
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: const ValueKey('ai-world-empty-desktop'),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF526573), Color(0xFF1A2730), Color(0xFF080D12)],
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 12, 22, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Image.asset(
+                          'assets/images/brand/peilink_logo_lockup.png',
+                          height: 42,
+                          alignment: Alignment.centerLeft,
+                        ),
+                      ),
+                      IconButton.filledTonal(
+                        key: const ValueKey('ai-world-create-plus'),
+                        onPressed: onCreate,
+                        tooltip: '创建 AI',
+                        icon: const Icon(Icons.add_rounded),
+                      ),
+                    ],
+                  ),
+                  const Text(
+                    'AI WORLD  ·  等待连接',
+                    style: TextStyle(color: Colors.white60, fontSize: 11.5),
+                  ),
+                  const Spacer(),
+                  _EmptyDesktopCard(height: 116),
+                  const SizedBox(height: 9),
+                  _EmptyDesktopCard(height: 72),
+                  const SizedBox(height: 9),
+                  Container(
+                    height: 76,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        TextButton.icon(
+                          key: const ValueKey('ai-world-create-entry'),
+                          onPressed: onCreate,
+                          icon: const Icon(Icons.auto_awesome_rounded),
+                          label: const Text('创建 AI'),
+                        ),
+                        const Icon(Icons.waves_rounded, color: Colors.white30),
+                        const Icon(Icons.call_rounded, color: Colors.white30),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyDesktopCard extends StatelessWidget {
+  const _EmptyDesktopCard({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white24),
+      ),
+    );
+  }
+}
+
+// Retained only as a rollback-safe fallback; the live no-role path now uses
+// the complete PeiLink Life page.
+// ignore: unused_element
+class _EmptyLifeDesktopPage extends StatelessWidget {
+  const _EmptyLifeDesktopPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      key: const ValueKey('ai-world-empty-life'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 24, 22, 42),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'PeiLink Life',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 28),
+            for (final title in const ['纪念日', '世界状态', '最近动态']) ...[
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Container(
+                height: 86,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.42),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              const SizedBox(height: 18),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _CharacterDesktopPage extends StatelessWidget {
   const _CharacterDesktopPage({
     required this.character,
+    required this.hasCharacter,
     required this.loading,
     required this.greeting,
     required this.activity,
     required this.unreadCount,
+    required this.traces,
     required this.onOpenCharacter,
     required this.onChooseCharacter,
     required this.onActivityTap,
     required this.onChat,
     required this.onCall,
     required this.onEcho,
+    required this.onOpenLife,
   });
 
   final AiCharacter character;
+  final bool hasCharacter;
   final bool loading;
   final String greeting;
   final ActivityStatus activity;
   final int unreadCount;
+  final List<LifeTrace> traces;
   final VoidCallback onOpenCharacter;
   final VoidCallback onChooseCharacter;
   final VoidCallback onActivityTap;
   final VoidCallback onChat;
   final VoidCallback onCall;
   final VoidCallback onEcho;
+  final VoidCallback onOpenLife;
 
   @override
   Widget build(BuildContext context) {
@@ -438,6 +675,7 @@ class _CharacterDesktopPage extends StatelessWidget {
             right: 22,
             child: _AiDesktopHeader(
               loading: loading,
+              hasCharacter: hasCharacter,
               onChooseCharacter: onChooseCharacter,
             ),
           ),
@@ -450,15 +688,24 @@ class _CharacterDesktopPage extends StatelessWidget {
               children: [
                 _CharacterLifePanel(
                   character: character,
+                  hasCharacter: hasCharacter,
                   greeting: greeting,
                   activity: activity,
                   onTap: onOpenCharacter,
                   onActivityTap: onActivityTap,
+                  traces: traces,
                 ),
-                const SizedBox(height: 11),
+                const SizedBox(height: 9),
+                _TodayWorldSummary(
+                  activity: activity,
+                  traces: traces,
+                  onTap: onOpenLife,
+                ),
+                const SizedBox(height: 9),
                 _QuickActionDock(
                   actions: [
                     _QuickAction(
+                      key: const ValueKey('ai-world-chat-entry'),
                       icon: Icons.chat_bubble_rounded,
                       label: '聊天',
                       caption: '继续交流',
@@ -475,7 +722,7 @@ class _CharacterDesktopPage extends StatelessWidget {
                     _QuickAction(
                       icon: Icons.call_rounded,
                       label: '电话',
-                      caption: '未来开放',
+                      caption: '未来能力',
                       onTap: onCall,
                     ),
                   ],
@@ -492,10 +739,12 @@ class _CharacterDesktopPage extends StatelessWidget {
 class _AiDesktopHeader extends StatelessWidget {
   const _AiDesktopHeader({
     required this.loading,
+    required this.hasCharacter,
     required this.onChooseCharacter,
   });
 
   final bool loading;
+  final bool hasCharacter;
   final VoidCallback onChooseCharacter;
 
   @override
@@ -515,7 +764,7 @@ class _AiDesktopHeader extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               const Text(
-                '有人在这里生活',
+                'AI WORLD  ·  运行中  ·  世界状态：平稳',
                 style: TextStyle(
                   color: Color(0xAFFFFFFF),
                   fontSize: 11.5,
@@ -528,11 +777,86 @@ class _AiDesktopHeader extends StatelessWidget {
           ),
         ),
         _RoundGlassButton(
-          icon: Icons.person_search_rounded,
-          tooltip: '切换角色',
+          key: const ValueKey('ai-world-create-entry'),
+          icon: hasCharacter ? Icons.person_search_rounded : Icons.add_rounded,
+          tooltip: hasCharacter ? '切换角色' : '创建 AI',
           onTap: loading ? null : onChooseCharacter,
         ),
       ],
+    );
+  }
+}
+
+class _TodayWorldSummary extends StatelessWidget {
+  const _TodayWorldSummary({
+    required this.activity,
+    required this.traces,
+    required this.onTap,
+  });
+
+  final ActivityStatus activity;
+  final List<LifeTrace> traces;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final todayCount = traces.where((trace) {
+      final value = trace.occurredAt;
+      return value.year == now.year &&
+          value.month == now.month &&
+          value.day == now.day;
+    }).length;
+    return HomeGlassButton(
+      onTap: onTap,
+      borderRadius: 19,
+      tint: const Color(0xFFF0EDFA),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.public_rounded,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              '今日世界',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '${activity.isSleeping ? '静谧' : '平稳'} · ${todayCount == 0 ? '等待新的故事发生' : '$todayCount 条新动态'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.66),
+                  fontSize: 10.5,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.56),
+              size: 18,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -541,14 +865,24 @@ class _LifeDesktopPage extends StatelessWidget {
   const _LifeDesktopPage({
     required this.now,
     required this.activity,
+    required this.hasCharacter,
     required this.traces,
     required this.onActivityTap,
+    required this.onAnniversaryTap,
+    required this.onRecentTap,
+    required this.onSettingsTap,
+    required this.onAppTap,
   });
 
   final DateTime now;
   final ActivityStatus activity;
+  final bool hasCharacter;
   final List<LifeTrace> traces;
   final VoidCallback onActivityTap;
+  final VoidCallback onAnniversaryTap;
+  final VoidCallback onRecentTap;
+  final VoidCallback onSettingsTap;
+  final ValueChanged<String> onAppTap;
 
   @override
   Widget build(BuildContext context) {
@@ -575,35 +909,24 @@ class _LifeDesktopPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Expanded(
+                const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          const Text(
-                            '生活世界',
-                            style: TextStyle(
-                              color: HomeVisualTokens.inkPrimary,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          const SizedBox(width: 9),
-                          Image.asset(
-                            'assets/images/brand/peilink_butterfly.png',
-                            width: 29,
-                            height: 29,
-                            fit: BoxFit.contain,
-                          ),
-                        ],
+                      Text(
+                        'PEILINK LIFE',
+                        style: TextStyle(
+                          color: HomeVisualTokens.inkPrimary,
+                          fontSize: 27,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.7,
+                        ),
                       ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        '观察他正在经历的今天',
+                      SizedBox(height: 3),
+                      Text(
+                        '你的 AI 生活世界',
                         style: TextStyle(
                           color: HomeVisualTokens.inkSecondary,
                           fontSize: 12.5,
@@ -612,42 +935,667 @@ class _LifeDesktopPage extends StatelessWidget {
                     ],
                   ),
                 ),
+                Image.asset(
+                  'assets/images/brand/peilink_butterfly.png',
+                  width: 35,
+                  height: 35,
+                  fit: BoxFit.contain,
+                  opacity: const AlwaysStoppedAnimation(0.82),
+                ),
+                const SizedBox(width: 8),
                 _LifeLiveIndicator(isSleeping: activity.isSleeping),
               ],
             ),
-            const SizedBox(height: 16),
-            _TodayWorldCard(now: now, activity: activity, onTap: onActivityTap),
-            const SizedBox(height: 18),
-            const _LifeSectionHeader(
-              eyebrow: 'TODAY',
-              title: '今日生活',
-              caption: '不是记录，是正在发生',
-            ),
-            const SizedBox(height: 10),
-            _TodayLifeFragment(
+            const SizedBox(height: 14),
+            _LifeClockWidget(
               now: now,
               activity: activity,
               onTap: onActivityTap,
             ),
-            const SizedBox(height: 18),
-            const _LifeSectionHeader(
-              eyebrow: 'TRACES',
-              title: '最近痕迹',
-              caption: '世界留下的轻微回声',
+            const SizedBox(height: 12),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _AnniversaryWidget(
+                      now: now,
+                      hasCharacter: hasCharacter,
+                      onTap: onAnniversaryTap,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: _WorldStatusWidget(
+                      activity: activity,
+                      onTap: onActivityTap,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
-            _LifeTimeline(traces: traces),
-            const SizedBox(height: 18),
-            const _LifeSectionHeader(
-              eyebrow: 'WORLD',
-              title: '世界状态',
-              caption: '他此刻所处的环境',
+            const SizedBox(height: 12),
+            _RecentLifeWidget(
+              traces: traces,
+              hasCharacter: hasCharacter,
+              onTap: onRecentTap,
             ),
-            const SizedBox(height: 10),
-            _WorldEnvironmentCard(activity: activity),
+            const SizedBox(height: 13),
+            _LifeAppsWidget(onSettingsTap: onSettingsTap, onAppTap: onAppTap),
+            const SizedBox(height: 18),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _LifeClockWidget extends StatelessWidget {
+  const _LifeClockWidget({
+    required this.now,
+    required this.activity,
+    required this.onTap,
+  });
+
+  final DateTime now;
+  final ActivityStatus activity;
+  final VoidCallback onTap;
+
+  String get _weekday =>
+      const ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'][now.weekday - 1];
+  String get _time =>
+      '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    return _LifeWidgetShell(
+      onTap: onTap,
+      tint: const Color(0xFFF3F1FB),
+      child: SizedBox(
+        height: 126,
+        child: Stack(
+          children: [
+            Positioned(
+              right: -12,
+              top: -24,
+              child: Opacity(
+                opacity: 0.26,
+                child: Image.asset(
+                  'assets/images/brand/peilink_butterfly.png',
+                  width: 132,
+                  height: 132,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(19, 16, 18, 15),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              now.hour >= 18 || now.hour < 6
+                                  ? Icons.nightlight_round
+                                  : Icons.wb_sunny_outlined,
+                              color: HomeVisualTokens.brandBlue,
+                              size: 19,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${now.month}月${now.day}日',
+                              style: const TextStyle(
+                                color: HomeVisualTokens.inkPrimary,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '$_weekday · ${activity.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: HomeVisualTokens.inkSecondary,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                        const Spacer(),
+                        const _LifeWidgetHint(
+                          label: '\u4eca\u65e5\u65e5\u5386',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  SizedBox(
+                    width: 126,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            _time,
+                            style: const TextStyle(
+                              color: HomeVisualTokens.inkPrimary,
+                              fontSize: 43,
+                              height: 1,
+                              fontWeight: FontWeight.w300,
+                              letterSpacing: -1.8,
+                            ),
+                          ),
+                          const SizedBox(height: 9),
+                          const Text(
+                            'PEILINK WORLD TIME',
+                            style: TextStyle(
+                              color: HomeVisualTokens.inkTertiary,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnniversaryWidget extends StatelessWidget {
+  const _AnniversaryWidget({
+    required this.now,
+    required this.hasCharacter,
+    required this.onTap,
+  });
+
+  final DateTime now;
+  final bool hasCharacter;
+  final VoidCallback onTap;
+
+  int get _daysLeft {
+    final today = DateTime(now.year, now.month, now.day);
+    var target = DateTime(now.year, 1, 17);
+    if (!target.isAfter(today)) target = DateTime(now.year + 1, 1, 17);
+    return target.difference(today).inDays;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _LifeWidgetShell(
+      onTap: onTap,
+      tint: const Color(0xFFF7F0F8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(15, 14, 13, 13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _LifeWidgetTitle(icon: Icons.favorite_rounded, title: '纪念日'),
+            const SizedBox(height: 13),
+            Text(
+              hasCharacter ? '相遇纪念日' : '暂无纪念关系',
+              style: TextStyle(
+                color: HomeVisualTokens.inkSecondary,
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  hasCharacter ? '$_daysLeft' : '--',
+                  style: const TextStyle(
+                    color: HomeVisualTokens.inkPrimary,
+                    fontSize: 35,
+                    height: 1,
+                    fontWeight: FontWeight.w300,
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(left: 4, bottom: 3),
+                  child: Text(
+                    '天',
+                    style: TextStyle(
+                      color: HomeVisualTokens.inkSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            const Text(
+              '每一天都值得被记住',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: HomeVisualTokens.inkTertiary,
+                fontSize: 9.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorldStatusWidget extends StatelessWidget {
+  const _WorldStatusWidget({required this.activity, required this.onTap});
+
+  final ActivityStatus activity;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _LifeWidgetShell(
+      onTap: onTap,
+      tint: const Color(0xFFEEF4FA),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(15, 14, 13, 13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _LifeWidgetTitle(icon: Icons.public_rounded, title: '世界状态'),
+            const SizedBox(height: 13),
+            const Text(
+              'PeiLink World',
+              style: TextStyle(
+                color: HomeVisualTokens.inkSecondary,
+                fontSize: 10.5,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              activity.isSleeping ? '夜间安静运行中' : '世界稳定运行中',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: HomeVisualTokens.inkPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            Row(
+              children: [
+                _WorldMetric(icon: Icons.cloud_outlined, label: '柔和'),
+                const SizedBox(width: 9),
+                _WorldMetric(
+                  icon: activity.isSleeping
+                      ? Icons.dark_mode_outlined
+                      : Icons.bolt_rounded,
+                  label: activity.isSleeping ? '静谧' : '活跃',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentLifeWidget extends StatelessWidget {
+  const _RecentLifeWidget({
+    required this.traces,
+    required this.hasCharacter,
+    required this.onTap,
+  });
+
+  final List<LifeTrace> traces;
+  final bool hasCharacter;
+  final VoidCallback onTap;
+
+  String _timeText(DateTime value) {
+    final difference = DateTime.now().difference(value);
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes.clamp(1, 59)}分钟前';
+    }
+    if (difference.inHours < 24) return '${difference.inHours}小时前';
+    return '${value.month}/${value.day}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = traces.take(3).toList();
+    return _LifeWidgetShell(
+      onTap: onTap,
+      tint: const Color(0xFFF2F1FA),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(15, 13, 13, 12),
+        child: Column(
+          children: [
+            const Row(
+              children: [
+                Expanded(
+                  child: _LifeWidgetTitle(
+                    icon: Icons.auto_awesome_rounded,
+                    title: '最近动态',
+                  ),
+                ),
+                _LifeWidgetHint(label: '进入 Echo'),
+              ],
+            ),
+            const SizedBox(height: 9),
+            if (visible.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  hasCharacter
+                      ? '他的生活还没有开始记录\n等待新的故事发生'
+                      : '暂无生活记录\n等待新的故事发生',
+                  style: const TextStyle(
+                    color: HomeVisualTokens.inkSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              )
+            else
+              for (var index = 0; index < visible.length; index++) ...[
+                _RecentLifeRow(
+                  trace: visible[index],
+                  timeText: _timeText(visible[index].occurredAt),
+                ),
+                if (index != visible.length - 1) const SizedBox(height: 8),
+              ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LifeAppsWidget extends StatelessWidget {
+  const _LifeAppsWidget({required this.onSettingsTap, required this.onAppTap});
+
+  final VoidCallback onSettingsTap;
+  final ValueChanged<String> onAppTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final apps = [
+      _AppEntry(
+        '相册',
+        Icons.photo_library_rounded,
+        () => onAppTap('相册'),
+        tint: const Color(0xFF8EA0F1),
+        assetPath: 'assets/images/app_icons/gallery.png',
+      ),
+      _AppEntry(
+        '音乐',
+        Icons.headphones_rounded,
+        () => onAppTap('音乐'),
+        tint: const Color(0xFF9A8FE8),
+        assetPath: 'assets/images/app_icons/music.png',
+      ),
+      _AppEntry(
+        '礼物',
+        Icons.card_giftcard_rounded,
+        () => onAppTap('礼物'),
+        tint: const Color(0xFFE2AFC5),
+        assetPath: 'assets/images/app_icons/gift.png',
+      ),
+      _AppEntry(
+        '日记',
+        Icons.menu_book_rounded,
+        () => onAppTap('日记'),
+        tint: const Color(0xFFA18EE6),
+        assetPath: 'assets/images/app_icons/diary.png',
+      ),
+      _AppEntry(
+        '世界',
+        Icons.public_rounded,
+        () => onAppTap('世界'),
+        tint: const Color(0xFF829CEB),
+        assetPath: 'assets/images/app_icons/world.png',
+      ),
+      _AppEntry(
+        '设置',
+        Icons.settings_rounded,
+        onSettingsTap,
+        tint: const Color(0xFF8A91E9),
+        assetPath: 'assets/images/app_icons/settings.png',
+      ),
+    ];
+    return HomeGlass(
+      level: HomeGlassLevel.card,
+      borderRadius: 27,
+      tint: const Color(0xFFF3F1F9),
+      surfaceOpacity: 0.34,
+      padding: const EdgeInsets.fromLTRB(11, 13, 11, 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: _LifeWidgetTitle(icon: Icons.apps_rounded, title: '生活应用'),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final app in apps)
+                Expanded(child: _LifeDesktopApp(entry: app)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LifeDesktopApp extends StatelessWidget {
+  const _LifeDesktopApp({required this.entry});
+  final _AppEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: entry.onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            children: [
+              _AppIconSurface(entry: entry, size: 43, iconSize: 20),
+              const SizedBox(height: 6),
+              Text(
+                entry.label,
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                style: const TextStyle(
+                  color: HomeVisualTokens.inkPrimary,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LifeWidgetShell extends StatelessWidget {
+  const _LifeWidgetShell({
+    required this.onTap,
+    required this.tint,
+    required this.child,
+  });
+  final VoidCallback onTap;
+  final Color tint;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return HomeGlassButton(
+      onTap: onTap,
+      level: HomeGlassLevel.card,
+      borderRadius: 25,
+      tint: tint,
+      child: child,
+    );
+  }
+}
+
+class _LifeWidgetTitle extends StatelessWidget {
+  const _LifeWidgetTitle({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: HomeVisualTokens.brandViolet, size: 15),
+        const SizedBox(width: 6),
+        Text(
+          title,
+          style: const TextStyle(
+            color: HomeVisualTokens.inkPrimary,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LifeWidgetHint extends StatelessWidget {
+  const _LifeWidgetHint({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: HomeVisualTokens.inkTertiary,
+            fontSize: 9.5,
+          ),
+        ),
+        const SizedBox(width: 2),
+        const Icon(
+          Icons.chevron_right_rounded,
+          color: HomeVisualTokens.inkTertiary,
+          size: 14,
+        ),
+      ],
+    );
+  }
+}
+
+class _WorldMetric extends StatelessWidget {
+  const _WorldMetric({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Row(
+        children: [
+          Icon(icon, color: HomeVisualTokens.brandBlue, size: 13),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: HomeVisualTokens.inkSecondary,
+                fontSize: 9.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentLifeRow extends StatelessWidget {
+  const _RecentLifeRow({required this.trace, required this.timeText});
+  final LifeTrace trace;
+  final String timeText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 31,
+          height: 31,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.58),
+            shape: BoxShape.circle,
+          ),
+          child: Text(trace.emoji, style: const TextStyle(fontSize: 15)),
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                trace.title.trim().isEmpty ? '留下了一条生活动态' : trace.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: HomeVisualTokens.inkPrimary,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                trace.detail.trim().isEmpty ? '生活世界刚刚有了新的回声' : trace.detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: HomeVisualTokens.inkSecondary,
+                  fontSize: 9.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          timeText,
+          style: const TextStyle(
+            color: HomeVisualTokens.inkTertiary,
+            fontSize: 9,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -665,75 +1613,99 @@ class _AppsDesktopPage extends StatelessWidget {
   final VoidCallback onSettings;
   final ValueChanged<String> onPlaceholder;
 
+  _AppEntry _app(
+    String label,
+    IconData icon,
+    String asset,
+    Color tint,
+    VoidCallback onTap, {
+    int badge = 0,
+  }) => _AppEntry(
+    label,
+    icon,
+    onTap,
+    tint: tint,
+    assetPath: asset,
+    badgeCount: badge,
+  );
+
   @override
   Widget build(BuildContext context) {
-    final peiLink = _AppEntry(
-      'PeiLink',
-      Icons.chat_bubble_rounded,
-      onPeiLink,
-      tint: const Color(0xFF8394EC),
-      assetPath: 'assets/images/brand/peilink_app_icon_1024.png',
-      badgeCount: unreadCount,
-    );
-    final lifeApps = <_AppEntry>[
-      _AppEntry(
+    final coreApps = <_AppEntry>[
+      _app(
+        'PeiLink',
+        Icons.chat_bubble_rounded,
+        'assets/images/brand/peilink_app_icon_1024.png',
+        const Color(0xFF8394EC),
+        onPeiLink,
+        badge: unreadCount,
+      ),
+      _app(
         '相机',
         Icons.camera_alt_rounded,
+        'assets/images/app_icons/camera.png',
+        const Color(0xFF8EA0F1),
         () => onPlaceholder('相机'),
-        tint: const Color(0xFF8EA0F1),
-        assetPath: 'assets/images/app_icons/camera.png',
       ),
-      _AppEntry(
+      _app(
         '相册',
         Icons.photo_library_rounded,
+        'assets/images/app_icons/gallery.png',
+        const Color(0xFF9A8FE8),
         () => onPlaceholder('相册'),
-        tint: const Color(0xFF9A8FE8),
-        assetPath: 'assets/images/app_icons/gallery.png',
       ),
-      _AppEntry(
+      _app(
         '音乐',
         Icons.headphones_rounded,
+        'assets/images/app_icons/music.png',
+        const Color(0xFF7F96EA),
         () => onPlaceholder('音乐'),
-        tint: const Color(0xFF7F96EA),
-        assetPath: 'assets/images/app_icons/music.png',
       ),
     ];
-    final systemApps = <_AppEntry>[
-      _AppEntry(
-        '设置',
-        Icons.settings_rounded,
-        onSettings,
-        tint: const Color(0xFF8A91E9),
-        assetPath: 'assets/images/app_icons/settings.png',
-      ),
-      _AppEntry(
+    final lifeApps = <_AppEntry>[
+      _app(
         '日记',
         Icons.menu_book_rounded,
+        'assets/images/app_icons/diary.png',
+        const Color(0xFFA18EE6),
         () => onPlaceholder('日记'),
-        tint: const Color(0xFFA18EE6),
-        assetPath: 'assets/images/app_icons/diary.png',
       ),
-      _AppEntry(
+      _app(
         '礼物',
         Icons.card_giftcard_rounded,
+        'assets/images/app_icons/gift.png',
+        const Color(0xFFE2AFC5),
         () => onPlaceholder('礼物'),
-        tint: const Color(0xFF829CEB),
-        assetPath: 'assets/images/app_icons/gift.png',
+      ),
+      _app(
+        '世界',
+        Icons.public_rounded,
+        'assets/images/app_icons/world.png',
+        const Color(0xFF829CEB),
+        () => onPlaceholder('世界'),
+      ),
+      _app(
+        '设置',
+        Icons.settings_rounded,
+        'assets/images/app_icons/settings.png',
+        const Color(0xFF8A91E9),
+        onSettings,
       ),
     ];
     final futureApps = <_AppEntry>[
       _AppEntry(
-        '世界',
-        Icons.public_rounded,
-        () => onPlaceholder('世界'),
-        tint: const Color(0xFF8B97ED),
-        assetPath: 'assets/images/app_icons/world.png',
+        '地图',
+        Icons.map_rounded,
+        () => onPlaceholder('地图'),
+        tint: const Color(0xFF91A1D8),
+        locked: true,
       ),
       _AppEntry(
         '更多',
         Icons.auto_awesome_rounded,
         () => onPlaceholder('更多'),
         tint: const Color(0xFF9B8CE5),
+        locked: true,
       ),
     ];
 
@@ -748,90 +1720,102 @@ class _AppsDesktopPage extends StatelessWidget {
           child: child,
         ),
       ),
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0x2EFFFFFF), Color(0x1CE7E0F4), Color(0x0FCBD8F1)],
-            stops: [0, 0.48, 1],
-          ),
+      child: SingleChildScrollView(
+        key: const ValueKey('ai-world-apps-page'),
+        physics: const BouncingScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          22,
+          MediaQuery.paddingOf(context).top + 14,
+          22,
+          MediaQuery.paddingOf(context).bottom + 46,
         ),
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            18,
-            MediaQuery.paddingOf(context).top + 10,
-            18,
-            MediaQuery.paddingOf(context).bottom + 42,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome_rounded,
-                    color: HomeVisualTokens.brandViolet.withValues(alpha: 0.82),
-                    size: 14,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '应用空间',
+                        style: TextStyle(
+                          color: HomeVisualTokens.inkPrimary,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'AI OS DESKTOP',
+                        style: TextStyle(
+                          color: HomeVisualTokens.inkTertiary,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.6,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    '应用空间',
-                    style: TextStyle(
-                      color: HomeVisualTokens.inkPrimary,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Image.asset(
-                    'assets/images/brand/peilink_butterfly.png',
-                    width: 25,
-                    height: 25,
-                    fit: BoxFit.contain,
-                    opacity: const AlwaysStoppedAnimation(0.82),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '常用与未来应用，一目了然',
-                style: TextStyle(
-                  color: HomeVisualTokens.inkSecondary,
-                  fontSize: 12.5,
                 ),
-              ),
-              const SizedBox(height: 12),
-              _PeiLinkAppPortal(entry: peiLink),
-              const SizedBox(height: 10),
-              _AppSection(
-                title: '生活',
-                caption: '记录与感受',
-                icon: Icons.favorite_border_rounded,
-                entries: lifeApps,
-              ),
-              const SizedBox(height: 9),
-              _AppSection(
-                title: '系统',
-                caption: '管理这个世界',
-                icon: Icons.tune_rounded,
-                entries: systemApps,
-              ),
-              const SizedBox(height: 9),
-              _AppSection(
-                title: '未来',
-                caption: '等待开启的空间',
-                icon: Icons.auto_awesome_outlined,
-                entries: futureApps,
-              ),
-              const SizedBox(height: 10),
-              const _AppsAtmosphereCard(),
-            ],
-          ),
+                Image.asset(
+                  'assets/images/brand/peilink_butterfly.png',
+                  width: 34,
+                  height: 34,
+                  opacity: const AlwaysStoppedAnimation(0.78),
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            _DesktopIconGroup(title: '核心应用', entries: coreApps),
+            const SizedBox(height: 27),
+            _DesktopIconGroup(title: '生活工具', entries: lifeApps),
+            const SizedBox(height: 27),
+            _DesktopIconGroup(title: '未来空间', entries: futureApps),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _DesktopIconGroup extends StatelessWidget {
+  const _DesktopIconGroup({required this.title, required this.entries});
+  final String title;
+  final List<_AppEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: HomeVisualTokens.inkSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          itemCount: entries.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            mainAxisExtent: 92,
+            crossAxisSpacing: 9,
+          ),
+          itemBuilder: (_, index) => _DesktopAppIcon(entry: entries[index]),
+        ),
+      ],
     );
   }
 }
@@ -1033,6 +2017,7 @@ class _CharacterHeroCard extends StatelessWidget {
       child: Material(
         color: const Color(0xFFE9E7E3),
         child: InkWell(
+          key: const ValueKey('ai-world-character-card'),
           onTap: loading ? null : onTap,
           child: Stack(
             fit: StackFit.expand,
@@ -1120,17 +2105,21 @@ class _CharacterHeroCard extends StatelessWidget {
 class _CharacterLifePanel extends StatelessWidget {
   const _CharacterLifePanel({
     required this.character,
+    required this.hasCharacter,
     required this.greeting,
     required this.activity,
     required this.onTap,
     required this.onActivityTap,
+    required this.traces,
   });
 
   final AiCharacter character;
+  final bool hasCharacter;
   final String greeting;
   final ActivityStatus activity;
   final VoidCallback onTap;
   final VoidCallback onActivityTap;
+  final List<LifeTrace> traces;
 
   String? get _relationshipLabel {
     final relationship = character.relationship.trim();
@@ -1209,9 +2198,9 @@ class _CharacterLifePanel extends StatelessWidget {
                                     ).withValues(alpha: 0.26),
                                   ),
                                 ),
-                                child: const Text(
-                                  '在线',
-                                  style: TextStyle(
+                                child: Text(
+                                  hasCharacter ? '在线' : '等待连接',
+                                  style: const TextStyle(
                                     color: Color(0xFFF2DFFF),
                                     fontSize: 9,
                                     fontWeight: FontWeight.w700,
@@ -1296,18 +2285,20 @@ class _CharacterLifePanel extends StatelessWidget {
                         ),
                       ),
                       _LifeStatusDivider(),
-                      const Expanded(
+                      Expanded(
                         child: _LifeStatusItem(
-                          label: '正在经历',
-                          value: '整理生活资料',
+                          label: '最近痕迹',
+                          value: traces.isEmpty
+                              ? '还没有留下新动态'
+                              : traces.first.title,
                           accent: Color(0xFF9FCBE6),
                         ),
                       ),
                       _LifeStatusDivider(),
-                      const Expanded(
+                      Expanded(
                         child: _LifeStatusItem(
-                          label: '此刻心情',
-                          value: '平静',
+                          label: '关系',
+                          value: _relationshipLabel ?? '正在建立连接',
                           accent: Color(0xFFC1B4E9),
                         ),
                       ),
@@ -1470,6 +2461,7 @@ class _LifeStatusDivider extends StatelessWidget {
 
 class _RoundGlassButton extends StatelessWidget {
   const _RoundGlassButton({
+    super.key,
     required this.icon,
     required this.tooltip,
     required this.onTap,
@@ -1554,6 +2546,7 @@ class _QuickActionDock extends StatelessWidget {
 
 class _QuickAction extends StatelessWidget {
   const _QuickAction({
+    super.key,
     required this.icon,
     required this.label,
     required this.caption,
@@ -1707,618 +2700,6 @@ class _LifeLiveIndicator extends StatelessWidget {
   }
 }
 
-class _TodayWorldCard extends StatelessWidget {
-  const _TodayWorldCard({
-    required this.now,
-    required this.activity,
-    required this.onTap,
-  });
-
-  final DateTime now;
-  final ActivityStatus activity;
-  final VoidCallback onTap;
-
-  String get _weekday {
-    const values = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
-    return values[now.weekday - 1];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeGlassButton(
-      onTap: onTap,
-      level: HomeGlassLevel.main,
-      borderRadius: 28,
-      tint: const Color(0xFFF3F5FA),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 17, 16, 17),
-        child: Row(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${now.month}月${now.day}日',
-                  style: const TextStyle(
-                    color: HomeVisualTokens.inkPrimary,
-                    fontSize: 25,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.6,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '$_weekday · 今日世界',
-                  style: TextStyle(
-                    color: HomeVisualTokens.inkSecondary,
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 16),
-            Container(
-              width: 1,
-              height: 52,
-              color: HomeVisualTokens.inkTertiary.withValues(alpha: 0.22),
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    activity.displayText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: HomeVisualTokens.inkPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.cloud_outlined,
-                        color: HomeVisualTokens.inkSecondary,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          '天气与位置待接入',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: HomeVisualTokens.inkTertiary,
-                            fontSize: 10.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: HomeVisualTokens.inkTertiary,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LifeSectionHeader extends StatelessWidget {
-  const _LifeSectionHeader({
-    required this.eyebrow,
-    required this.title,
-    required this.caption,
-  });
-
-  final String eyebrow;
-  final String title;
-  final String caption;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                eyebrow,
-                style: TextStyle(
-                  color: HomeVisualTokens.brandBlue.withValues(alpha: 0.72),
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.4,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: HomeVisualTokens.inkPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Text(
-          caption,
-          style: TextStyle(color: HomeVisualTokens.inkTertiary, fontSize: 10),
-        ),
-      ],
-    );
-  }
-}
-
-class _TodayLifeFragment extends StatelessWidget {
-  const _TodayLifeFragment({
-    required this.now,
-    required this.activity,
-    required this.onTap,
-  });
-
-  final DateTime now;
-  final ActivityStatus activity;
-  final VoidCallback onTap;
-
-  int get _daysUntilAnniversary {
-    var anniversary = DateTime(now.year, 1, 17);
-    final today = DateTime(now.year, now.month, now.day);
-    if (!anniversary.isAfter(today)) {
-      anniversary = DateTime(now.year + 1, 1, 17);
-    }
-    return anniversary.difference(today).inDays;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeGlassButton(
-      onTap: onTap,
-      level: HomeGlassLevel.card,
-      borderRadius: 25,
-      tint: const Color(0xFFF5F1FA),
-      child: Padding(
-        padding: const EdgeInsets.all(17),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.58),
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    activity.emoji,
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        activity.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: HomeVisualTokens.inkPrimary,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        activity.detail,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: HomeVisualTokens.inkSecondary,
-                          fontSize: 11,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Container(
-              height: 1,
-              color: HomeVisualTokens.inkTertiary.withValues(alpha: 0.18),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(
-                  Icons.favorite_border_rounded,
-                  color: Color(0xFFE3B5C7),
-                  size: 16,
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  '1 · 17',
-                  style: TextStyle(
-                    color: HomeVisualTokens.inkPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '纪念日还有 $_daysUntilAnniversary 天',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: HomeVisualTokens.inkTertiary,
-                      fontSize: 10.5,
-                    ),
-                  ),
-                ),
-                Text(
-                  '查看今天',
-                  style: TextStyle(
-                    color: HomeVisualTokens.brandBlue,
-                    fontSize: 10.5,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LifeTimeline extends StatelessWidget {
-  const _LifeTimeline({required this.traces});
-
-  final List<LifeTrace> traces;
-
-  String _timeText(DateTime value) {
-    final now = DateTime.now();
-    if (now.year == value.year &&
-        now.month == value.month &&
-        now.day == value.day) {
-      return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-    }
-    return '${value.month}/${value.day}';
-  }
-
-  String _displayTitle(LifeTrace trace) => switch (trace.title.trim()) {
-    '工作中' => '开始处理今天的工作',
-    '午休中' => '给自己留了一点休息时间',
-    '休息中' => '暂时放慢了生活的节奏',
-    '睡觉中' => '今天的生活安静了下来',
-    final value when value.isNotEmpty => value,
-    _ => '留下了一点生活痕迹',
-  };
-
-  String _displayDetail(LifeTrace trace) {
-    final detail = trace.detail.trim();
-    if (detail.isNotEmpty) return detail;
-    return switch (trace.title.trim()) {
-      '工作中' => '桌边的饮料已经凉了一半。',
-      '午休中' || '休息中' => '窗边有一小段安静的时间。',
-      _ => '这段时间轻轻留在了今天。',
-    };
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeGlass(
-      level: HomeGlassLevel.card,
-      borderRadius: 25,
-      tint: const Color(0xFFF2F5FA),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 13),
-      child: traces.isEmpty
-          ? Row(
-              children: [
-                Container(
-                  width: 9,
-                  height: 9,
-                  decoration: BoxDecoration(
-                    color: HomeVisualTokens.brandBlue.withValues(alpha: 0.38),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  '这里还很安静，生活正在慢慢发生。',
-                  style: TextStyle(
-                    color: HomeVisualTokens.inkSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            )
-          : Column(
-              children: List.generate(traces.length, (index) {
-                final trace = traces[index];
-                final isLast = index == traces.length - 1;
-                return IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 39,
-                        child: Text(
-                          _timeText(trace.occurredAt),
-                          style: TextStyle(
-                            color: HomeVisualTokens.inkTertiary,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 23,
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 9,
-                              height: 9,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFAED2E4),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: HomeVisualTokens.inkTertiary,
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x558FC4DD),
-                                    blurRadius: 7,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (!isLast)
-                              Expanded(
-                                child: Container(
-                                  width: 1,
-                                  color: HomeVisualTokens.inkTertiary
-                                      .withValues(alpha: 0.20),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.only(bottom: isLast ? 2 : 15),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    trace.emoji,
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      _displayTitle(trace),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: HomeVisualTokens.inkPrimary,
-                                        fontSize: 12.5,
-                                        height: 1.35,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _displayDetail(trace),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: HomeVisualTokens.inkSecondary,
-                                  fontSize: 10.5,
-                                  height: 1.42,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ),
-    );
-  }
-}
-
-class _WorldEnvironmentCard extends StatelessWidget {
-  const _WorldEnvironmentCard({required this.activity});
-
-  final ActivityStatus activity;
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeGlass(
-      level: HomeGlassLevel.card,
-      borderRadius: 25,
-      tint: const Color(0xFFF1F5FA),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          const Expanded(
-            child: _EnvironmentItem(
-              icon: Icons.cloud_outlined,
-              label: '天气',
-              value: '待接入',
-            ),
-          ),
-          _EnvironmentDivider(),
-          const Expanded(
-            child: _EnvironmentItem(
-              icon: Icons.location_on_outlined,
-              label: '地点',
-              value: '待同步',
-            ),
-          ),
-          _EnvironmentDivider(),
-          Expanded(
-            child: _EnvironmentItem(
-              icon: activity.isSleeping
-                  ? Icons.dark_mode_outlined
-                  : Icons.air_rounded,
-              label: '环境',
-              value: activity.isSleeping ? '夜间安静' : '平稳流动',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EnvironmentItem extends StatelessWidget {
-  const _EnvironmentItem({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: HomeVisualTokens.brandBlue, size: 19),
-        const SizedBox(height: 7),
-        Text(
-          label,
-          style: TextStyle(color: HomeVisualTokens.inkTertiary, fontSize: 9.5),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: HomeVisualTokens.inkPrimary,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _EnvironmentDivider extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 48,
-      margin: const EdgeInsets.symmetric(horizontal: 10),
-      color: HomeVisualTokens.inkTertiary.withValues(alpha: 0.18),
-    );
-  }
-}
-
-class _AppsAtmosphereCard extends StatelessWidget {
-  const _AppsAtmosphereCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeGlass(
-      level: HomeGlassLevel.card,
-      borderRadius: 29,
-      tint: const Color(0xFFE4DCF2),
-      surfaceOpacity: 0.38,
-      padding: const EdgeInsets.fromLTRB(17, 9, 12, 9),
-      child: SizedBox(
-        height: 48,
-        child: Row(
-          children: [
-            Container(
-              width: 5,
-              height: 30,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFFBFC8FF), Color(0xFFBFAEE8)],
-                ),
-              ),
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Text(
-                '每一个应用，\n都是他们生活的一部分。',
-                style: TextStyle(
-                  color: HomeVisualTokens.inkSecondary,
-                  fontSize: 11.5,
-                  height: 1.42,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.25,
-                ),
-              ),
-            ),
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [Color(0x2ED9D4FF), Color(0x00D9D4FF)],
-                    ),
-                  ),
-                ),
-                Image.asset(
-                  'assets/images/brand/peilink_butterfly.png',
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.contain,
-                  opacity: const AlwaysStoppedAnimation(0.72),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _AppEntry {
   const _AppEntry(
     this.label,
@@ -2327,6 +2708,7 @@ class _AppEntry {
     required this.tint,
     this.badgeCount = 0,
     this.assetPath,
+    this.locked = false,
   });
 
   final String label;
@@ -2335,198 +2717,7 @@ class _AppEntry {
   final Color tint;
   final int badgeCount;
   final String? assetPath;
-}
-
-class _PeiLinkAppPortal extends StatelessWidget {
-  const _PeiLinkAppPortal({required this.entry});
-
-  final _AppEntry entry;
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeGlassButton(
-      onTap: entry.onTap,
-      level: HomeGlassLevel.main,
-      borderRadius: 31,
-      tint: const Color(0xFFF2F0FA),
-      child: SizedBox(
-        height: 104,
-        child: Stack(
-          children: [
-            Positioned(
-              top: -54,
-              right: -30,
-              child: Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      entry.tint.withValues(alpha: 0.20),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(17, 12, 16, 12),
-              child: Row(
-                children: [
-                  _AppIconSurface(entry: entry, size: 74, iconSize: 33),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.52),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            'SYSTEM CORE',
-                            style: TextStyle(
-                              color: HomeVisualTokens.brandBlue,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.1,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 7),
-                        const Text(
-                          'PeiLink',
-                          style: TextStyle(
-                            color: HomeVisualTokens.inkPrimary,
-                            fontSize: 21,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '连接角色、消息与共同世界',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: HomeVisualTokens.inkSecondary,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.62),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.arrow_forward_rounded,
-                      color: HomeVisualTokens.brandBlue,
-                      size: 18,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AppSection extends StatelessWidget {
-  const _AppSection({
-    required this.title,
-    required this.caption,
-    required this.icon,
-    required this.entries,
-  });
-
-  final String title;
-  final String caption;
-  final IconData icon;
-  final List<_AppEntry> entries;
-
-  @override
-  Widget build(BuildContext context) {
-    return HomeGlass(
-      level: HomeGlassLevel.card,
-      borderRadius: 29,
-      tint: const Color(0xFFF5F3FA),
-      surfaceOpacity: 0.40,
-      padding: const EdgeInsets.fromLTRB(15, 11, 15, 11),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 29,
-                height: 29,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.64),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  icon,
-                  color: HomeVisualTokens.brandViolet,
-                  size: 15,
-                ),
-              ),
-              const SizedBox(width: 9),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: HomeVisualTokens.inkPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  caption,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: HomeVisualTokens.inkTertiary,
-                    fontSize: 9.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var index = 0; index < entries.length; index++) ...[
-                Expanded(child: _DesktopAppIcon(entry: entries[index])),
-                if (index != entries.length - 1) const SizedBox(width: 10),
-              ],
-              for (var index = entries.length; index < 3; index++) ...[
-                if (index != 0) const SizedBox(width: 10),
-                const Expanded(child: SizedBox()),
-              ],
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  final bool locked;
 }
 
 class _DesktopAppIcon extends StatelessWidget {
@@ -2665,6 +2856,25 @@ class _AppIconSurface extends StatelessWidget {
               child: displayedImage,
             ),
           ),
+          if (entry.locked)
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  shape: BoxShape.circle,
+                  boxShadow: HomeVisualTokens.buttonShadow,
+                ),
+                child: const Icon(
+                  Icons.lock_rounded,
+                  size: 11,
+                  color: HomeVisualTokens.brandViolet,
+                ),
+              ),
+            ),
           if (entry.badgeCount > 0)
             Positioned(
               top: -6,

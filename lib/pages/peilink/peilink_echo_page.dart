@@ -7,31 +7,39 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../models/ai_character.dart';
 import '../../models/character_settings.dart';
+import '../../models/chat_message.dart';
 import '../../models/echo_item.dart';
 import '../../models/echo_comment.dart';
 import '../../models/echo_interaction_stats.dart';
+import '../../models/echo_space_summary.dart';
+import '../../models/relationship_growth.dart';
 import '../../models/echo_visitor_record.dart';
 import '../../models/shared_experience.dart';
 import '../../models/user_profile.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/character_settings_storage_service.dart';
+import '../../services/chat_storage_service.dart';
 import '../../services/echo_image_storage_service.dart';
 import '../../services/echo_interaction_stats_service.dart';
 import '../../services/echo_profile_storage_service.dart';
 import '../../services/echo_space_decoration_storage_service.dart';
 import '../../services/echo_storage_service.dart';
 import '../../services/echo_visitor_storage_service.dart';
+import '../../services/echo_visitor_social_service.dart';
 import '../../services/shared_experience_storage_service.dart';
+import '../../services/relationship_growth_service.dart';
 import '../../services/user_profile_storage_service.dart';
 import '../../theme/app_theme_background.dart';
 import '../../widgets/echo/echo_interaction_bar.dart';
+import '../../widgets/echo/echo_space_overview.dart';
 import '../../widgets/echo/ai_verified_badge.dart';
 import '../../widgets/echo/echo_recent_visitors_strip.dart';
 import '../../widgets/echo/echo_visitor_card.dart';
 import 'echo_compose_page.dart';
 import 'echo_cover_editor_page.dart';
 import 'echo_cover_preview_page.dart';
-import 'echo_gift_collection_page.dart';
+import 'relationship_gift_page.dart';
+import 'relationship_growth_page.dart';
 import 'echo_visitor_list_page.dart';
 import 'echo_ai_draft_page.dart';
 import 'echo_comments_page.dart';
@@ -80,6 +88,8 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   bool _memoriesLoadFailed = false;
   bool _decorationLoadFailed = false;
   int _spaceTabIndex = 0;
+  int _chatInteractionCount = 0;
+  RelationshipGrowthProfile? _growthProfile;
 
   bool get _isPublicTimeline => widget.showPublicTimeline;
   bool get _isUserPage => widget.character == null;
@@ -113,10 +123,18 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   Future<void> _loadPage() async {
     if (mounted) setState(() => _loading = true);
     try {
-      final character =
-          widget.character ?? await _registry.loadActiveCharacter();
       final userProfile = await UserProfileStorageService().loadProfile();
       final characters = await _registry.loadCharacters();
+      final character =
+          widget.character ??
+          AiCharacter(
+            id: _userEchoId,
+            characterName: userProfile.nickname,
+            remark: '',
+            relationship: userProfile.identity,
+            avatarPath: userProfile.avatarPath,
+            createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+          );
       final ownerId = _isUserPage ? _userEchoId : character.id;
 
       final profile = await EchoProfileStorageService(
@@ -163,6 +181,9 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       }
 
       CharacterSettings? characterSettings;
+      var chatInteractionCount = 0;
+      var chatMessages = <ChatMessage>[];
+      RelationshipGrowthProfile? growthProfile;
       if (_isCharacterSpace) {
         try {
           characterSettings = await CharacterSettingsStorageService(
@@ -170,6 +191,19 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
           ).loadSettings();
         } catch (_) {
           characterSettings = null;
+        }
+        try {
+          chatMessages = await ChatStorageService(
+            characterId: character.id,
+          ).loadMessages();
+          chatInteractionCount = chatMessages
+              .where(
+                (message) =>
+                    !message.isRecalled && message.type != MessageType.system,
+              )
+              .length;
+        } catch (_) {
+          chatInteractionCount = 0;
         }
       }
 
@@ -189,6 +223,18 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
               visitorName: userProfile.nickname,
               visitorAvatarPath: userProfile.avatarPath,
             );
+        visitors = await const EchoVisitorSocialService().synchronize(
+          owner: character,
+          characters: characters,
+        );
+        growthProfile =
+            await RelationshipGrowthService(
+              characterId: character.id,
+            ).synchronize(
+              messages: chatMessages,
+              echoes: items,
+              metAt: character.createdAt,
+            );
       }
 
       if (!mounted) return;
@@ -203,6 +249,8 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         _memoriesLoadFailed = memoriesLoadFailed;
         _spaceDecoration = decoration;
         _characterSettings = characterSettings;
+        _chatInteractionCount = chatInteractionCount;
+        _growthProfile = growthProfile;
         _decorationLoadFailed = decorationLoadFailed;
         _echoProfile = profile;
         _loading = false;
@@ -369,12 +417,39 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   }
 
   Future<void> _openGiftCollection() async {
+    final character = _spaceCharacter;
+    if (character == null) return;
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RelationshipGiftPage(
+          characterId: character.id,
+          characterName: _displayName,
+        ),
+      ),
+    );
+    if (changed == true) await _loadPage();
+  }
+
+  Future<void> _openRelationshipGrowth() async {
+    final character = _spaceCharacter;
+    final profile = _growthProfile;
+    if (character == null || profile == null) return;
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
-        builder: (_) => EchoGiftCollectionPage(characterName: _displayName),
+        builder: (_) => RelationshipGrowthPage(
+          character: character,
+          initialProfile: profile,
+          chatInteractionCount: _chatInteractionCount,
+          echoInteractionCount: _items
+              .where((item) => item.isLiked || item.isCollected)
+              .length,
+          sharedExperienceCount: _memories.length,
+        ),
       ),
     );
+    await _loadPage();
   }
 
   Future<void> _openVisitorList() async {
@@ -697,6 +772,11 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         ? settingsRelation
         : characterRelation;
     final surfaceColor = Colors.white.withValues(alpha: cardOpacity);
+    final summary = EchoSpaceSummary.fromExistingData(
+      echoes: _items,
+      interactionCount: _chatInteractionCount,
+      sharedExperienceCount: _memories.length,
+    );
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -713,11 +793,14 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                     avatar: _avatar(size: 92),
                     displayName: _displayName,
                     signature: _signature,
+                    currentStatus: summary.currentStatus,
+                    recentActivity: summary.recentActivity,
+                    interactionCount: summary.interactionCount,
                     relationship: relationship,
                     metAt: _spaceCharacter?.createdAt,
                     sharedExperienceCount: _memories.length,
                     visitors: _visitors,
-                    intimacy: _characterSettings?.intimacy,
+                    growthProfile: _growthProfile,
                     anniversary: _parseAnniversary(
                       _characterSettings?.anniversary,
                       DateTime.now(),
@@ -728,7 +811,10 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                     onOpenRelationship: () =>
                         setState(() => _spaceTabIndex = 3),
                     onOpenGift: _openGiftCollection,
+                    onOpenGrowth: _openRelationshipGrowth,
                     onOpenVisitors: _openVisitorList,
+                    onOpenInteractions: () =>
+                        setState(() => _spaceTabIndex = 2),
                     onOpenPlaceholder: () => _showMessage('敬请期待'),
                   ),
                 ),
@@ -957,6 +1043,9 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
           onCollect: () => _toggleCollected(item),
           onComment: () => _openComments(item),
           onDelete: () => _deleteItem(item),
+          onOpenMemory: item.isFromSharedExperience && _isCharacterSpace
+              ? () => setState(() => _spaceTabIndex = 2)
+              : null,
           spaceStyle: spaceStyle,
         );
       },
@@ -969,36 +1058,46 @@ class _CharacterSpaceHeader extends StatelessWidget {
     required this.avatar,
     required this.displayName,
     required this.signature,
+    required this.currentStatus,
+    required this.recentActivity,
+    required this.interactionCount,
     required this.relationship,
     required this.metAt,
     required this.sharedExperienceCount,
     required this.visitors,
-    required this.intimacy,
+    required this.growthProfile,
     required this.anniversary,
     required this.onBack,
     required this.onCreate,
     required this.onMore,
     required this.onOpenRelationship,
     required this.onOpenGift,
+    required this.onOpenGrowth,
     required this.onOpenVisitors,
+    required this.onOpenInteractions,
     required this.onOpenPlaceholder,
   });
 
   final Widget avatar;
   final String displayName;
   final String signature;
+  final String currentStatus;
+  final String recentActivity;
+  final int interactionCount;
   final String relationship;
   final DateTime? metAt;
   final int sharedExperienceCount;
   final List<EchoVisitorRecord> visitors;
-  final double? intimacy;
+  final RelationshipGrowthProfile? growthProfile;
   final _AnniversaryInfo? anniversary;
   final VoidCallback onBack;
   final VoidCallback onCreate;
   final VoidCallback onMore;
   final VoidCallback onOpenRelationship;
   final VoidCallback onOpenGift;
+  final VoidCallback onOpenGrowth;
   final VoidCallback onOpenVisitors;
+  final VoidCallback onOpenInteractions;
   final VoidCallback onOpenPlaceholder;
 
   String? get _relationshipLabel {
@@ -1151,19 +1250,32 @@ class _CharacterSpaceHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
+          EchoCharacterActivityStrip(
+            currentStatus: currentStatus,
+            recentActivity: recentActivity,
+          ),
+          const SizedBox(height: 10),
           EchoRecentVisitorsStrip(visitors: visitors, onTap: onOpenVisitors),
           const SizedBox(height: 10),
           _SpaceRelationshipCard(
             relationship: _relationshipLabel,
             metAt: metAt,
             sharedExperienceCount: sharedExperienceCount,
+            interactionCount: interactionCount,
             onOpen: onOpenRelationship,
+          ),
+          const SizedBox(height: 8),
+          EchoInteractionSummaryEntry(
+            interactionCount: interactionCount,
+            sharedExperienceCount: sharedExperienceCount,
+            onTap: onOpenInteractions,
           ),
           const SizedBox(height: 8),
           _BondQuickCards(
             anniversary: anniversary,
-            intimacy: intimacy,
+            growthProfile: growthProfile,
             onOpenGift: onOpenGift,
+            onOpenGrowth: onOpenGrowth,
             onOpenPlaceholder: onOpenPlaceholder,
           ),
           const SizedBox(height: 10),
@@ -1210,20 +1322,19 @@ class _SpaceRelationshipCard extends StatelessWidget {
     required this.relationship,
     required this.metAt,
     required this.sharedExperienceCount,
+    required this.interactionCount,
     required this.onOpen,
   });
 
   final String? relationship;
   final DateTime? metAt;
   final int sharedExperienceCount;
+  final int interactionCount;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final meetingTime = _validPastDate(metAt);
-    final daysKnown = meetingTime == null
-        ? null
-        : _daysSince(meetingTime, DateTime.now());
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.fromLTRB(15, 12, 15, 8),
@@ -1315,8 +1426,8 @@ class _SpaceRelationshipCard extends StatelessWidget {
               const _SpaceMetricDivider(),
               Expanded(
                 child: _SpaceProfileMetric(
-                  label: '陪伴天数',
-                  value: daysKnown == null ? '—' : '$daysKnown 天',
+                  label: '互动次数',
+                  value: '$interactionCount 次',
                 ),
               ),
               const _SpaceMetricDivider(),
@@ -1398,14 +1509,16 @@ class _SpaceProfileMetric extends StatelessWidget {
 class _BondQuickCards extends StatelessWidget {
   const _BondQuickCards({
     required this.anniversary,
-    required this.intimacy,
+    required this.growthProfile,
     required this.onOpenGift,
+    required this.onOpenGrowth,
     required this.onOpenPlaceholder,
   });
 
   final _AnniversaryInfo? anniversary;
-  final double? intimacy;
+  final RelationshipGrowthProfile? growthProfile;
   final VoidCallback onOpenGift;
+  final VoidCallback onOpenGrowth;
   final VoidCallback onOpenPlaceholder;
 
   @override
@@ -1418,13 +1531,18 @@ class _BondQuickCards extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: _IntimacyQuickCard(intimacy: intimacy)),
+            Expanded(
+              child: _RelationshipGrowthQuickCard(
+                profile: growthProfile,
+                onTap: onOpenGrowth,
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: _BondSmallCard(
                 icon: Icons.card_giftcard_rounded,
                 title: '收到礼物',
-                value: '0 件',
+                value: '${growthProfile?.gifts.length ?? 0} 件',
                 footer: '查看礼物  ›',
                 onTap: onOpenGift,
               ),
@@ -1450,84 +1568,83 @@ class _BondQuickCards extends StatelessWidget {
   }
 }
 
-class _IntimacyQuickCard extends StatelessWidget {
-  const _IntimacyQuickCard({required this.intimacy});
+class _RelationshipGrowthQuickCard extends StatelessWidget {
+  const _RelationshipGrowthQuickCard({
+    required this.profile,
+    required this.onTap,
+  });
 
-  final double? intimacy;
+  final RelationshipGrowthProfile? profile;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final intimacyValue = intimacy?.clamp(0.0, 1.0);
-    final intimacyLevel = intimacyValue == null
-        ? null
-        : (intimacyValue * 10).round().clamp(1, 10);
-    final relationshipStage = switch (intimacyValue) {
-      null => '关系阶段未知',
-      < 0.2 => '相识',
-      < 0.4 => '熟悉',
-      < 0.6 => '信任',
-      < 0.8 => '依赖',
-      _ => '羁绊',
-    };
-    return Container(
-      height: 110,
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
-      decoration: _bondSmallCardDecoration(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _BondSmallTitle(icon: Icons.favorite_rounded, title: '亲密度'),
-          const SizedBox(height: 5),
-          Row(
+    final level = profile?.levelFor() ?? 1;
+    final stage =
+        profile?.stageFor() ?? RelationshipGrowthConfig.standard.stageFor(1);
+    final required =
+        profile?.nextLevelExperienceFor() ??
+        RelationshipGrowthConfig.standard.experienceForNextLevel(1);
+    final current = profile?.currentExperienceFor() ?? 0;
+    final progress = required == 0 ? 1.0 : current / required;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          height: 110,
+          padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
+          decoration: _bondSmallCardDecoration(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                intimacyLevel == null ? '等级未知' : 'Lv.$intimacyLevel',
-                style: const TextStyle(
-                  color: Color(0xFFD8758C),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
+              const _BondSmallTitle(
+                icon: Icons.favorite_rounded,
+                title: '关系成长',
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Text(
+                    'Lv.$level',
+                    style: const TextStyle(
+                      color: Color(0xFFD8758C),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    stage,
+                    style: const TextStyle(
+                      color: Color(0xFF737F86),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              ClipRRect(
+                borderRadius: const BorderRadius.all(Radius.circular(4)),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0, 1),
+                  minHeight: 5,
+                  backgroundColor: const Color(0x55FFFFFF),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFFE992A7),
+                  ),
                 ),
               ),
               const Spacer(),
-              Text(
-                relationshipStage,
-                style: const TextStyle(
-                  color: Color(0xFF737F86),
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
-                ),
+              const Text(
+                '查看成长  ›',
+                style: TextStyle(color: Color(0xFF8B9499), fontSize: 9),
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          ClipRRect(
-            borderRadius: const BorderRadius.all(Radius.circular(4)),
-            child: LinearProgressIndicator(
-              value: intimacyValue,
-              minHeight: 5,
-              backgroundColor: const Color(0x55FFFFFF),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                Color(0xFFE992A7),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          const FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '相识  ›  熟悉  ›  信任  ›  依赖  ›  羁绊',
-              style: TextStyle(color: Color(0xFF8B9499), fontSize: 8.5),
-            ),
-          ),
-          const Spacer(),
-          const Text(
-            '根据互动逐渐变化',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Color(0xFFA1A9AD), fontSize: 8),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -2276,7 +2393,7 @@ class _VisitorEmptyCard extends StatelessWidget {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  '暂无访客记录',
+                  '这里还没有留下痕迹',
                   style: TextStyle(color: Color(0xFF8B969C), fontSize: 13),
                 ),
               ],
@@ -2514,7 +2631,7 @@ class _QuietEmptyState extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  '这里还没有留下任何回声',
+                  '他的生活还没有开始记录',
                   style: TextStyle(
                     color: Color(0xFF68757D),
                     fontSize: 14,
@@ -2598,6 +2715,7 @@ class _TimelineItem extends StatelessWidget {
     required this.onCollect,
     required this.onComment,
     required this.onDelete,
+    this.onOpenMemory,
     this.spaceStyle = false,
   });
 
@@ -2609,6 +2727,7 @@ class _TimelineItem extends StatelessWidget {
   final VoidCallback onCollect;
   final VoidCallback onComment;
   final VoidCallback onDelete;
+  final VoidCallback? onOpenMemory;
   final bool spaceStyle;
 
   Widget _buildSpaceCard(BuildContext context) {
@@ -2747,6 +2866,16 @@ class _TimelineItem extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (item.sourceType != EchoSourceType.manual ||
+                    item.sourceEvent.trim().isNotEmpty ||
+                    item.characterState.trim().isNotEmpty) ...[
+                  const SizedBox(height: 9),
+                  _EchoLifeMeta(
+                    item: item,
+                    spaceStyle: true,
+                    onTap: onOpenMemory,
+                  ),
+                ],
                 if (item.content.trim().isNotEmpty) ...[
                   const SizedBox(height: 11),
                   _ExpandableEchoText(text: item.content),
@@ -2884,6 +3013,12 @@ class _TimelineItem extends StatelessWidget {
                     fontSize: 15,
                   ),
                 ),
+                if (item.sourceType != EchoSourceType.manual ||
+                    item.sourceEvent.trim().isNotEmpty ||
+                    item.characterState.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _EchoLifeMeta(item: item, onTap: onOpenMemory),
+                ],
                 if (item.content.trim().isNotEmpty) ...[
                   const SizedBox(height: 5),
                   Text(
@@ -3085,6 +3220,66 @@ class SpaceEchoActionLegacy extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _EchoLifeMeta extends StatelessWidget {
+  const _EchoLifeMeta({
+    required this.item,
+    this.spaceStyle = false,
+    this.onTap,
+  });
+
+  final EchoItem item;
+  final bool spaceStyle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = spaceStyle
+        ? const Color(0xFF6E7F9C)
+        : const Color(0xFF697BA0);
+    final background = spaceStyle
+        ? Colors.white.withValues(alpha: 0.42)
+        : const Color(0xFFF1F3FA);
+    final content = Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            item.lifeType == EchoLifeType.memory && onTap != null
+                ? '记忆 · 查看回忆 ›'
+                : item.lifeType.label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (item.characterState.trim().isNotEmpty)
+          Text(
+            '· ${item.characterState.trim()}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: spaceStyle
+                  ? const Color(0xFF9AA5AB)
+                  : const Color(0xFF9A9FAE),
+              fontSize: 9.5,
+            ),
+          ),
+      ],
+    );
+    if (onTap == null) return content;
+    return GestureDetector(onTap: onTap, child: content);
   }
 }
 

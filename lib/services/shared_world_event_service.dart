@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/ai_character.dart';
 import '../models/life_moment.dart';
@@ -72,7 +72,9 @@ class SharedWorldEventService {
         occurredAt: time,
         relatedCharacterNames: mirroredNames.take(2).toList(),
       );
-      await LifeMomentStorageService(characterId: character.id).addItem(mirrored);
+      await LifeMomentStorageService(
+        characterId: character.id,
+      ).addItem(mirrored);
     }
   }
 
@@ -83,16 +85,19 @@ class SharedWorldEventService {
   }) async {
     final earliest = DateTime.now().subtract(maxAge);
     final records = await _loadRecords();
-    return records.where((record) {
-      final ids = record['participantCharacterIds'];
-      final occurredAt = DateTime.tryParse(
-        record['occurredAt']?.toString() ?? '',
-      );
-      return ids is List &&
-          ids.map((item) => item.toString()).contains(characterId) &&
-          occurredAt != null &&
-          occurredAt.isAfter(earliest);
-    }).take(limit).toList();
+    return records
+        .where((record) {
+          final ids = record['participantCharacterIds'];
+          final occurredAt = DateTime.tryParse(
+            record['occurredAt']?.toString() ?? '',
+          );
+          return ids is List &&
+              ids.map((item) => item.toString()).contains(characterId) &&
+              occurredAt != null &&
+              occurredAt.isAfter(earliest);
+        })
+        .take(limit)
+        .toList();
   }
 
   Future<String> buildChatPromptSection(
@@ -135,7 +140,10 @@ $lines
     final date = time == null ? '日期未知' : '${time.month}/${time.day}';
     final names = record['participantCharacterNames'];
     final participants = names is List
-        ? names.map((item) => item.toString().trim()).where((item) => item.isNotEmpty).join('、')
+        ? names
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .join('、')
         : '';
     final scene = record['scene']?.toString().trim() ?? '';
     final event = record['event']?.toString().trim() ?? '';
@@ -161,11 +169,14 @@ $lines
         .toSet();
     if (names.isEmpty) return const [];
 
-    return characters.where((character) {
-      if (character.id == originCharacter.id) return false;
-      return names.contains(character.characterName) ||
-          names.contains(character.displayName);
-    }).take(1).toList();
+    return characters
+        .where((character) {
+          if (character.id == originCharacter.id) return false;
+          return names.contains(character.characterName) ||
+              names.contains(character.displayName);
+        })
+        .take(1)
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> _loadRecords() async {

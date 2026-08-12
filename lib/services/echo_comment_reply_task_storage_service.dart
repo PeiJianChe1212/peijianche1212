@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/echo_comment_reply_task.dart';
 
@@ -29,8 +29,10 @@ class EchoCommentReplyTaskStorageService {
 
   Future<void> add(EchoCommentReplyTask task) async {
     final items = await loadAll();
-    if (items.any((item) =>
-        item.id == task.id || item.parentCommentId == task.parentCommentId)) {
+    if (items.any(
+      (item) =>
+          item.id == task.id || item.parentCommentId == task.parentCommentId,
+    )) {
       return;
     }
     items.add(task);
@@ -55,12 +57,13 @@ class EchoCommentReplyTaskStorageService {
   }
 
   Future<void> prune({DateTime? now}) async {
-    final cutoff =
-        (now ?? DateTime.now()).subtract(const Duration(days: 14));
+    final cutoff = (now ?? DateTime.now()).subtract(const Duration(days: 14));
     final items = await loadAll();
-    items.removeWhere((item) =>
-        item.status != EchoCommentReplyTaskStatus.pending &&
-        item.createdAt.isBefore(cutoff));
+    items.removeWhere(
+      (item) =>
+          item.status != EchoCommentReplyTaskStatus.pending &&
+          item.createdAt.isBefore(cutoff),
+    );
     await _save(items);
   }
 

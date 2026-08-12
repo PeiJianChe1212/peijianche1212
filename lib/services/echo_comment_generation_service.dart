@@ -13,8 +13,8 @@ import 'echo_comment_diversity_service.dart';
 
 class EchoCommentGenerationService {
   EchoCommentGenerationService({http.Client? client})
-      : _client = client ?? http.Client(),
-        _ownsClient = client == null {
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null {
     _modelHub = ModelHub(client: _client);
   }
 
@@ -73,12 +73,14 @@ class EchoCommentGenerationService {
             recentConversation: recentByCommenter.isEmpty
                 ? ''
                 : '你近期在 Echo 留过的评论：\n$recentByCommenter',
-            dynamicState:
-                activityLabel.isEmpty ? '' : '当前活动：$activityLabel',
-            sourceFacts: '''
+            dynamicState: activityLabel.isEmpty ? '' : '当前活动：$activityLabel',
+            sourceFacts:
+                '''
 发布者：$authorName
 Echo 正文：${echo.content}
-Echo 类型：$contentType
+Echo 类型：${echo.lifeType.label}（$contentType）
+生活来源：${echo.sourceEvent.trim().isEmpty ? '未记录' : echo.sourceEvent}
+角色状态：${echo.characterState.trim().isEmpty ? '未记录' : echo.characterState}
 本次允许评论的原因：${triggerReason.isEmpty ? '与当前关系和内容相关' : triggerReason}
 生活事件 ID：${echo.sourceLifeEventId.trim().isEmpty ? '未记录' : echo.sourceLifeEventId}
 当前已有评论：
@@ -87,10 +89,7 @@ ${styleHint.trim()}
 ''',
           ),
         },
-        {
-          'role': 'user',
-          'content': '判断自己确实有话可说后，写一条自然的 Echo 评论。只输出评论正文。',
-        },
+        {'role': 'user', 'content': '判断自己确实有话可说后，写一条自然的 Echo 评论。只输出评论正文。'},
       ],
       temperature: settings.temperature.clamp(0.58, 0.78).toDouble(),
       maxTokens: 100,
@@ -104,7 +103,8 @@ ${styleHint.trim()}
     return cleaned;
   }
 
-  String _rules(String characterName) => '''
+  String _rules(String characterName) =>
+      '''
 你是$characterName，正在 PeiLink 的 Echo 评论区留下一条公开评论。
 1. 通常一句，5 至 50 个汉字；只有确实需要时才写两句。
 2. 回应 Echo 里的具体内容，不能增加 Echo 没有提供的新事实。

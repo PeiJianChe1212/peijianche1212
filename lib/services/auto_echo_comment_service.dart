@@ -85,6 +85,7 @@ class AutoEchoCommentService {
   }
 
   Future<int> scheduleForEcho(EchoItem echo, {DateTime? now}) async {
+    if (!echo.commentsEnabled) return 0;
     final time = now ?? DateTime.now();
     if (await _taskStorage.hasTaskForEcho(echo.id)) return 0;
 
@@ -338,8 +339,8 @@ class AutoEchoCommentService {
         .map((item) => item.commentStyle)
         .whereType<EchoCommentStyle>()
         .toSet();
-    final relationshipKind = relationship?.stage ==
-            CharacterRelationshipStage.friend
+    final relationshipKind =
+        relationship?.stage == CharacterRelationshipStage.friend
         ? EchoRelationshipKind.friend
         : EchoRelationshipKind.acquaintance;
     final commentStyle = _diversity.chooseStyle(
@@ -360,7 +361,7 @@ class AutoEchoCommentService {
         existingComments: comments,
         relationship: relationship,
         triggerReason: task.triggerReason,
-        contentType: decision.contentType.name,
+        contentType: echo.lifeType.name,
         activityLabel: decision.activityLabel,
         styleHint:
             '${decision.styleHint}\n本次评论风格：${_diversity.instruction(commentStyle)}。不得改成其他类型，也不得重复已有评论观点。',

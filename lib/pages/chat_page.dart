@@ -39,7 +39,10 @@ import '../widgets/chat/renderers/red_packet_message_renderer.dart';
 import '../widgets/peilink/relationship_badge.dart';
 
 class ChatPage extends StatefulWidget {
-  const ChatPage({super.key});
+  const ChatPage({super.key, this.backDestinationBuilder});
+
+  /// Optional destination used when this chat needs a custom back route.
+  final WidgetBuilder? backDestinationBuilder;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -85,6 +88,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   UserProfile _profile = const UserProfile();
   AiCharacter _activeCharacter = AiCharacter.peiJianChe();
   CharacterSettings _characterSettings = CharacterSettings.defaults();
+  bool _isRedirectingBack = false;
   String _conversationMode = 'basic';
   double _temperature = 0.72;
   String _replyLength = 'standard';
@@ -1006,8 +1010,25 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
+  void _handlePop(bool didPop) {
+    final destinationBuilder = widget.backDestinationBuilder;
+    if (didPop || destinationBuilder == null || _isRedirectingBack) return;
+    _isRedirectingBack = true;
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute<void>(builder: destinationBuilder));
+  }
+
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: widget.backDestinationBuilder == null,
+      onPopInvokedWithResult: (didPop, result) => _handlePop(didPop),
+      child: _buildChatContent(),
+    );
+  }
+
+  Widget _buildChatContent() {
     return ThemeBackgroundContainer(
       child: Scaffold(
         backgroundColor: Colors.transparent,

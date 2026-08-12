@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/shared_experience.dart';
 
@@ -22,8 +22,10 @@ class SharedExperienceStorageService {
       final items = decoded
           .whereType<Map>()
           .map(SharedExperience.fromJson)
-          .where((item) =>
-              item.participantIds.length >= 2 && item.summary.isNotEmpty)
+          .where(
+            (item) =>
+                item.participantIds.length >= 2 && item.summary.isNotEmpty,
+          )
           .toList();
       items.sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
       return items;
@@ -41,7 +43,6 @@ class SharedExperienceStorageService {
       flush: true,
     );
   }
-
 
   Future<SharedExperience?> findById(String id) async {
     final targetId = id.trim();
@@ -66,9 +67,7 @@ class SharedExperienceStorageService {
     return items.take(limit).toList();
   }
 
-  Future<SharedExperience?> findByLifeEventId(
-    String sourceLifeEventId,
-  ) async {
+  Future<SharedExperience?> findByLifeEventId(String sourceLifeEventId) async {
     final targetId = sourceLifeEventId.trim();
     if (targetId.isEmpty) return null;
     final items = await loadAll();

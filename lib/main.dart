@@ -1,17 +1,38 @@
 import 'package:flutter/material.dart';
 
+import 'config/peilink_runtime.dart';
+import 'pages/environment_bootstrap_page.dart';
 import 'pages/home_page.dart';
+import 'services/character_registry_service.dart';
 import 'services/peilink_appearance_service.dart';
 import 'theme/app_dimensions.dart';
 import 'theme/app_text_styles.dart';
 
-void main() {
+Future<void> main() => runPeiLink(PeiLinkBuild.user);
+
+Future<void> runPeiLink(PeiLinkBuild build) async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const PeiJianCheApp());
+  PeiLinkRuntime.configure(build);
+  bool? initialHasVisibleCharacter;
+  if (build == PeiLinkBuild.user) {
+    final results = await Future.wait<Object>([
+      CharacterRegistryService()
+          .loadCharacters()
+          .then<Object>((characters) => characters.isNotEmpty)
+          .catchError((_) => false),
+      Future<Object>.delayed(const Duration(seconds: 3), () => true),
+    ]);
+    initialHasVisibleCharacter = results.first as bool;
+  }
+  runApp(
+    PeiJianCheApp(initialHasVisibleCharacter: initialHasVisibleCharacter),
+  );
 }
 
 class PeiJianCheApp extends StatefulWidget {
-  const PeiJianCheApp({super.key});
+  const PeiJianCheApp({super.key, this.initialHasVisibleCharacter});
+
+  final bool? initialHasVisibleCharacter;
 
   @override
   State<PeiJianCheApp> createState() => _PeiJianCheAppState();
@@ -31,14 +52,18 @@ class _PeiJianCheAppState extends State<PeiJianCheApp> {
     return PeiLinkAppearanceScope(
       controller: _appearance,
       child: MaterialApp(
-        title: 'PeiLink',
+        title: PeiLinkRuntime.appName,
         debugShowCheckedModeBanner: false,
+        builder: (context, child) => MediaQuery.withNoTextScaling(
+          child: child ?? const SizedBox.shrink(),
+        ),
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xFF8294EF),
             surface: const Color(0xFFF7F7FC),
           ),
           useMaterial3: true,
+          fontFamily: 'sans-serif',
           textTheme: const TextTheme(
             titleLarge: AppTextStyles.pageTitle,
             titleMedium: AppTextStyles.sectionTitle,
@@ -65,7 +90,11 @@ class _PeiJianCheAppState extends State<PeiJianCheApp> {
             ),
           ),
         ),
-        home: const HomePage(),
+        home: PeiLinkRuntime.developerToolsEnabled
+            ? const EnvironmentBootstrapPage()
+            : HomePage(
+                initialHasVisibleCharacter: widget.initialHasVisibleCharacter,
+              ),
       ),
     );
   }

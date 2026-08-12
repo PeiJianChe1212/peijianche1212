@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/echo_comment_interaction.dart';
 
@@ -44,18 +44,22 @@ class EchoCommentInteractionStorageService {
     required EchoCommentInteraction interaction,
     EchoLifeOpportunityCandidate? candidate,
   }) async {
-    final interactions =
-        List<EchoCommentInteraction>.from(await loadInteractions());
+    final interactions = List<EchoCommentInteraction>.from(
+      await loadInteractions(),
+    );
     if (!interactions.any((item) => item.id == interaction.id)) {
       interactions.insert(0, interaction);
     }
 
-    final candidates =
-        List<EchoLifeOpportunityCandidate>.from(await loadCandidates());
+    final candidates = List<EchoLifeOpportunityCandidate>.from(
+      await loadCandidates(),
+    );
     if (candidate != null &&
-        !candidates.any((item) =>
-            item.id == candidate.id ||
-            item.sourceInteractionId == candidate.sourceInteractionId)) {
+        !candidates.any(
+          (item) =>
+              item.id == candidate.id ||
+              item.sourceInteractionId == candidate.sourceInteractionId,
+        )) {
       candidates.insert(0, candidate);
     }
     await _save(
@@ -73,8 +77,9 @@ class EchoCommentInteractionStorageService {
       jsonEncode({
         'version': 1,
         'interactions': interactions.map((item) => item.toJson()).toList(),
-        'lifeOpportunityCandidates':
-            candidates.map((item) => item.toJson()).toList(),
+        'lifeOpportunityCandidates': candidates
+            .map((item) => item.toJson())
+            .toList(),
       }),
       flush: true,
     );

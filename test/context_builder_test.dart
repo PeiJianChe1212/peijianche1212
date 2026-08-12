@@ -145,11 +145,11 @@ void main() {
       );
 
       expect(result.systemPrompt, contains('角色本名：新版名字'));
-      expect(result.systemPrompt, contains('身份：医生'));
+      expect(result.systemPrompt, contains('整体外貌：银发灰眸'));
       expect(result.systemPrompt, contains('性格标签：克制、温柔'));
       expect(result.systemPrompt, contains('语言习惯：少用反问句'));
       expect(result.systemPrompt, contains('聊天节奏：不连续追问'));
-      expect(result.systemPrompt, isNot(contains('旧版超长人设不应出现')));
+      expect(result.systemPrompt, contains('核心人设：旧版超长人设不应出现'));
       expect(result.systemPrompt, isNot(contains('旧版外貌不应出现')));
     });
 
@@ -201,8 +201,36 @@ void main() {
       );
 
       expect(result.systemPrompt, contains('性格标签：沉稳'));
-      expect(result.systemPrompt, contains('性格描述：旧版性格描述'));
-      expect(result.systemPrompt, contains('外貌：旧版外貌描述'));
+      expect(result.systemPrompt, contains('核心人设：旧版性格描述'));
+      expect(result.systemPrompt, contains('整体外貌：旧版外貌描述'));
+    });
+
+    test('空的详细资料字段不会进入上下文', () {
+      final result = ContextBuilder.buildChatRequest(
+        character: CharacterContext(
+          settings: CharacterSettings.defaults().copyWith(
+            characterName: '空资料角色',
+            coreProfile: '只保留这段核心人设',
+            introduction: '',
+          ),
+          userProfile: const UserProfile(),
+          profile: const CharacterProfile(characterId: 'empty-details'),
+        ),
+        relationship: const RelationshipContext(),
+        memory: const MemoryContext(),
+        conversation: ConversationContext(const []),
+        responseStrategy: const ResponseStrategyContext(
+          dynamicPrompt: '',
+          mediaRules: '',
+        ),
+        messageContent: (message) => message.content,
+      );
+
+      expect(result.systemPrompt, contains('角色本名：空资料角色'));
+      expect(result.systemPrompt, contains('核心人设：只保留这段核心人设'));
+      expect(result.systemPrompt, isNot(contains('【外貌设定｜存在时读取】')));
+      expect(result.systemPrompt, isNot(contains('【性格设定｜存在时读取】')));
+      expect(result.systemPrompt, isNot(contains('【关系资料｜存在时读取】')));
     });
 
     test('童年问题按需读取成长档案和背景故事', () {

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/world_event.dart';
 
@@ -48,15 +48,14 @@ class WorldTimelineService {
     final time = now ?? DateTime.now();
     final events = await loadAll(now: time);
 
-    return events.where((event) {
-      if (!event.isActiveAt(time)) return false;
-      if (event.normalizedConfidence < minimumConfidence) return false;
-      return _matchesFilters(
-        event,
-        characterId: characterId,
-        types: types,
-      );
-    }).take(limit).toList();
+    return events
+        .where((event) {
+          if (!event.isActiveAt(time)) return false;
+          if (event.normalizedConfidence < minimumConfidence) return false;
+          return _matchesFilters(event, characterId: characterId, types: types);
+        })
+        .take(limit)
+        .toList();
   }
 
   Future<List<WorldEvent>> loadDecisionWindow({
@@ -76,22 +75,19 @@ class WorldTimelineService {
       final scheduled = event.isScheduledWithin(time, until);
       if (!active && !scheduled) return false;
       if (event.normalizedConfidence < minimumConfidence) return false;
-      return _matchesFilters(
-        event,
-        characterId: characterId,
-        types: types,
-      );
+      return _matchesFilters(event, characterId: characterId, types: types);
     }).toList();
 
     relevant.sort((a, b) {
       final aStatus = a.statusAt(time);
       final bStatus = b.statusAt(time);
-      final statusOrder = _decisionStatusOrder(aStatus)
-          .compareTo(_decisionStatusOrder(bStatus));
+      final statusOrder = _decisionStatusOrder(
+        aStatus,
+      ).compareTo(_decisionStatusOrder(bStatus));
       if (statusOrder != 0) return statusOrder;
-      final evidenceOrder = _evidenceOrder(a.evidence).compareTo(
-        _evidenceOrder(b.evidence),
-      );
+      final evidenceOrder = _evidenceOrder(
+        a.evidence,
+      ).compareTo(_evidenceOrder(b.evidence));
       if (evidenceOrder != 0) return evidenceOrder;
       final confidenceOrder = b.normalizedConfidence.compareTo(
         a.normalizedConfidence,
@@ -111,10 +107,7 @@ class WorldTimelineService {
     await _save(updated, now: time);
   }
 
-  Future<void> upsertAll(
-    Iterable<WorldEvent> incoming, {
-    DateTime? now,
-  }) async {
+  Future<void> upsertAll(Iterable<WorldEvent> incoming, {DateTime? now}) async {
     final additions = incoming.toList();
     if (additions.isEmpty) return;
 
@@ -140,10 +133,7 @@ class WorldTimelineService {
     final time = now ?? DateTime.now();
     final events = await loadAll(now: time);
     final replacement = event.copyWith(
-      metadata: {
-        ...event.metadata,
-        'stateKey': key,
-      },
+      metadata: {...event.metadata, 'stateKey': key},
     );
 
     final updated = <WorldEvent>[];
@@ -157,10 +147,7 @@ class WorldTimelineService {
       final currentStatus = current.statusAt(time);
       if (currentStatus == WorldEventStatus.active) {
         updated.add(
-          current.copyWith(
-            endAt: time,
-            status: WorldEventStatus.ended,
-          ),
+          current.copyWith(endAt: time, status: WorldEventStatus.ended),
         );
       } else if (currentStatus == WorldEventStatus.ended) {
         updated.add(current);
@@ -228,10 +215,7 @@ class WorldTimelineService {
       if (event.id != id) return event;
       if (event.statusAt(time) == WorldEventStatus.ended) return event;
       changed = true;
-      return event.copyWith(
-        endAt: time,
-        status: WorldEventStatus.ended,
-      );
+      return event.copyWith(endAt: time, status: WorldEventStatus.ended);
     }).toList();
     if (!changed) return;
     await _save(updated, now: time);
@@ -255,10 +239,7 @@ class WorldTimelineService {
         return event;
       }
       changed++;
-      return event.copyWith(
-        endAt: time,
-        status: WorldEventStatus.ended,
-      );
+      return event.copyWith(endAt: time, status: WorldEventStatus.ended);
     }).toList();
     if (changed == 0) return 0;
     await _save(updated, now: time);
@@ -283,11 +264,7 @@ class WorldTimelineService {
       source: 'device_clock',
       evidence: WorldEventEvidence.confirmed,
       confidence: 1.0,
-      tags: [
-        'time',
-        period,
-        _weekdayName(time.weekday),
-      ],
+      tags: ['time', period, _weekdayName(time.weekday)],
       metadata: {
         'stateKey': 'world.time.current_period',
         'year': time.year,
@@ -299,11 +276,7 @@ class WorldTimelineService {
       },
     );
 
-    await upsertState(
-      event,
-      stateKey: 'world.time.current_period',
-      now: time,
-    );
+    await upsertState(event, stateKey: 'world.time.current_period', now: time);
     return event;
   }
 
@@ -324,7 +297,9 @@ class WorldTimelineService {
       return '当前世界时间：${_formatTime(time)}。除此之外，暂无已确认的世界状态。';
     }
 
-    final lines = events.map((event) => _formatForDecision(event, time)).join('\n');
+    final lines = events
+        .map((event) => _formatForDecision(event, time))
+        .join('\n');
     return '''
 【当前世界时间】
 ${_formatTime(time)}
@@ -349,10 +324,7 @@ $lines
     if (await file.exists()) await file.delete();
   }
 
-  Future<void> _save(
-    List<WorldEvent> events, {
-    DateTime? now,
-  }) async {
+  Future<void> _save(List<WorldEvent> events, {DateTime? now}) async {
     final time = now ?? DateTime.now();
     final normalized = events
         .where((event) => event.id.trim().isNotEmpty)
@@ -370,9 +342,7 @@ $lines
       ..sort((a, b) => b.startAt.compareTo(a.startAt));
     final file = await _file();
     await file.writeAsString(
-      jsonEncode(
-        kept.take(_maxEvents).map((event) => event.toJson()).toList(),
-      ),
+      jsonEncode(kept.take(_maxEvents).map((event) => event.toJson()).toList()),
       flush: true,
     );
   }
@@ -524,11 +494,7 @@ $lines
     return dayStart.add(Duration(hours: hour));
   }
 
-  DateTime _periodEnd(
-    DateTime dayStart,
-    DateTime dayEnd,
-    String period,
-  ) {
+  DateTime _periodEnd(DateTime dayStart, DateTime dayEnd, String period) {
     final hour = switch (period) {
       'late_night' => 6,
       'morning' => 9,

@@ -19,6 +19,7 @@ class EchoSocialInteractionService {
   static const _diversity = EchoCommentDiversityService();
 
   Future<void> generateForEcho(EchoItem echo, {DateTime? now}) async {
+    if (!echo.commentsEnabled) return;
     final time = now ?? DateTime.now();
     final storage = EchoCommentStorageService(ownerId: echo.characterId);
     final existing = await storage.loadForEcho(echo.id);

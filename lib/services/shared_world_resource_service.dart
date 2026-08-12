@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/world_event.dart';
 import '../models/world_resource.dart';
@@ -25,11 +25,13 @@ class SharedWorldResourceService {
           .whereType<Map>()
           .map(WorldResource.fromJson)
           .where((item) => item.id.isNotEmpty && item.name.isNotEmpty)
-          .map((item) => item.copyWith(
-                reservations: item.reservations
-                    .where((reservation) => !reservation.isExpiredAt(time))
-                    .toList(),
-              ))
+          .map(
+            (item) => item.copyWith(
+              reservations: item.reservations
+                  .where((reservation) => !reservation.isExpiredAt(time))
+                  .toList(),
+            ),
+          )
           .toList();
       await _save(resources);
       return resources;
@@ -69,8 +71,8 @@ class SharedWorldResourceService {
               : event.locationId,
           locationName:
               map['locationName']?.toString().trim().isNotEmpty == true
-                  ? map['locationName'].toString().trim()
-                  : event.locationName,
+              ? map['locationName'].toString().trim()
+              : event.locationName,
           sourceWorldEventId: event.id,
           isReusable: map['isReusable'] == true,
           reservations: old?.reservations ?? const [],
@@ -111,18 +113,19 @@ class SharedWorldResourceService {
     final expiresAt = expiryBase.add(const Duration(hours: 2));
     for (final entry in claims.entries) {
       final resource = byId[entry.key]!;
-      final reservations = resource.reservations
-          .where((item) => item.decisionId != decisionId)
-          .toList()
-        ..add(
-          WorldResourceReservation(
-            decisionId: decisionId,
-            characterId: characterId,
-            quantity: entry.value,
-            reservedAt: time,
-            expiresAt: expiresAt,
-          ),
-        );
+      final reservations =
+          resource.reservations
+              .where((item) => item.decisionId != decisionId)
+              .toList()
+            ..add(
+              WorldResourceReservation(
+                decisionId: decisionId,
+                characterId: characterId,
+                quantity: entry.value,
+                reservedAt: time,
+                expiresAt: expiresAt,
+              ),
+            );
       byId[entry.key] = resource.copyWith(
         reservations: reservations,
         updatedAt: time,
@@ -145,8 +148,8 @@ class SharedWorldResourceService {
       final remaining = resource.isReusable
           ? resource.remainingQuantity
           : (resource.remainingQuantity - owned)
-              .clamp(0, resource.totalQuantity)
-              .toInt();
+                .clamp(0, resource.totalQuantity)
+                .toInt();
       return resource.copyWith(
         remainingQuantity: remaining,
         reservations: resource.reservations
@@ -164,12 +167,14 @@ class SharedWorldResourceService {
     final time = now ?? DateTime.now();
     final resources = await loadAll(now: time);
     final updated = resources
-        .map((resource) => resource.copyWith(
-              reservations: resource.reservations
-                  .where((item) => item.decisionId != id)
-                  .toList(),
-              updatedAt: time,
-            ))
+        .map(
+          (resource) => resource.copyWith(
+            reservations: resource.reservations
+                .where((item) => item.decisionId != id)
+                .toList(),
+            updatedAt: time,
+          ),
+        )
         .toList();
     await _save(updated);
   }

@@ -132,11 +132,14 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
       ),
     );
     if (result == null) return;
-    final oldMembers = {for (final item in group.members) item.characterId: item};
+    final oldMembers = {
+      for (final item in group.members) item.characterId: item,
+    };
     final now = DateTime.now();
     final members = result
         .map(
-          (id) => oldMembers[id] ??
+          (id) =>
+              oldMembers[id] ??
               GroupMember(groupId: group.id, characterId: id, joinedAt: now),
         )
         .toList();
@@ -164,17 +167,18 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
       ),
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('群聊记录已清空')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('群聊记录已清空')));
   }
 
   Future<void> _deleteGroup() async {
     final confirmed = await _confirm('删除并退出群聊', '群聊和本地聊天记录都会被删除。');
     if (!confirmed) return;
     await _groupStorage.deleteGroup(widget.groupId);
-    await GroupMessageStorageService(groupId: widget.groupId)
-        .deleteGroupDirectory();
+    await GroupMessageStorageService(
+      groupId: widget.groupId,
+    ).deleteGroupDirectory();
     if (!mounted) return;
     Navigator.pop(context, 'deleted');
   }
@@ -220,76 +224,75 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : group == null
-              ? const Center(child: Text('群聊不存在'))
-              : ListView(
-                  children: [
-                    Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.all(16),
-                      child: Wrap(
-                        spacing: 14,
-                        runSpacing: 14,
-                        children: [
-                          for (final member in group.members)
-                            _MemberTile(character: _character(member.characterId)),
-                          InkWell(
-                            onTap: _editMembers,
-                            borderRadius: BorderRadius.circular(8),
-                            child: const SizedBox(
-                              width: 58,
-                              child: Column(
-                                children: [
-                                  _AddMemberBox(),
-                                  SizedBox(height: 5),
-                                  Text(
-                                    '管理',
-                                    style: TextStyle(
-                                      color: Color(0xFF777777),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
+          ? const Center(child: Text('群聊不存在'))
+          : ListView(
+              children: [
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.all(16),
+                  child: Wrap(
+                    spacing: 14,
+                    runSpacing: 14,
+                    children: [
+                      for (final member in group.members)
+                        _MemberTile(character: _character(member.characterId)),
+                      InkWell(
+                        onTap: _editMembers,
+                        borderRadius: BorderRadius.circular(8),
+                        child: const SizedBox(
+                          width: 58,
+                          child: Column(
+                            children: [
+                              _AddMemberBox(),
+                              SizedBox(height: 5),
+                              Text(
+                                '管理',
+                                style: TextStyle(
+                                  color: Color(0xFF777777),
+                                  fontSize: 12,
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    _SettingTile(
-                      title: '群名称',
-                      trailing: group.name,
-                      onTap: _rename,
-                    ),
-                    SwitchListTile(
-                      tileColor: Colors.white,
-                      title: const Text('消息免打扰'),
-                      value: group.isMuted,
-                      activeColor: const Color(0xFF4E8EAD),
-                      onChanged: (value) => _save(group.copyWith(isMuted: value)),
-                    ),
-                    SwitchListTile(
-                      tileColor: Colors.white,
-                      title: const Text('置顶聊天'),
-                      value: group.isPinned,
-                      activeColor: const Color(0xFF4E8EAD),
-                      onChanged: (value) => _save(group.copyWith(isPinned: value)),
-                    ),
-                    const SizedBox(height: 10),
-                    _SettingTile(title: '清空聊天记录', onTap: _clearMessages),
-                    const SizedBox(height: 10),
-                    _SettingTile(
-                      title: '删除并退出群聊',
-                      titleColor: const Color(0xFFD64545),
-                      centered: true,
-                      onTap: _deleteGroup,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(height: 10),
+                _SettingTile(
+                  title: '群名称',
+                  trailing: group.name,
+                  onTap: _rename,
+                ),
+                SwitchListTile(
+                  tileColor: Colors.white,
+                  title: const Text('消息免打扰'),
+                  value: group.isMuted,
+                  activeThumbColor: const Color(0xFF4E8EAD),
+                  onChanged: (value) => _save(group.copyWith(isMuted: value)),
+                ),
+                SwitchListTile(
+                  tileColor: Colors.white,
+                  title: const Text('置顶聊天'),
+                  value: group.isPinned,
+                  activeThumbColor: const Color(0xFF4E8EAD),
+                  onChanged: (value) => _save(group.copyWith(isPinned: value)),
+                ),
+                const SizedBox(height: 10),
+                _SettingTile(title: '清空聊天记录', onTap: _clearMessages),
+                const SizedBox(height: 10),
+                _SettingTile(
+                  title: '删除并退出群聊',
+                  titleColor: const Color(0xFFD64545),
+                  centered: true,
+                  onTap: _deleteGroup,
+                ),
+              ],
+            ),
     );
   }
 }
-
 
 class _RenameGroupDialog extends StatefulWidget {
   const _RenameGroupDialog({required this.initialName});
@@ -341,10 +344,7 @@ class _RenameGroupDialogState extends State<_RenameGroupDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('保存'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('保存')),
       ],
     );
   }
@@ -471,7 +471,10 @@ class _SettingTile extends StatelessWidget {
                         style: const TextStyle(color: Color(0xFF999999)),
                       ),
                     ),
-                  const Icon(Icons.chevron_right_rounded, color: Color(0xFFB0B0B0)),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFFB0B0B0),
+                  ),
                 ],
               ),
       ),

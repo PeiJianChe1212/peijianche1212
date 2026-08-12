@@ -23,12 +23,12 @@ void main() {
       );
     }
 
-    test('今天好累使用短安慰策略且不提问', () {
+    test('今天好累使用自然长度安慰策略且不提问', () {
       final strategy = strategyFor('今天好累。');
 
       expect(strategy.goal, ReplyGoal.comfort);
       expect(strategy.tone, ReplyTone.gentle);
-      expect(strategy.length, StrategyLength.short);
+      expect(strategy.length, StrategyLength.medium);
       expect(strategy.question, isFalse);
       expect(strategy.shape, ResponseShape.emotionalSupport);
     });
@@ -56,10 +56,18 @@ void main() {
 
       expect(prompt, contains('goal=comfort'));
       expect(prompt, contains('tone=gentle'));
-      expect(prompt, contains('length=short'));
+      expect(prompt, contains('length=medium'));
+      expect(prompt, contains('普通聊天默认组织成 2 到 5 句'));
       expect(prompt, contains('question=false'));
       expect(prompt, isNot(contains('辛苦啦')));
       expect(prompt, isNot(contains('抱抱')));
+    });
+
+    test('明确要求简短时保留短回复', () {
+      final strategy = strategyFor('请一句话简短回答。');
+
+      expect(strategy.length, StrategyLength.short);
+      expect(strategy.toPromptSection(), contains('1 到 2 句'));
     });
 
     test('Reply Strategy 在 Chat Flow 之后加入模型请求', () {

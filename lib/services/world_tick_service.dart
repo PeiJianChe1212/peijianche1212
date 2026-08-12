@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/world_tick_state.dart';
 import 'character_registry_service.dart';
@@ -19,8 +19,7 @@ class WorldTickService {
   final WorldTimelineService _worldTimeline = WorldTimelineService();
   final CharacterRegistryService _characterRegistry =
       CharacterRegistryService();
-  final WorldSimulationService _worldSimulation =
-      WorldSimulationService();
+  final WorldSimulationService _worldSimulation = WorldSimulationService();
 
   Future<File> _file() async {
     final directory = await getApplicationDocumentsDirectory();
@@ -52,7 +51,9 @@ class WorldTickService {
     final time = now ?? DateTime.now();
     final state = await loadState();
     final previous = state.lastTickAt;
-    final elapsed = previous == null ? Duration.zero : time.difference(previous);
+    final elapsed = previous == null
+        ? Duration.zero
+        : time.difference(previous);
 
     if (_isAdvancing ||
         (!force && previous != null && elapsed < _minimumInterval)) {
@@ -70,7 +71,8 @@ class WorldTickService {
     _isAdvancing = true;
     try {
       final crossedDay = previous != null && !_isSameDay(previous, time);
-      final crossedPeriod = previous != null &&
+      final crossedPeriod =
+          previous != null &&
           (_dayPeriod(previous.hour) != _dayPeriod(time.hour) || crossedDay);
 
       // 当前时间状态是世界里唯一可以直接由设备确认的状态。
@@ -88,19 +90,19 @@ class WorldTickService {
           final available = await pool.loadAvailable(now: time, limit: 40);
           final pending = await pool.loadPending(now: time, limit: 40);
           final decisionReport =
-              await DecisionHistoryService(characterId: character.id)
-                  .reconcileWithLifeEvents(
-            lifeEvents: entries.map((entry) => entry.event),
-            now: time,
-          );
+              await DecisionHistoryService(
+                characterId: character.id,
+              ).reconcileWithLifeEvents(
+                lifeEvents: entries.map((entry) => entry.event),
+                now: time,
+              );
 
           snapshots.add(
             CharacterTickSnapshot(
               characterId: character.id,
               availableLifeEvents: available.length,
               pendingLifeEvents: pending.length,
-              nextPendingAt:
-                  pending.isEmpty ? null : pending.first.occurredAt,
+              nextPendingAt: pending.isEmpty ? null : pending.first.occurredAt,
               decisionsCompleted: decisionReport.completed,
               decisionsInterrupted: decisionReport.interrupted,
             ),

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../models/ai_character.dart';
 import '../../theme/app_theme_background.dart';
 import '../../widgets/peilink/relationship_badge.dart';
-import '../character_settings_page.dart';
 import '../memory_page.dart';
 import 'character_detail_page.dart';
 import 'character_management_page.dart';
@@ -128,15 +127,6 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                   Icons.edit_note_rounded,
                   () => _open(
                     CharacterProfileHomePage(character: widget.character),
-                  ),
-                ),
-                _tile(
-                  '相处方式',
-                  Icons.tune_rounded,
-                  () => _open(
-                    const CharacterSettingsPage(
-                      section: CharacterSettingsSection.interaction,
-                    ),
                   ),
                 ),
                 _tile(

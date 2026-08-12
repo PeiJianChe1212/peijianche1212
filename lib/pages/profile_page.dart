@@ -81,9 +81,9 @@ class _ProfilePageState extends State<ProfilePage> {
       await _save(_profile.copyWith(avatarPath: path));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('选择头像失败：$error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('选择头像失败：$error')));
     }
   }
 
@@ -151,7 +151,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       const _InsetDivider(),
                       _ProfileTile(
                         title: '名字',
-                        value: _profile.nickname,
+                        value: _show(_profile.nickname),
                         onTap: () => _editText(
                           title: '设置名字',
                           value: _profile.nickname,
@@ -175,14 +175,15 @@ class _ProfilePageState extends State<ProfilePage> {
                       const _InsetDivider(),
                       _ProfileTile(
                         title: 'PeiLink ID',
-                        value: _profile.peiLinkId,
+                        value: _show(_profile.peiLinkId),
                         onTap: () => _editText(
                           title: '设置 PeiLink ID',
                           value: _profile.peiLinkId,
                           hint: '用于展示的个人 ID',
                           allowEmpty: false,
                           maxLength: 30,
-                          update: (value) => _profile.copyWith(peiLinkId: value),
+                          update: (value) =>
+                              _profile.copyWith(peiLinkId: value),
                         ),
                       ),
                       const _InsetDivider(),
@@ -195,7 +196,8 @@ class _ProfilePageState extends State<ProfilePage> {
                           hint: '写一句属于你的话',
                           maxLength: 30,
                           maxLines: 2,
-                          update: (value) => _profile.copyWith(signature: value),
+                          update: (value) =>
+                              _profile.copyWith(signature: value),
                         ),
                       ),
                     ],
@@ -216,7 +218,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   color: Colors.white,
                   child: _ProfileTile(
                     title: '我的人设',
-                    value: '给角色了解的你',
+                    value: _show(_profile.identity, fallback: '未填写'),
                     onTap: _editPersona,
                   ),
                 ),
@@ -253,7 +255,11 @@ class _Avatar extends StatelessWidget {
         color: const Color(0xFFEDEDED),
         child: hasImage
             ? Image.file(file, fit: BoxFit.cover)
-            : const Icon(Icons.person_rounded, color: Color(0xFF999999), size: 32),
+            : const Icon(
+                Icons.person_rounded,
+                color: Color(0xFF999999),
+                size: 32,
+              ),
       ),
     );
   }
@@ -277,11 +283,14 @@ class _ProfileTile extends StatelessWidget {
     return ListTile(
       minTileHeight: 72,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      title: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (trailing != null) trailing!,
+          ?trailing,
           if (value != null)
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 210),

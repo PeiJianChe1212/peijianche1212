@@ -7,7 +7,6 @@ import '../../services/character_registry_service.dart';
 import '../../services/character_scope_service.dart';
 import '../../services/session_reset_service.dart';
 import '../../theme/app_theme_background.dart';
-import '../character_settings_page.dart';
 import '../memory_page.dart';
 import 'character_profile_home_page.dart';
 
@@ -55,16 +54,6 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
       context,
       MaterialPageRoute(builder: (_) => const MemoryPage()),
     );
-  }
-
-  Future<void> _openSettingsSection(CharacterSettingsSection section) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CharacterSettingsPage(section: section),
-      ),
-    );
-    await _load();
   }
 
   Future<void> _showCleanupOptions() async {
@@ -273,13 +262,6 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
                         builder: (_) =>
                             CharacterProfileHomePage(character: _character),
                       ),
-                    ),
-                  ),
-                  _Tile(
-                    title: '相处方式',
-                    subtitle: '回复节奏、主动程度、亲密表达与聊天偏好',
-                    onTap: () => _openSettingsSection(
-                      CharacterSettingsSection.interaction,
                     ),
                   ),
                   const SizedBox(height: 10),

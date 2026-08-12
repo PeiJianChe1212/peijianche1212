@@ -18,7 +18,7 @@ void main() {
       );
 
       expect(find.text('角色资料'), findsOneWidget);
-      expect(find.text('相处方式'), findsOneWidget);
+      expect(find.text('相处方式'), findsNothing);
       expect(find.text('人设'), findsNothing);
     },
   );

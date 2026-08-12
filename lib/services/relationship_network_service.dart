@@ -1,6 +1,5 @@
 import '../models/ai_character.dart';
 import '../models/character_relationship.dart';
-import '../models/relationship_memory.dart';
 import '../models/relationship_network.dart';
 import '../models/shared_experience.dart';
 import 'character_registry_service.dart';
@@ -14,12 +13,12 @@ class RelationshipNetworkService {
     CharacterRelationshipStorageService? relationshipStorage,
     SharedExperienceStorageService? experienceStorage,
     RelationshipMemoryService? memoryService,
-  })  : _registry = registry ?? CharacterRegistryService(),
-        _relationshipStorage =
-            relationshipStorage ?? CharacterRelationshipStorageService(),
-        _experienceStorage =
-            experienceStorage ?? SharedExperienceStorageService(),
-        _memoryService = memoryService ?? RelationshipMemoryService();
+  }) : _registry = registry ?? CharacterRegistryService(),
+       _relationshipStorage =
+           relationshipStorage ?? CharacterRelationshipStorageService(),
+       _experienceStorage =
+           experienceStorage ?? SharedExperienceStorageService(),
+       _memoryService = memoryService ?? RelationshipMemoryService();
 
   final CharacterRegistryService _registry;
   final CharacterRelationshipStorageService _relationshipStorage;
@@ -33,12 +32,11 @@ class RelationshipNetworkService {
     final validCharacters = allCharacters
         .where((item) => item.id.trim().isNotEmpty)
         .toList();
-    final characterById = {
-      for (final item in validCharacters) item.id: item,
-    };
+    final characterById = {for (final item in validCharacters) item.id: item};
 
-    final relationships =
-        await _relationshipStorage.ensureForCharacters(validCharacters);
+    final relationships = await _relationshipStorage.ensureForCharacters(
+      validCharacters,
+    );
     final experiences = await _experienceStorage.loadAll();
     final experiencesByRelationshipId = <String, List<SharedExperience>>{};
 
@@ -82,8 +80,8 @@ class RelationshipNetworkService {
       final latestExperienceAt = pairExperiences.isEmpty
           ? relationship.lastSharedEventAt
           : pairExperiences
-              .map((item) => item.occurredAt)
-              .reduce((a, b) => a.isAfter(b) ? a : b);
+                .map((item) => item.occurredAt)
+                .reduce((a, b) => a.isAfter(b) ? a : b);
 
       edges.add(
         RelationshipNetworkEdge(
@@ -115,8 +113,9 @@ class RelationshipNetworkService {
 
     final nodes = validCharacters.map((character) {
       final connections = edges.where((edge) => edge.contains(character.id));
-      final activeConnections =
-          connections.where((edge) => edge.hasActualInteraction).toList();
+      final activeConnections = connections
+          .where((edge) => edge.hasActualInteraction)
+          .toList();
       DateTime? lastInteractionAt;
       for (final edge in activeConnections) {
         final time = edge.lastInteractionAt;
@@ -138,8 +137,10 @@ class RelationshipNetworkService {
     }).toList();
 
     edges.sort((a, b) {
-      final aTime = a.lastInteractionAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bTime = b.lastInteractionAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final aTime =
+          a.lastInteractionAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime =
+          b.lastInteractionAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       return bTime.compareTo(aTime);
     });
 
@@ -188,24 +189,23 @@ class RelationshipNetworkService {
     final connections = snapshot.connectionsFor(currentCharacterId);
     if (connections.isEmpty) return '';
     final selected = connections.take(maxConnections);
-    final lines = selected.map((edge) {
-      final otherName = edge.otherCharacterName(currentCharacterId) ?? '其他角色';
-      final latest = edge.recentMemories.isEmpty
-          ? ''
-          : '；最近：${edge.recentMemories.first}';
-      final patterns = edge.sharedPatterns.isEmpty
-          ? ''
-          : '；相处规律：${edge.sharedPatterns.join('、')}';
-      return '- 与$otherName：${edge.stage.label}；${edge.summary}$patterns$latest';
-    }).join('\n');
+    final lines = selected
+        .map((edge) {
+          final otherName =
+              edge.otherCharacterName(currentCharacterId) ?? '其他角色';
+          final latest = edge.recentMemories.isEmpty
+              ? ''
+              : '；最近：${edge.recentMemories.first}';
+          final patterns = edge.sharedPatterns.isEmpty
+              ? ''
+              : '；相处规律：${edge.sharedPatterns.join('、')}';
+          return '- 与$otherName：${edge.stage.label}；${edge.summary}$patterns$latest';
+        })
+        .join('\n');
     return lines;
   }
 
-  DateTime _latestDate(
-    DateTime first,
-    DateTime? second,
-    DateTime? third,
-  ) {
+  DateTime _latestDate(DateTime first, DateTime? second, DateTime? third) {
     var latest = first;
     if (second != null && second.isAfter(latest)) latest = second;
     if (third != null && third.isAfter(latest)) latest = third;
@@ -213,10 +213,10 @@ class RelationshipNetworkService {
   }
 
   String _defaultSummary(CharacterRelationshipStage stage) => switch (stage) {
-        CharacterRelationshipStage.aware => '只知道彼此存在，尚未真正相处。',
-        CharacterRelationshipStage.acquainted => '已经有过实际接触，但仍在互相了解。',
-        CharacterRelationshipStage.familiar => '相处开始自然，已经了解彼此的一些习惯。',
-        CharacterRelationshipStage.cooperative => '遇到具体事情时能够自然分工并配合。',
-        CharacterRelationshipStage.friend => '已经形成稳定而自然的朋友关系。',
-      };
+    CharacterRelationshipStage.aware => '只知道彼此存在，尚未真正相处。',
+    CharacterRelationshipStage.acquainted => '已经有过实际接触，但仍在互相了解。',
+    CharacterRelationshipStage.familiar => '相处开始自然，已经了解彼此的一些习惯。',
+    CharacterRelationshipStage.cooperative => '遇到具体事情时能够自然分工并配合。',
+    CharacterRelationshipStage.friend => '已经形成稳定而自然的朋友关系。',
+  };
 }

@@ -30,11 +30,12 @@ class ReplyStrategyEngine {
         goal == ReplyGoal.continueChat &&
         !flow.shouldAvoidQuestion &&
         !flow.forbidChoiceQuestion;
+    final allowShortReply = _allowsShortReply(userText, goal);
 
     return ReplyStrategy(
       goal: goal,
       tone: _toneFor(goal),
-      length: _lengthFor(goal),
+      length: allowShortReply ? StrategyLength.short : StrategyLength.medium,
       question: question,
       shape: _shapeFor(goal),
     );
@@ -87,13 +88,6 @@ class ReplyStrategyEngine {
     _ => ReplyTone.natural,
   };
 
-  StrategyLength _lengthFor(ReplyGoal goal) => switch (goal) {
-    ReplyGoal.explain ||
-    ReplyGoal.share ||
-    ReplyGoal.continueChat => StrategyLength.medium,
-    _ => StrategyLength.short,
-  };
-
   ResponseShape _shapeFor(ReplyGoal goal) => switch (goal) {
     ReplyGoal.acknowledge => ResponseShape.briefAcknowledgement,
     ReplyGoal.comfort => ResponseShape.emotionalSupport,
@@ -123,4 +117,13 @@ class ReplyStrategyEngine {
 
   static bool _invitesRomance(String text) =>
       RegExp(r'想你|爱你|喜欢你|抱抱|亲亲|想抱|想亲').hasMatch(text);
+
+  static bool _allowsShortReply(String text, ReplyGoal goal) {
+    final clean = text.trim();
+    if (goal == ReplyGoal.close) return true;
+    if (RegExp(r'简短|简单说|一句话|别展开|不用详细|只回答').hasMatch(clean)) {
+      return true;
+    }
+    return RegExp(r'^(呜+|哼+|唉+|啊+|想你|爱你|抱抱|亲亲|烦死了)[。！!~～…]*$').hasMatch(clean);
+  }
 }

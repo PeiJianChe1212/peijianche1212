@@ -184,7 +184,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     });
   }
 
-
   List<String> _extractMentionedIds(String content, GroupChat group) {
     final result = <String>{};
     if (content.contains('@全体成员') || content.contains('@所有人')) {
@@ -223,10 +222,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              const ListTile(
-                title: Text('选择提醒的人'),
-                dense: true,
-              ),
+              const ListTile(title: Text('选择提醒的人'), dense: true),
               ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.groups_rounded)),
                 title: const Text('全体成员'),
@@ -300,9 +296,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
     } else if (action == 'copy') {
       await Clipboard.setData(ClipboardData(text: message.content));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已复制')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已复制')));
     }
   }
 
@@ -323,8 +319,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     };
   }
 
-  bool _isCurrent(int generation) =>
-      mounted && generation == _replyGeneration;
+  bool _isCurrent(int generation) => mounted && generation == _replyGeneration;
 
   Future<void> _openSettings() async {
     final group = _group;
@@ -386,73 +381,74 @@ class _GroupChatPageState extends State<GroupChatPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : group == null
-              ? const Center(child: Text('群聊不存在或已被删除'))
-              : Column(
-                  children: [
-                    Expanded(
-                      child: _messages.isEmpty
-                          ? const _EmptyGroupHint()
-                          : ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.fromLTRB(14, 18, 14, 8),
-                              itemCount: _messages.length,
-                              itemBuilder: (context, index) {
-                                final message = _messages[index];
-                                final previous = index == 0
-                                    ? null
-                                    : _messages[index - 1];
-                                final sameSender = previous != null &&
-                                    previous.senderType == message.senderType &&
-                                    previous.senderId == message.senderId &&
-                                    message.createdAt
-                                            .difference(previous.createdAt)
-                                            .inMinutes
-                                            .abs() <=
-                                        3;
-                                final quoted =
-                                    _messageById(message.replyToMessageId);
-                                return _GroupMessageBubble(
-                                  message: message,
-                                  character: _characters[message.senderId],
-                                  compact: sameSender,
-                                  quotedMessage: quoted,
-                                  quotedSenderName: quoted == null
-                                      ? null
-                                      : _senderName(quoted),
-                                  mentionNames: [
-                                    '林念念',
-                                    '全体成员',
-                                    ..._characters.values.expand((character) => [
-                                          character.displayName,
-                                          character.characterName,
-                                        ]),
+          ? const Center(child: Text('群聊不存在或已被删除'))
+          : Column(
+              children: [
+                Expanded(
+                  child: _messages.isEmpty
+                      ? const _EmptyGroupHint()
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.fromLTRB(14, 18, 14, 8),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final message = _messages[index];
+                            final previous = index == 0
+                                ? null
+                                : _messages[index - 1];
+                            final sameSender =
+                                previous != null &&
+                                previous.senderType == message.senderType &&
+                                previous.senderId == message.senderId &&
+                                message.createdAt
+                                        .difference(previous.createdAt)
+                                        .inMinutes
+                                        .abs() <=
+                                    3;
+                            final quoted = _messageById(
+                              message.replyToMessageId,
+                            );
+                            return _GroupMessageBubble(
+                              message: message,
+                              character: _characters[message.senderId],
+                              compact: sameSender,
+                              quotedMessage: quoted,
+                              quotedSenderName: quoted == null
+                                  ? null
+                                  : _senderName(quoted),
+                              mentionNames: [
+                                '林念念',
+                                '全体成员',
+                                ..._characters.values.expand(
+                                  (character) => [
+                                    character.displayName,
+                                    character.characterName,
                                   ],
-                                  onLongPress: () =>
-                                      _showMessageActions(message),
-                                );
-                              },
-                            ),
-                    ),
-                    if (_replying)
-                      _TypingBar(character: typingCharacter),
-                    SafeArea(
-                      top: false,
-                      child: Container(
-                        color: const Color(0xFFF7F7F7),
-                        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
+                                ),
+                              ],
+                              onLongPress: () => _showMessageActions(message),
+                            );
+                          },
+                        ),
+                ),
+                if (_replying) _TypingBar(character: typingCharacter),
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    color: const Color(0xFFF7F7F7),
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_replyingTo != null)
+                          _ReplyComposerPreview(
+                            senderName: _senderName(_replyingTo!),
+                            content: _replyingTo!.content,
+                            onClose: () => setState(() => _replyingTo = null),
+                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            if (_replyingTo != null)
-                              _ReplyComposerPreview(
-                                senderName: _senderName(_replyingTo!),
-                                content: _replyingTo!.content,
-                                onClose: () =>
-                                    setState(() => _replyingTo = null),
-                              ),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
                             IconButton(
                               onPressed: _showMentionPicker,
                               icon: const Icon(Icons.alternate_email_rounded),
@@ -495,14 +491,14 @@ class _GroupChatPageState extends State<GroupChatPage> {
                                 child: const Text('发送'),
                               ),
                             ),
-                              ],
-                            ),
                           ],
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
+              ],
+            ),
     );
   }
 }
@@ -669,7 +665,7 @@ class _Bubble extends StatelessWidget {
                 margin: const EdgeInsets.only(bottom: 7),
                 padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Column(
@@ -713,30 +709,28 @@ class _MentionText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final names = mentionNames
-        .where((name) => name.trim().isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort((a, b) => b.length.compareTo(a.length));
+    final names =
+        mentionNames.where((name) => name.trim().isNotEmpty).toSet().toList()
+          ..sort((a, b) => b.length.compareTo(a.length));
     if (names.isEmpty) {
       return Text(content, style: _baseStyle);
     }
-    final pattern = RegExp(
-      '@(?:${names.map(RegExp.escape).join('|')})',
-    );
+    final pattern = RegExp('@(?:${names.map(RegExp.escape).join('|')})');
     final spans = <TextSpan>[];
     var cursor = 0;
     for (final match in pattern.allMatches(content)) {
       if (match.start > cursor) {
         spans.add(TextSpan(text: content.substring(cursor, match.start)));
       }
-      spans.add(TextSpan(
-        text: match.group(0),
-        style: const TextStyle(
-          color: Color(0xFF3D7F9F),
-          fontWeight: FontWeight.w600,
+      spans.add(
+        TextSpan(
+          text: match.group(0),
+          style: const TextStyle(
+            color: Color(0xFF3D7F9F),
+            fontWeight: FontWeight.w600,
+          ),
         ),
-      ));
+      );
       cursor = match.end;
     }
     if (cursor < content.length) {

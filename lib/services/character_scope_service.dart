@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/ai_character.dart';
 import 'character_registry_service.dart';
@@ -11,10 +11,7 @@ class CharacterScopeService {
   final String? characterId;
 
   static String sanitizeCharacterId(String value) {
-    final normalized = value.trim().replaceAll(
-      RegExp(r'[^a-zA-Z0-9_-]'),
-      '_',
-    );
+    final normalized = value.trim().replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
     return normalized.isEmpty ? AiCharacter.defaultCharacterId : normalized;
   }
 
@@ -44,9 +41,7 @@ class CharacterScopeService {
     final documents = await getApplicationDocumentsDirectory();
 
     if (resolvedId == AiCharacter.defaultCharacterId) {
-      return File(
-        '${documents.path}/${legacyDefaultFileName ?? fileName}',
-      );
+      return File('${documents.path}/${legacyDefaultFileName ?? fileName}');
     }
 
     final directory = await characterDirectory();

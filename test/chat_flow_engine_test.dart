@@ -72,7 +72,7 @@ void main() {
       );
 
       expect(plan.intent, ReplyIntent.endNaturally);
-      expect(plan.toPromptSection(), contains('允许只回复自然短句'));
+      expect(plan.toPromptSection(), contains('自然结束时'));
     });
 
     test('连续 20 轮不会每轮都安排提问', () {

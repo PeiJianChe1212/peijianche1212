@@ -9,11 +9,11 @@ import '../../services/user_profile_storage_service.dart';
 import '../../theme/app_theme_background.dart';
 import '../../theme/app_dimensions.dart';
 import '../../theme/app_text_styles.dart';
-import 'add_ai_page.dart';
-import 'create_group_chat_page.dart';
+import 'ai_creation_center_page.dart';
 import 'peilink_chats_page.dart';
-import 'peilink_contacts_page.dart';
+import 'relationship_hub_page.dart';
 import 'peilink_echo_page.dart';
+import 'peilink_guide_page.dart';
 import 'peilink_profile_drawer.dart';
 
 class PeiLinkHomePage extends StatefulWidget {
@@ -32,12 +32,13 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   int _chatsRevision = 0;
   UserProfile _profile = const UserProfile();
 
-  static const _titles = ['PeiLink', '羁绊', 'Echo'];
+  static const _titles = ['PeiLink', '羁绊', 'Echo', 'Guide'];
 
   List<Widget> get _pages => [
     PeiLinkChatsPage(key: ValueKey(_chatsRevision)),
-    PeiLinkContactsPage(key: ValueKey(_contactsRevision)),
+    RelationshipHubPage(key: ValueKey(_contactsRevision)),
     const PeiLinkEchoPage(showPublicTimeline: true, embedded: true),
+    const PeiLinkGuidePage(),
   ];
 
   @override
@@ -53,47 +54,15 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   }
 
   Future<void> _showCreateMenu() async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.person_add_alt_1_outlined),
-              title: const Text('创建 AI'),
-              onTap: () => Navigator.pop(context, 'ai'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.group_add_outlined),
-              title: const Text('新建群聊'),
-              onTap: () => Navigator.pop(context, 'group'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (!mounted || action == null) return;
-    if (action == 'ai') {
-      await _openAddAi();
-      return;
-    }
-    final created = await Navigator.push(
+    final changed = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const CreateGroupChatPage()),
+      MaterialPageRoute(builder: (_) => const AiCreationCenterPage()),
     );
-    if (created != null && mounted) {
-      setState(() => _chatsRevision += 1);
-    }
-  }
-
-  Future<void> _openAddAi() async {
-    final created = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => const AddAiPage()),
-    );
-    if (created == true && mounted) {
-      setState(() => _contactsRevision += 1);
+    if (changed == true && mounted) {
+      setState(() {
+        _contactsRevision += 1;
+        _chatsRevision += 1;
+      });
     }
   }
 
@@ -171,6 +140,16 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
             ),
             actions: [
               IconButton(
+                key: const ValueKey('peilink-guide-entry'),
+                onPressed: () => setState(() => _currentIndex = 3),
+                tooltip: '阿澈 Guide',
+                icon: Image.asset(
+                  'assets/images/brand/peilink_butterfly.png',
+                  width: 27,
+                  height: 27,
+                ),
+              ),
+              IconButton(
                 key: const ValueKey('peilink-create-entry'),
                 onPressed: _showCreateMenu,
                 tooltip: '创建',
@@ -238,6 +217,11 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
                           icon: Icon(Icons.waves_outlined),
                           activeIcon: Icon(Icons.waves_rounded),
                           label: 'Echo',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.auto_stories_outlined),
+                          activeIcon: Icon(Icons.auto_stories_rounded),
+                          label: 'Guide',
                         ),
                       ],
                     ),

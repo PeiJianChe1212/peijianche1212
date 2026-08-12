@@ -64,6 +64,7 @@ flutter:
     - assets/images/
     - assets/images/app_icons/
     - assets/images/brand/
+    - assets/images/guide/ache_welcome.png
     - assets/backgrounds/
     - assets/backgrounds/simple_pack/
 

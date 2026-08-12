@@ -1,5 +1,6 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../config/peilink_runtime.dart';
 import '../models/api_settings.dart';
 
 class ApiSettingsStorageService {
@@ -21,59 +22,68 @@ class ApiSettingsStorageService {
   static const _imageBaseUrlKey = 'image_base_url';
   static const _imageModelKey = 'image_model';
 
+  static String _key(String key) => PeiLinkRuntime.secureStorageKey(key);
+
   Future<ApiSettings> loadSettings() async {
     final values = await _storage.readAll();
     return ApiSettings(
-      provider: values[_providerKey] ?? 'DeepSeek',
-      apiKey: values[_apiKeyKey] ?? '',
+      provider: values[_key(_providerKey)] ?? 'DeepSeek',
+      apiKey: values[_key(_apiKeyKey)] ?? '',
       baseUrl:
-          values[_baseUrlKey] ?? 'https://api.deepseek.com/v1/chat/completions',
-      model: values[_modelKey] ?? 'deepseek-chat',
-      multimodalApiKey: values[_multimodalApiKeyKey] ?? '',
+          values[_key(_baseUrlKey)] ??
+          'https://api.deepseek.com/v1/chat/completions',
+      model: values[_key(_modelKey)] ?? 'deepseek-chat',
+      multimodalApiKey: values[_key(_multimodalApiKeyKey)] ?? '',
       multimodalBaseUrl:
-          values[_multimodalBaseUrlKey] ??
+          values[_key(_multimodalBaseUrlKey)] ??
           'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-      multimodalModel: values[_multimodalModelKey] ?? '',
-      imageApiKey: values[_imageApiKeyKey] ?? '',
+      multimodalModel: values[_key(_multimodalModelKey)] ?? '',
+      imageApiKey: values[_key(_imageApiKeyKey)] ?? '',
       imageBaseUrl:
-          values[_imageBaseUrlKey] ??
+          values[_key(_imageBaseUrlKey)] ??
           'https://ark.cn-beijing.volces.com/api/v3/images/generations',
-      imageModel: values[_imageModelKey] ?? '',
+      imageModel: values[_key(_imageModelKey)] ?? '',
     );
   }
 
   Future<void> saveSettings(ApiSettings settings) async {
     await Future.wait([
-      _storage.write(key: _providerKey, value: settings.provider.trim()),
-      _storage.write(key: _apiKeyKey, value: settings.apiKey.trim()),
-      _storage.write(key: _baseUrlKey, value: settings.baseUrl.trim()),
-      _storage.write(key: _modelKey, value: settings.model.trim()),
+      _storage.write(key: _key(_providerKey), value: settings.provider.trim()),
+      _storage.write(key: _key(_apiKeyKey), value: settings.apiKey.trim()),
+      _storage.write(key: _key(_baseUrlKey), value: settings.baseUrl.trim()),
+      _storage.write(key: _key(_modelKey), value: settings.model.trim()),
       _storage.write(
-        key: _multimodalApiKeyKey,
+        key: _key(_multimodalApiKeyKey),
         value: settings.multimodalApiKey.trim(),
       ),
       _storage.write(
-        key: _multimodalBaseUrlKey,
+        key: _key(_multimodalBaseUrlKey),
         value: settings.multimodalBaseUrl.trim(),
       ),
       _storage.write(
-        key: _multimodalModelKey,
+        key: _key(_multimodalModelKey),
         value: settings.multimodalModel.trim(),
       ),
-      _storage.write(key: _imageApiKeyKey, value: settings.imageApiKey.trim()),
       _storage.write(
-        key: _imageBaseUrlKey,
+        key: _key(_imageApiKeyKey),
+        value: settings.imageApiKey.trim(),
+      ),
+      _storage.write(
+        key: _key(_imageBaseUrlKey),
         value: settings.imageBaseUrl.trim(),
       ),
-      _storage.write(key: _imageModelKey, value: settings.imageModel.trim()),
+      _storage.write(
+        key: _key(_imageModelKey),
+        value: settings.imageModel.trim(),
+      ),
     ]);
   }
 
   Future<void> clearApiKey() async {
     await Future.wait([
-      _storage.delete(key: _apiKeyKey),
-      _storage.delete(key: _multimodalApiKeyKey),
-      _storage.delete(key: _imageApiKeyKey),
+      _storage.delete(key: _key(_apiKeyKey)),
+      _storage.delete(key: _key(_multimodalApiKeyKey)),
+      _storage.delete(key: _key(_imageApiKeyKey)),
     ]);
   }
 }

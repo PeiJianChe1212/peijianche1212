@@ -158,7 +158,12 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
                     : _conversations.isEmpty && _groups.isEmpty
-                    ? const Center(child: Text('还没有聊天，点右上角“+”开始吧'))
+                    ? Center(
+                        child: Text(
+                          '暂无消息',
+                          textAlign: TextAlign.center,
+                        ),
+                      )
                     : RefreshIndicator(
                         onRefresh: _loadConversationPreviews,
                         child: ListView(

@@ -1,62 +1,49 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/ai_character.dart';
+import 'developer_environment_service.dart';
 
 class CharacterRegistryService {
   static const String _registryFileName = 'character_registry.json';
   static const String _activeFileName = 'active_character.json';
 
   Future<Directory> _documentsDirectory() => getApplicationDocumentsDirectory();
+  Future<File> _registryFile() async =>
+      File('${(await _documentsDirectory()).path}/$_registryFileName');
+  Future<File> _activeFile() async =>
+      File('${(await _documentsDirectory()).path}/$_activeFileName');
 
-  Future<File> _registryFile() async {
-    final directory = await _documentsDirectory();
-    return File('${directory.path}/$_registryFileName');
-  }
-
-  Future<File> _activeFile() async {
-    final directory = await _documentsDirectory();
-    return File('${directory.path}/$_activeFileName');
-  }
-
-  Future<List<AiCharacter>> loadCharacters() async {
+  Future<List<AiCharacter>> loadAllCharacters() async {
     final file = await _registryFile();
-    if (!await file.exists()) return _createInitialRegistry();
-
+    if (!await file.exists()) {
+      await saveAllCharacters(const []);
+      return const [];
+    }
     try {
-      final raw = await file.readAsString();
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) return _createInitialRegistry();
-
-      final characters = decoded
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! List) return const [];
+      return decoded
           .whereType<Map>()
           .map(AiCharacter.fromJson)
           .where((character) => character.id.trim().isNotEmpty)
           .toList();
-
-      if (characters.isEmpty) return _createInitialRegistry();
-      if (!characters.any(
-        (character) => character.id == AiCharacter.defaultCharacterId,
-      )) {
-        characters.insert(0, AiCharacter.peiJianChe());
-        await saveCharacters(characters);
-      }
-      return characters;
     } catch (_) {
-      return _createInitialRegistry();
+      return const [];
     }
   }
 
-  Future<List<AiCharacter>> _createInitialRegistry() async {
-    final characters = <AiCharacter>[AiCharacter.peiJianChe()];
-    await saveCharacters(characters);
-    await setActiveCharacter(AiCharacter.defaultCharacterId);
-    return characters;
+  Future<List<AiCharacter>> loadCharacters() async {
+    final characters = await loadAllCharacters();
+    if (await DeveloperEnvironmentService().isEnabled()) return characters;
+    return characters
+        .where((item) => item.id != AiCharacter.defaultCharacterId)
+        .toList();
   }
 
-  Future<void> saveCharacters(List<AiCharacter> characters) async {
+  Future<void> saveAllCharacters(List<AiCharacter> characters) async {
     final file = await _registryFile();
     await file.writeAsString(
       jsonEncode(characters.map((item) => item.toJson()).toList()),
@@ -64,69 +51,86 @@ class CharacterRegistryService {
     );
   }
 
+  Future<void> saveCharacters(List<AiCharacter> characters) async {
+    final all = await loadAllCharacters();
+    final privateCharacters = all.where(
+      (item) => item.id == AiCharacter.defaultCharacterId,
+    );
+    await saveAllCharacters([
+      ...privateCharacters,
+      ...characters.where((item) => item.id != AiCharacter.defaultCharacterId),
+    ]);
+  }
+
+  Future<void> ensureDeveloperCharacterRegistered() async {
+    final characters = await loadAllCharacters();
+    if (characters.any((item) => item.id == AiCharacter.defaultCharacterId)) {
+      return;
+    }
+    await saveAllCharacters([AiCharacter.peiJianChe(), ...characters]);
+  }
+
   Future<void> addCharacter(AiCharacter character) async {
-    final characters = await loadCharacters();
+    final characters = await loadAllCharacters();
     final index = characters.indexWhere((item) => item.id == character.id);
     if (index >= 0) {
       characters[index] = character;
     } else {
       characters.add(character);
     }
-    await saveCharacters(characters);
+    await saveAllCharacters(characters);
   }
 
-  Future<void> updateCharacter(AiCharacter character) => addCharacter(character);
+  Future<void> updateCharacter(AiCharacter character) =>
+      addCharacter(character);
 
   Future<void> deleteCharacter(String characterId) async {
     if (characterId == AiCharacter.defaultCharacterId) {
-      throw StateError('内置角色裴简澈不能在当前版本删除。');
+      throw StateError('开发者私有角色不能删除，只能通过环境隔离隐藏。');
     }
-
-    final characters = await loadCharacters();
+    final characters = await loadAllCharacters();
     characters.removeWhere((item) => item.id == characterId);
-    await saveCharacters(characters);
-
+    await saveAllCharacters(characters);
     final activeId = await loadActiveCharacterId();
     if (activeId == characterId) {
-      await setActiveCharacter(AiCharacter.defaultCharacterId);
+      final visible = await loadCharacters();
+      if (visible.isNotEmpty) await setActiveCharacter(visible.first.id);
     }
   }
 
   Future<String> loadActiveCharacterId() async {
+    final characters = await loadCharacters();
+    if (characters.isEmpty) return '';
     final file = await _activeFile();
     if (!await file.exists()) {
-      await setActiveCharacter(AiCharacter.defaultCharacterId);
-      return AiCharacter.defaultCharacterId;
+      await setActiveCharacter(characters.first.id);
+      return characters.first.id;
     }
-
     try {
       final decoded = jsonDecode(await file.readAsString());
       final id = decoded is Map ? decoded['characterId']?.toString() : null;
-      if (id == null || id.trim().isEmpty) {
-        return AiCharacter.defaultCharacterId;
-      }
-      final characters = await loadCharacters();
       return characters.any((item) => item.id == id)
-          ? id
-          : AiCharacter.defaultCharacterId;
+          ? id!
+          : characters.first.id;
     } catch (_) {
-      return AiCharacter.defaultCharacterId;
+      return characters.first.id;
     }
   }
 
   Future<AiCharacter> loadActiveCharacter() async {
     final characters = await loadCharacters();
+    if (characters.isEmpty) throw StateError('当前环境还没有角色。');
     final activeId = await loadActiveCharacterId();
     return characters.firstWhere(
       (item) => item.id == activeId,
-      orElse: AiCharacter.peiJianChe,
+      orElse: () => characters.first,
     );
   }
 
   Future<void> setActiveCharacter(String characterId) async {
     final characters = await loadCharacters();
     if (!characters.any((item) => item.id == characterId)) {
-      throw StateError('要切换的角色不存在：$characterId');
+      throw StateError('要切换的角色在当前环境中不可见：$characterId');
     }
     final file = await _activeFile();
     await file.writeAsString(

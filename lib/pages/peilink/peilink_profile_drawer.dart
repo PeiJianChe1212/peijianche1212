@@ -63,7 +63,7 @@ class _PeiLinkProfileDrawerState extends State<PeiLinkProfileDrawer> {
     final avatarFile = avatarPath.isEmpty ? null : File(avatarPath);
     final hasAvatar = avatarFile?.existsSync() == true;
     final signature = _profile.signature.trim().isEmpty
-        ? '写一句属于你的签名'
+        ? '未设置'
         : _profile.signature.trim();
     final relationship = _profile.identity.trim().isEmpty
         ? '正在连接 AI 世界'

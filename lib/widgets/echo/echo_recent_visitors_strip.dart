@@ -17,7 +17,10 @@ class EchoRecentVisitorsStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final today = DateTime.now();
-    final todayCount = visitors.where((record) {
+    final socialVisitors = visitors
+        .where((record) => record.visitorType != EchoVisitorType.user)
+        .toList();
+    final todayCount = socialVisitors.where((record) {
       final time = record.visitTime;
       return time.year == today.year &&
           time.month == today.month &&
@@ -57,7 +60,7 @@ class EchoRecentVisitorsStrip extends StatelessWidget {
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
-                    '今天 $todayCount 人来过',
+                    todayCount == 0 ? '这里还没有留下痕迹' : '今天 $todayCount 位角色来过',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -73,14 +76,14 @@ class EchoRecentVisitorsStrip extends StatelessWidget {
                     children: [
                       for (
                         var index = 0;
-                        index < visitors.take(3).length;
+                        index < socialVisitors.take(3).length;
                         index++
                       )
                         Positioned(
                           right: index * 18.0,
-                          child: _VisitorAvatar(record: visitors[index]),
+                          child: _VisitorAvatar(record: socialVisitors[index]),
                         ),
-                      if (visitors.isEmpty)
+                      if (socialVisitors.isEmpty)
                         const Align(
                           alignment: Alignment.centerRight,
                           child: CircleAvatar(

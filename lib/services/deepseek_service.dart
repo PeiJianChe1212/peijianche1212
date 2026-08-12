@@ -64,6 +64,7 @@ class DeepSeekService {
     required double tsundere,
     String? characterId,
     String transientEventContext = '',
+    bool applyStoredChatControls = false,
   }) async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
@@ -130,8 +131,8 @@ class DeepSeekService {
         '\n${PromptBuilder.buildDynamicSystemPrompt(
           timeContext: _buildTimeContext(),
           conversationEnginePrompt: conversationEngine.prompt,
-          personalityPrompt: _buildPersonalityPrompt(initiative: initiative, intimacy: intimacy, tsundere: tsundere),
-          replyLengthPrompt: _buildReplyLengthPrompt(replyLength),
+          personalityPrompt: applyStoredChatControls ? _buildPersonalityPrompt(initiative: initiative, intimacy: intimacy, tsundere: tsundere) : _buildNaturalChatPrompt(),
+          replyLengthPrompt: applyStoredChatControls ? _buildStoredReplyLengthPrompt(replyLength) : _buildReplyLengthPrompt(replyLength),
           memoryPrompt: memoryContext.confirmedMemory,
           activityPrompt: validConversation.where((message) => message.role == 'user').length <= 1 ? activity.toPromptSection() : '',
         )}\n';
@@ -178,7 +179,14 @@ class DeepSeekService {
     );
     final personalityStyleEngine = const PersonalityStyleEngine();
     final personalityStyle = personalityStyleEngine.resolve(
-      settings: characterSettings,
+      // 普通聊天不再执行旧的用户长度档位；字段和引擎能力仍保留给
+      // Life Engine、主动联系与未来官方角色卡。
+      settings: applyStoredChatControls
+          ? characterSettings
+          : characterSettings.copyWith(
+              replyLength: 'standard',
+              initiative: 0.5,
+            ),
       replyStrategy: replyStrategy,
     );
     final modelContext = PromptComposer(baseContext: context)
@@ -198,7 +206,10 @@ class DeepSeekService {
       return provider.complete(
         messages: messages,
         temperature: temperature,
-        maxTokens: _getMaxTokens(replyLength, conversationMode),
+        maxTokens: _getMaxTokens(
+          applyStoredChatControls ? replyLength : 'long',
+          conversationMode,
+        ),
         topP: _getTopP(temperature),
       );
     }
@@ -466,12 +477,26 @@ $tsundereRule
   }
 
   String _buildReplyLengthPrompt(String replyLength) {
+    return '普通聊天默认保持 2 到 5 句自然长度；根据用户消息长度、情绪和当前场景动态决定。'
+        '即使用户只发一句，也先回应具体内容，再补充一点角色状态或真实反应，并按需要自然延续。'
+        '只有简单确认、用户明确要求简短、情绪化短句或自然结束时才使用 1 到 2 句；需要安慰或解释时可以展开。'
+        '避免只回复“嗯”“好的”“知道了”等碎片式客服话术。';
+  }
+
+  String _buildStoredReplyLengthPrompt(String replyLength) {
     return switch (replyLength) {
       'short' => '回复尽量简短，通常1到2句，避免无必要展开。',
       'long' => '回复可以偏长，通常3到6句，但保持自然，不写成文章。',
       _ => '回复长度适中，通常1到4句，根据话题自然调整。',
     };
   }
+
+  String _buildNaturalChatPrompt() => '''
+【自然交流】
+先回应用户真正说的事，再依据角色人设自然延续。不要套用固定霸总句式、机械安慰或客服话术。
+默认不使用括号动作、小说旁白或舞台指令，除非角色资料明确要求。
+可以适量使用自然 emoji，但不要连续堆叠。
+''';
 
   int _getMaxTokens(String replyLength, String conversationMode) {
     var maxTokens = switch (replyLength) {

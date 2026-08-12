@@ -182,7 +182,7 @@ class _CharacterProfileHomePageState extends State<CharacterProfileHomePage> {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
-                  '仅展示当前角色资料、档案、相处方式、用户资料与 Memory 的组合结果。',
+                  '仅展示当前角色资料、档案、用户资料与 Memory 的组合结果。',
                   style: TextStyle(color: Colors.black54),
                 ),
               ),

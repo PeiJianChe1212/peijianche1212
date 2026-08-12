@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/ai_character.dart';
 import '../models/character_relationship.dart';
@@ -23,10 +23,12 @@ class CharacterRelationshipStorageService {
       return decoded
           .whereType<Map>()
           .map(CharacterRelationship.fromJson)
-          .where((item) =>
-              item.characterIdA.isNotEmpty &&
-              item.characterIdB.isNotEmpty &&
-              item.characterIdA != item.characterIdB)
+          .where(
+            (item) =>
+                item.characterIdA.isNotEmpty &&
+                item.characterIdB.isNotEmpty &&
+                item.characterIdA != item.characterIdB,
+          )
           .toList();
     } catch (_) {
       return <CharacterRelationship>[];
@@ -44,7 +46,9 @@ class CharacterRelationshipStorageService {
   Future<List<CharacterRelationship>> ensureForCharacters(
     List<AiCharacter> characters,
   ) async {
-    final valid = characters.where((item) => item.id.trim().isNotEmpty).toList();
+    final valid = characters
+        .where((item) => item.id.trim().isNotEmpty)
+        .toList();
     final items = List<CharacterRelationship>.from(await loadAll());
     var changed = false;
     final now = DateTime.now();
@@ -70,9 +74,11 @@ class CharacterRelationshipStorageService {
 
     final validIds = valid.map((item) => item.id).toSet();
     final before = items.length;
-    items.removeWhere((item) =>
-        !validIds.contains(item.characterIdA) ||
-        !validIds.contains(item.characterIdB));
+    items.removeWhere(
+      (item) =>
+          !validIds.contains(item.characterIdA) ||
+          !validIds.contains(item.characterIdB),
+    );
     changed = changed || before != items.length;
 
     if (changed) await saveAll(items);
@@ -109,7 +115,8 @@ class CharacterRelationshipStorageService {
     final now = occurredAt ?? DateTime.now();
     final existing = await find(firstId, secondId);
     final ids = [firstId, secondId]..sort();
-    final base = existing ??
+    final base =
+        existing ??
         CharacterRelationship(
           id: CharacterRelationship.buildId(firstId, secondId),
           characterIdA: ids[0],

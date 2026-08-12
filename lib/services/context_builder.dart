@@ -207,7 +207,9 @@ class ContextBuilder {
     return _stableCache.putIfAbsent(key, () {
       final sections = <String>[
         _coreIdentity(settings, characterProfile),
-        _personality(settings, characterProfile),
+        _appearance(settings, characterProfile),
+        _personality(characterProfile),
+        _relationshipProfile(characterProfile),
       ];
 
       if (_usesUserProfile(profile) && userProfile != null) {
@@ -240,48 +242,57 @@ class ContextBuilder {
     String prefer(String current, String fallback) =>
         current.trim().isNotEmpty ? current.trim() : fallback.trim();
     final name = prefer(profile?.name ?? '', settings.characterName);
-    final identity = profile?.identity.trim() ?? '';
-    final newAppearance = profile == null
-        ? ''
-        : <String>[
-            profile.overallAppearance.trim(),
-            _labeled('发色', profile.hairColor),
-            _labeled('眼睛', profile.eyes),
-            _labeled('身材', profile.bodyType),
-            _labeled('穿衣风格', profile.clothingStyle),
-            _labeled('特殊标记', profile.specialMarks),
-            _labeled('气质', profile.aura),
-          ].where((value) => value.isNotEmpty).join('；');
-    final appearance = prefer(newAppearance, settings.introduction);
     final lines = <String>[
       _labeled('角色本名', name),
-      _labeled('用户备注', settings.remark),
-      _labeled('与用户关系', settings.relation),
-      _labeled('角色对用户的常用称呼', settings.userCallName),
-      _labeled('年龄', profile?.age ?? ''),
-      _labeled('身份', identity),
-      _labeled('职业', profile?.occupation ?? ''),
-      _labeled('外貌', appearance),
+      _labeled('核心人设', settings.coreProfile),
     ].where((value) => value.isNotEmpty).join('\n');
-    return _limit('【核心身份｜永久层】\n$lines', 650);
+    return _limit('【核心角色资料｜必读】\n$lines', 650);
   }
 
-  static String _personality(
+  static String _appearance(
     CharacterSettings settings,
     CharacterProfile? profile,
   ) {
+    final overallAppearance = profile?.overallAppearance.trim() ?? '';
+    final lines = <String>[
+      _labeled(
+        '整体外貌',
+        overallAppearance.isNotEmpty
+            ? overallAppearance
+            : settings.introduction,
+      ),
+      _labeled('发色', profile?.hairColor ?? ''),
+      _labeled('眼睛', profile?.eyes ?? ''),
+      _labeled('身材', profile?.bodyType ?? ''),
+      _labeled('穿衣风格', profile?.clothingStyle ?? ''),
+      _labeled('特殊标记', profile?.specialMarks ?? ''),
+      _labeled('气质', profile?.aura ?? ''),
+    ].where((value) => value.isNotEmpty).join('\n');
+    return lines.isEmpty ? '' : _limit('【外貌设定｜存在时读取】\n$lines', 500);
+  }
+
+  static String _personality(CharacterProfile? profile) {
     final tags = profile?.personalityTags.trim() ?? '';
     final description = profile?.personalityDescription.trim() ?? '';
     final surface = profile?.surfacePersonality.trim() ?? '';
     final deep = profile?.deepPersonality.trim() ?? '';
-    final fallback = settings.coreProfile.trim();
     final lines = <String>[
       _labeled('性格标签', tags),
-      _labeled('性格描述', description.isNotEmpty ? description : fallback),
+      _labeled('性格描述', description),
       _labeled('表层表现', surface),
       _labeled('深层性格', deep),
     ].where((value) => value.isNotEmpty).join('\n');
-    return lines.isEmpty ? '' : _limit('【性格设定｜固定发送】\n$lines', 350);
+    return lines.isEmpty ? '' : _limit('【性格设定｜存在时读取】\n$lines', 350);
+  }
+
+  static String _relationshipProfile(CharacterProfile? profile) {
+    if (profile == null) return '';
+    final lines = <String>[
+      _labeled('关系', profile.relationship),
+      _labeled('相识经过', profile.howMet),
+      _labeled('当前阶段', profile.currentStage),
+    ].where((value) => value.isNotEmpty).join('\n');
+    return lines.isEmpty ? '' : _limit('【关系资料｜存在时读取】\n$lines', 450);
   }
 
   static String _behaviorRules(
@@ -291,7 +302,6 @@ class ContextBuilder {
       '''
 【行为规则｜按任务加载】
 ${settings.behaviorStyle}
-主动程度：${settings.initiative}
 ${_fixedArchiveBehavior(archive)}
 
 【禁止事项】

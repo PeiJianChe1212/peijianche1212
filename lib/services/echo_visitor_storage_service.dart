@@ -61,4 +61,35 @@ class EchoVisitorStorageService {
     );
     return next.take(200).toList();
   }
+
+  Future<List<EchoVisitorRecord>> recordCharacterVisit({
+    required String visitorId,
+    required String visitorName,
+    required String visitorAvatarPath,
+    DateTime? now,
+  }) async {
+    final time = now ?? DateTime.now();
+    final day = '${time.year}-${time.month}-${time.day}';
+    final id = '${_ownerId}_ai_${visitorId}_$day';
+    final records = await load();
+    if (records.any((item) => item.id == id)) return records;
+    final next = <EchoVisitorRecord>[
+      EchoVisitorRecord(
+        id: id,
+        spaceOwnerId: _ownerId,
+        visitorId: visitorId,
+        visitorType: EchoVisitorType.character,
+        visitTime: time,
+        visitorName: visitorName,
+        visitorAvatarPath: visitorAvatarPath,
+      ),
+      ...records,
+    ];
+    final file = await _scope.dataFile(_fileName);
+    await file.writeAsString(
+      jsonEncode(next.take(200).map((item) => item.toJson()).toList()),
+      flush: true,
+    );
+    return next.take(200).toList();
+  }
 }

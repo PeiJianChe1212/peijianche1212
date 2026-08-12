@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/causal_node.dart';
 
@@ -44,11 +44,10 @@ class CausalGraphService {
     await _save(updated, now: now);
   }
 
-  Future<void> upsertAll(
-    Iterable<CausalNode> incoming, {
-    DateTime? now,
-  }) async {
-    final additions = incoming.where((node) => node.id.trim().isNotEmpty).toList();
+  Future<void> upsertAll(Iterable<CausalNode> incoming, {DateTime? now}) async {
+    final additions = incoming
+        .where((node) => node.id.trim().isNotEmpty)
+        .toList();
     if (additions.isEmpty) return;
 
     final nodes = await loadAll(now: now);
@@ -82,9 +81,11 @@ class CausalGraphService {
     final visited = <String>{};
     var frontier = <String>[id];
 
-    for (var depth = 0;
-        depth <= maxDepth && frontier.isNotEmpty && result.length < maxNodes;
-        depth++) {
+    for (
+      var depth = 0;
+      depth <= maxDepth && frontier.isNotEmpty && result.length < maxNodes;
+      depth++
+    ) {
       final next = <String>[];
       for (final currentId in frontier) {
         if (!visited.add(currentId)) continue;

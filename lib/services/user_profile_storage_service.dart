@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../config/peilink_runtime.dart';
 
 import '../models/user_profile.dart';
 
@@ -24,10 +24,24 @@ class UserProfileStorageService {
       if (raw.trim().isEmpty) return const UserProfile();
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return const UserProfile();
-      return UserProfile.fromJson(decoded);
+      final profile = UserProfile.fromJson(decoded);
+      if (PeiLinkRuntime.build == PeiLinkBuild.user &&
+          _isLegacyDeveloperSeed(profile)) {
+        const defaults = UserProfile();
+        await saveProfile(defaults);
+        return defaults;
+      }
+      return profile;
     } catch (_) {
       return const UserProfile();
     }
+  }
+
+  bool _isLegacyDeveloperSeed(UserProfile profile) {
+    return profile.nickname == '念念' &&
+        profile.peiLinkId == '一只小狐念' &&
+        profile.peiCallName == '念念' &&
+        profile.identity == '裴简澈的恋人';
   }
 
   Future<void> saveProfile(UserProfile profile) async {

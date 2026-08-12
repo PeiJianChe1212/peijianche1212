@@ -9,6 +9,8 @@ import '../../models/echo_item.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/character_settings_storage_service.dart';
 import '../../services/echo_storage_service.dart';
+import '../../services/pei_file_platform_service.dart';
+import '../../services/pei_file_service.dart';
 import '../../widgets/peilink/relationship_badge.dart';
 import '../chat_page.dart';
 import 'character_profile_edit_page.dart';
@@ -30,6 +32,7 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   AiCharacter _character = AiCharacter.peiJianChe();
   List<EchoItem> _recentEcho = const [];
   bool _loading = true;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -53,6 +56,44 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
       _recentEcho = echo.take(3).toList();
       _loading = false;
     });
+  }
+
+  Future<void> _exportCharacter() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final bytes = await PeiFileService().exportCharacter(
+        _character,
+        _settings,
+      );
+      final safeName = _character.characterName.replaceAll(
+        RegExp(r'[\\/:*?"<>|]'),
+        '_',
+      );
+      final saved = await const PeiFilePlatformService().saveFile(
+        suggestedName: '$safeName.pei',
+        bytes: bytes,
+      );
+      if (mounted && saved) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('角色文件已导出。')));
+      }
+    } on PeiFileException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('角色导出失败，请稍后重试。')));
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Future<void> _openChat() async {
@@ -125,6 +166,19 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           title: const SizedBox.shrink(),
+          actions: [
+            IconButton(
+              key: const ValueKey('export-pei-character'),
+              onPressed: _exporting ? null : _exportCharacter,
+              tooltip: '导出角色',
+              icon: _exporting
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.ios_share_rounded),
+            ),
+          ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())

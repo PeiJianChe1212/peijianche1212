@@ -85,13 +85,6 @@ class CharacterPromptPreviewService {
         ('当前阶段', profile.currentStage),
       ]),
       _archiveSection(archive),
-      _section('相处方式', [
-        ('语言习惯', archive.value('languageHabits')),
-        ('回复风格', archive.value('speakingStyle')),
-        ('聊天节奏', archive.value('chatPace')),
-        ('主动程度', settings.initiative.toStringAsFixed(2)),
-        ('行为规则', settings.behaviorStyle),
-      ]),
       _textSection('用户资料', userProfilePrompt),
       _textSection('Memory', memory),
     ].where((value) => value.isNotEmpty).toList();

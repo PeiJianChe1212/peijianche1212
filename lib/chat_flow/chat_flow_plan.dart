@@ -33,6 +33,7 @@ Question Desire：${questionDesire.toStringAsFixed(2)}（越低越不应提问�
 $questionRule
 $previousQuestionRule
 $choiceRule
-允许只回复自然短句；不要求每轮开启新话题或强行推进聊天。''';
+普通聊天即使用户只发一句，也优先形成 2 到 5 句自然交流：回应具体内容，补充一点角色状态或真实反应，再按需要延续。无需每轮提问，也不要强行开启新话题。
+只有简单确认、用户明确要求简短、情绪化短句或自然结束时，才允许 1 到 2 句短回复。''';
   }
 }
