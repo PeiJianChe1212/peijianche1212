@@ -209,6 +209,7 @@ class ContextBuilder {
         _coreIdentity(settings, characterProfile),
         _appearance(settings, characterProfile),
         _personality(characterProfile),
+        _backgroundStory(characterProfile),
         _relationshipProfile(characterProfile),
       ];
 
@@ -261,26 +262,17 @@ class ContextBuilder {
             ? overallAppearance
             : settings.introduction,
       ),
-      _labeled('发色', profile?.hairColor ?? ''),
-      _labeled('眼睛', profile?.eyes ?? ''),
-      _labeled('身材', profile?.bodyType ?? ''),
-      _labeled('穿衣风格', profile?.clothingStyle ?? ''),
-      _labeled('特殊标记', profile?.specialMarks ?? ''),
-      _labeled('气质', profile?.aura ?? ''),
+      _labeled('穿着', profile?.clothingStyle ?? ''),
     ].where((value) => value.isNotEmpty).join('\n');
     return lines.isEmpty ? '' : _limit('【外貌设定｜存在时读取】\n$lines', 500);
   }
 
   static String _personality(CharacterProfile? profile) {
-    final tags = profile?.personalityTags.trim() ?? '';
     final description = profile?.personalityDescription.trim() ?? '';
-    final surface = profile?.surfacePersonality.trim() ?? '';
-    final deep = profile?.deepPersonality.trim() ?? '';
     final lines = <String>[
-      _labeled('性格标签', tags),
       _labeled('性格描述', description),
-      _labeled('表层表现', surface),
-      _labeled('深层性格', deep),
+      _labeled('性格标签', profile?.personalityTags ?? ''),
+      _labeled('说话风格', profile?.speakingStyle ?? ''),
     ].where((value) => value.isNotEmpty).join('\n');
     return lines.isEmpty ? '' : _limit('【性格设定｜存在时读取】\n$lines', 350);
   }
@@ -288,11 +280,22 @@ class ContextBuilder {
   static String _relationshipProfile(CharacterProfile? profile) {
     if (profile == null) return '';
     final lines = <String>[
-      _labeled('关系', profile.relationship),
-      _labeled('相识经过', profile.howMet),
-      _labeled('当前阶段', profile.currentStage),
+      _labeled('角色关系', profile.characterRelationships),
+      _labeled('兴趣爱好', profile.interests),
+      _labeled('讨厌的事', profile.dislikes),
+      _labeled('持有物品', profile.possessions),
+      _labeled('特殊能力', profile.specialAbilities),
     ].where((value) => value.isNotEmpty).join('\n');
     return lines.isEmpty ? '' : _limit('【关系资料｜存在时读取】\n$lines', 450);
+  }
+
+  static String _backgroundStory(CharacterProfile? profile) {
+    if (profile == null) return '';
+    final lines = <String>[
+      _labeled('背景经历', profile.backgroundStory),
+      _labeled('世界观', profile.worldview),
+    ].where((value) => value.isNotEmpty).join('\n');
+    return lines.isEmpty ? '' : _limit('【背景经历｜必读】\n$lines', 1000);
   }
 
   static String _behaviorRules(

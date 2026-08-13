@@ -16,6 +16,7 @@ class ChatInputArea extends StatelessWidget {
     required this.onUserPersona,
     required this.onPickImage,
     required this.onRedPacket,
+    required this.onChangeAvatar,
     required this.onUnavailable,
   });
 
@@ -29,6 +30,7 @@ class ChatInputArea extends StatelessWidget {
   final VoidCallback onUserPersona;
   final VoidCallback onPickImage;
   final VoidCallback onRedPacket;
+  final VoidCallback onChangeAvatar;
   final ValueChanged<String> onUnavailable;
 
   @override
@@ -59,6 +61,7 @@ class ChatInputArea extends StatelessWidget {
                       onUserPersona: onUserPersona,
                       onPickImage: onPickImage,
                       onRedPacket: onRedPacket,
+                      onChangeAvatar: onChangeAvatar,
                       onUnavailable: onUnavailable,
                     ),
                   ],

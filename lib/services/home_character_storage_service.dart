@@ -46,7 +46,7 @@ class HomeCharacterStorageService {
     final selectedId = await loadCharacterId();
     return characters.firstWhere(
       (character) => character.id == selectedId,
-      orElse: AiCharacter.peiJianChe,
+      orElse: AiCharacter.placeholder,
     );
   }
 

@@ -29,7 +29,7 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   final CharacterRegistryService _registry = CharacterRegistryService();
 
   CharacterSettings _settings = CharacterSettings.defaults();
-  AiCharacter _character = AiCharacter.peiJianChe();
+  AiCharacter _character = AiCharacter.placeholder();
   List<EchoItem> _recentEcho = const [];
   bool _loading = true;
   bool _exporting = false;
@@ -132,15 +132,6 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
         width: size,
         height: size,
         fit: BoxFit.cover,
-      );
-    }
-    if (_character.isBuiltIn) {
-      return Image.asset(
-        'assets/images/pei_avatar.jpg',
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        alignment: const Alignment(0, -0.15),
       );
     }
     return Container(

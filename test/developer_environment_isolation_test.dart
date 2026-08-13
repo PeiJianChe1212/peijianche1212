@@ -57,7 +57,16 @@ void main() {
         remark: '',
         createdAt: DateTime(2026, 8, 9),
       );
-      await registry.saveAllCharacters([AiCharacter.peiJianChe(), user]);
+      await registry.saveAllCharacters([
+        AiCharacter(
+          id: AiCharacter.defaultCharacterId,
+          characterName: '裴简澈',
+          remark: '',
+          createdAt: DateTime(2024, 12, 12),
+          isBuiltIn: true,
+        ),
+        user,
+      ]);
       await File(
         '${documents.path}/peilink_dev/developer_environment.json',
       ).writeAsString(jsonEncode({'enabled': false}));
@@ -77,7 +86,15 @@ void main() {
     () async {
       PeiLinkRuntime.configure(PeiLinkBuild.dev);
       final registry = CharacterRegistryService();
-      await registry.saveAllCharacters([AiCharacter.peiJianChe()]);
+      await registry.saveAllCharacters([
+        AiCharacter(
+          id: AiCharacter.defaultCharacterId,
+          characterName: '裴简澈',
+          remark: '',
+          createdAt: DateTime(2024, 12, 12),
+          isBuiltIn: true,
+        ),
+      ]);
       await File(
         '${documents.path}/peilink_dev/developer_environment.json',
       ).writeAsString(jsonEncode({'enabled': true}));

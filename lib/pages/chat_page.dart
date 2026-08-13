@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +17,7 @@ import '../services/activity_service.dart';
 import '../services/ai_red_packet_event_service.dart';
 import '../services/ai_red_packet_opportunity_service.dart';
 import '../services/character_registry_service.dart';
+import '../services/character_avatar_storage_service.dart';
 import '../services/chat_image_task_manager.dart';
 import '../services/chat_image_request_router_service.dart';
 import '../services/chat_image_storage_service.dart';
@@ -29,6 +31,7 @@ import '../services/character_settings_storage_service.dart';
 import '../services/today_service.dart';
 import '../services/user_profile_storage_service.dart';
 import 'peilink/character_detail_page.dart';
+import 'peilink/character_creation_page.dart';
 import 'peilink/chat_settings_page.dart';
 import 'peilink/character_user_profile_page.dart';
 import '../widgets/chat/chat_input_area.dart';
@@ -85,8 +88,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _showMoreFunctions = false;
   DateTime? _previousSeenAt;
   bool _conversationTraceRecorded = false;
+  bool _lastAvatarRequestRejected = false;
   UserProfile _profile = const UserProfile();
-  AiCharacter _activeCharacter = AiCharacter.peiJianChe();
+  AiCharacter _activeCharacter = AiCharacter.placeholder();
   CharacterSettings _characterSettings = CharacterSettings.defaults();
   bool _isRedirectingBack = false;
   String _conversationMode = 'basic';
@@ -444,6 +448,66 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       await _requestReply();
     } catch (error) {
       await _handleRequestError('发送图片失败：$error');
+    }
+  }
+
+  Future<void> _requestAvatarChange() async {
+    if (_isLoading) return;
+    _closeMorePanel();
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 96,
+        maxWidth: 2200,
+      );
+      if (picked == null || !mounted) return;
+      final bytes = await showDialog<Uint8List>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AvatarCropDialog(imagePath: picked.path),
+      );
+      if (bytes == null || !mounted) return;
+
+      final accepted = _lastAvatarRequestRejected || Random().nextDouble() < .8;
+      _lastAvatarRequestRejected = !accepted;
+      if (accepted) {
+        final path = await const CharacterAvatarStorageService()
+            .saveAvatarBytes(characterId: _activeCharacter.id, bytes: bytes);
+        final updated = _activeCharacter.copyWith(avatarPath: path);
+        await _characterRegistry.updateCharacter(updated);
+        if (!mounted) return;
+        setState(() => _activeCharacter = updated);
+      }
+
+      const userText = '给你换了个头像，喜欢吗？';
+      setState(() {
+        _messages.add(ChatMessage(role: 'user', content: userText));
+        _isLoading = true;
+        _isRegenerating = false;
+      });
+      await _saveMessages();
+      _scrollToBottom();
+      if (!await _deepSeekService.hasApiKey) {
+        if (!mounted) return;
+        setState(() {
+          _messages.add(
+            ChatMessage(
+              role: 'assistant',
+              content: accepted ? '嗯，新头像还不错，挺像我的。' : '这个不太符合我的风格，下次换一个？',
+            ),
+          );
+          _isLoading = false;
+        });
+        await _saveMessages();
+        return;
+      }
+      await _requestReply(
+        transientEventContext: accepted
+            ? '用户刚为你更换了头像。你已经接受，请按角色性格自然回应，表达喜欢或带一点个性化评价。'
+            : '用户提出更换头像，但你这次没有接受。请按角色性格温和拒绝，不要刻薄；下一次请求必须接受。',
+      );
+    } catch (error) {
+      if (mounted) _showSnack('更换头像失败：$error');
     }
   }
 
@@ -952,26 +1016,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (file != null && file.existsSync()) {
         return _SquareAvatar(size: size, image: FileImage(file));
       }
-      if (_activeCharacter.isBuiltIn) {
-        return _SquareAvatar(
-          size: size,
-          image: const AssetImage('assets/images/pei_avatar.jpg'),
-          alignment: const Alignment(0, -0.15),
-        );
-      }
       return _AvatarPlaceholder(size: size);
     }
 
     final avatarPath = _profile.avatarPath.trim();
     final avatarFile = avatarPath.isEmpty ? null : File(avatarPath);
     final hasFile = avatarFile != null && avatarFile.existsSync();
-    return _SquareAvatar(
-      size: size,
-      image: hasFile
-          ? FileImage(avatarFile)
-          : const AssetImage('assets/images/user_avatar_default.jpg'),
-      alignment: const Alignment(0, -0.05),
-    );
+    if (hasFile) {
+      return _SquareAvatar(
+        size: size,
+        image: FileImage(avatarFile),
+        alignment: const Alignment(0, -0.05),
+      );
+    }
+    return _AvatarPlaceholder(size: size);
   }
 
   String get _activeDisplayName => _activeCharacter.displayName;
@@ -1152,6 +1210,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   _pickAndSendImage();
                 },
                 onRedPacket: _showRedPacketSendDialog,
+                onChangeAvatar: _requestAvatarChange,
                 onUnavailable: (feature) => _showSnack('$feature功能敬请期待'),
               ),
             ],

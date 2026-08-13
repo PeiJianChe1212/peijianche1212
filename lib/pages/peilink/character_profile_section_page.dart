@@ -99,7 +99,7 @@ class _CharacterProfileSectionPageState
     final characters = await CharacterRegistryService().loadCharacters();
     final character = characters.firstWhere(
       (item) => item.id == widget.characterId,
-      orElse: AiCharacter.peiJianChe,
+      orElse: AiCharacter.placeholder,
     );
     final legacy = await CharacterSettingsStorageService(
       characterId: widget.characterId,

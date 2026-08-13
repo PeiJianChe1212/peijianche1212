@@ -16,6 +16,7 @@ void main() {
           body: ChatMorePanel(
             onUserPersona: () {},
             onPickImage: () {},
+            onChangeAvatar: () {},
             onRedPacket: () => opened = true,
             onUnavailable: (_) {},
           ),

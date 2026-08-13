@@ -41,9 +41,6 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
     if (path.isNotEmpty && File(path).existsSync()) {
       return FileImage(File(path));
     }
-    if (widget.character.isBuiltIn) {
-      return const AssetImage('assets/images/pei_avatar.jpg');
-    }
     return null;
   }
 

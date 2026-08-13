@@ -201,17 +201,6 @@ class _CharacterAvatar extends StatelessWidget {
         child: Image.file(File(path), width: 46, height: 46, fit: BoxFit.cover),
       );
     }
-    if (character.isBuiltIn) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(7),
-        child: Image.asset(
-          'assets/images/pei_avatar.jpg',
-          width: 46,
-          height: 46,
-          fit: BoxFit.cover,
-        ),
-      );
-    }
     return Container(
       width: 46,
       height: 46,

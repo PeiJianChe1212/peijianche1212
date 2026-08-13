@@ -8,11 +8,12 @@ import 'character_registry_service.dart';
 class EnvironmentDataService {
   final CharacterRegistryService _registry = CharacterRegistryService();
 
-  Future<void> initializeDeveloperSandbox() {
+  Future<void> initializeDeveloperSandbox() async {
     if (!PeiLinkRuntime.developerToolsEnabled) {
       throw StateError('当前构建不包含开发者沙盒。');
     }
-    return _registry.ensureDeveloperCharacterRegistered();
+    // 开发者沙盒不再自动注入任何内置角色，角色由开发者手动创建或导入。
+    await _registry.loadAllCharacters();
   }
 
   Future<void> initializePlayerWorkspace() async {

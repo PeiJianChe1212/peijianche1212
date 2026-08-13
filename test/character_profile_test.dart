@@ -7,7 +7,16 @@ void main() {
   test(
     'legacy character data seeds the structured profile without mutation',
     () {
-      final character = AiCharacter.peiJianChe();
+      final character = AiCharacter(
+        id: 'test_character',
+        characterName: '裴简澈',
+        remark: '老裴',
+        introduction: '银白短发、蓝色眼睛，外冷内热，偶尔嘴硬。',
+        relationship: '恋人',
+        peiLinkId: 'peijianche1212',
+        birthday: DateTime(2000, 12, 12),
+        createdAt: DateTime(2024, 12, 12),
+      );
       final legacy = CharacterSettings.defaults();
 
       final profile = CharacterProfile.fromLegacy(character, legacy);

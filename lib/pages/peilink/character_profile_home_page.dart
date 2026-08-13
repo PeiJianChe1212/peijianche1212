@@ -62,9 +62,6 @@ class _CharacterProfileHomePageState extends State<CharacterProfileHomePage> {
     if (path.isNotEmpty && File(path).existsSync()) {
       return FileImage(File(path));
     }
-    if (character.isBuiltIn) {
-      return const AssetImage('assets/images/pei_avatar.jpg');
-    }
     return null;
   }
 

@@ -37,7 +37,7 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
   final TextEditingController _introductionController = TextEditingController();
 
   CharacterSettings _settings = CharacterSettings.defaults();
-  AiCharacter _character = AiCharacter.peiJianChe();
+  AiCharacter _character = AiCharacter.placeholder();
   String _avatarPath = '';
   bool _removeAvatar = false;
   bool _loading = true;
@@ -64,7 +64,7 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
     final characters = await _registry.loadCharacters();
     final character = characters.firstWhere(
       (item) => item.id == widget.characterId,
-      orElse: AiCharacter.peiJianChe,
+      orElse: AiCharacter.placeholder,
     );
     final settings = await _storage.loadSettings();
     if (!mounted) return;
@@ -95,9 +95,9 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
       });
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('选择头像失败：$error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('选择头像失败：$error')));
     }
   }
 
@@ -106,9 +106,9 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
 
     final characterName = _nameController.text.trim();
     if (characterName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('角色本名不能为空')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('角色本名不能为空')));
       return;
     }
 
@@ -153,9 +153,9 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败：$error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('保存失败：$error')));
     }
   }
 
@@ -222,16 +222,15 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
                         child: CircleAvatar(
                           radius: 46,
                           backgroundColor: const Color(0xFFE5EBEE),
-                          backgroundImage:
-                              hasAvatar ? FileImage(avatarFile) : null,
+                          backgroundImage: hasAvatar
+                              ? FileImage(avatarFile)
+                              : null,
                           child: hasAvatar
                               ? null
-                              : Icon(
-                                  _character.isBuiltIn
-                                      ? Icons.person_rounded
-                                      : Icons.auto_awesome_rounded,
+                              : const Icon(
+                                  Icons.auto_awesome_rounded,
                                   size: 40,
-                                  color: const Color(0xFF647C8B),
+                                  color: Color(0xFF647C8B),
                                 ),
                         ),
                       ),
@@ -273,8 +272,7 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) =>
-                              const CharacterProfileStructurePage(),
+                          builder: (_) => const CharacterProfileStructurePage(),
                         ),
                       );
                     },
@@ -282,11 +280,7 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
                 ),
                 const SizedBox(height: 10),
                 _field('本名', _nameController),
-                _field(
-                  '备注',
-                  _remarkController,
-                  hint: '你现在想怎么称呼他，例如：老裴、臭狐狸',
-                ),
+                _field('备注', _remarkController, hint: '你现在想怎么称呼他，例如：老裴、臭狐狸'),
                 _field('关系', _relationController, hint: '例如：恋人、朋友、家人'),
                 const SizedBox(height: 10),
                 _field('生日', _birthdayController, hint: '例如：12月12日'),
@@ -303,10 +297,7 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
                   padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
                   child: Text(
                     '备注只影响你看到的名字，不会改变角色本名。',
-                    style: TextStyle(
-                      color: Color(0xFF999999),
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: Color(0xFF999999), fontSize: 13),
                   ),
                 ),
               ],

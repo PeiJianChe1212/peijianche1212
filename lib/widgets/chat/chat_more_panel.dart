@@ -6,6 +6,7 @@ class ChatMorePanel extends StatefulWidget {
     required this.onUserPersona,
     required this.onPickImage,
     required this.onRedPacket,
+    required this.onChangeAvatar,
     required this.onUnavailable,
     this.closeOnSelection = true,
   });
@@ -13,6 +14,7 @@ class ChatMorePanel extends StatefulWidget {
   final VoidCallback onUserPersona;
   final VoidCallback onPickImage;
   final VoidCallback onRedPacket;
+  final VoidCallback onChangeAvatar;
   final ValueChanged<String> onUnavailable;
   final bool closeOnSelection;
 
@@ -30,6 +32,11 @@ class _ChatMorePanelState extends State<ChatMorePanel> {
     _MoreItem('红包', Icons.redeem_outlined, _MoreAction.redPacket),
     _MoreItem('文件', Icons.insert_drive_file_outlined),
     _MoreItem('礼物', Icons.card_giftcard_outlined),
+    _MoreItem(
+      '让 Ta 换头像',
+      Icons.switch_account_outlined,
+      _MoreAction.changeAvatar,
+    ),
     _MoreItem('虚拟定位', Icons.location_on_outlined),
     _MoreItem('音乐', Icons.music_note_outlined),
     _MoreItem('语音通话', Icons.call_outlined),
@@ -47,6 +54,8 @@ class _ChatMorePanelState extends State<ChatMorePanel> {
         widget.onPickImage();
       case _MoreAction.redPacket:
         widget.onRedPacket();
+      case _MoreAction.changeAvatar:
+        widget.onChangeAvatar();
       case _MoreAction.unavailable:
         widget.onUnavailable(item.label);
     }
@@ -177,4 +186,4 @@ class _MoreItem {
   bool get isAvailable => action != _MoreAction.unavailable;
 }
 
-enum _MoreAction { userPersona, photo, redPacket, unavailable }
+enum _MoreAction { userPersona, photo, redPacket, changeAvatar, unavailable }

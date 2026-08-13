@@ -328,18 +328,6 @@ class _CharacterAvatar extends StatelessWidget {
         ),
       );
     }
-    if (character.isBuiltIn) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(9),
-        child: Image.asset(
-          'assets/images/pei_avatar.jpg',
-          width: AppDimensions.avatarMedium,
-          height: AppDimensions.avatarMedium,
-          fit: BoxFit.cover,
-          alignment: const Alignment(0, -0.15),
-        ),
-      );
-    }
     return Container(
       width: AppDimensions.avatarMedium,
       height: AppDimensions.avatarMedium,

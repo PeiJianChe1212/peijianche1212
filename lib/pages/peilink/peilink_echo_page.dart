@@ -633,15 +633,6 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         fit: BoxFit.cover,
       );
     }
-    if (character?.isBuiltIn == true) {
-      return Image.asset(
-        'assets/images/pei_avatar.jpg',
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        alignment: const Alignment(0, -0.15),
-      );
-    }
     return Container(
       width: size,
       height: size,
@@ -669,15 +660,6 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         width: size,
         height: size,
         fit: BoxFit.cover,
-      );
-    }
-    if (!_isUserPage && _character?.isBuiltIn == true) {
-      return Image.asset(
-        'assets/images/pei_avatar.jpg',
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        alignment: const Alignment(0, -0.15),
       );
     }
     return Container(

@@ -13,7 +13,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(
         MaterialApp(
-          home: ChatSettingsPage(character: AiCharacter.peiJianChe()),
+          home: ChatSettingsPage(character: AiCharacter.placeholder()),
         ),
       );
 

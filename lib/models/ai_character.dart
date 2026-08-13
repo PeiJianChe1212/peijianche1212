@@ -5,14 +5,15 @@ class AiCharacter {
     required this.remark,
     required this.createdAt,
     this.avatarPath = '',
-    this.portraitPath = '',
+    String? backgroundImage,
+    String portraitPath = '',
     this.introduction = '',
     this.relationship = '',
     this.peiLinkId = '',
     this.birthday,
     this.persona = '',
     this.isBuiltIn = false,
-  });
+  }) : backgroundImage = backgroundImage ?? portraitPath;
 
   static const String defaultCharacterId = 'pei_jian_che';
 
@@ -20,7 +21,8 @@ class AiCharacter {
   final String characterName;
   final String remark;
   final String avatarPath;
-  final String portraitPath;
+  final String backgroundImage;
+  String get portraitPath => backgroundImage;
   final String introduction;
   final String relationship;
   final String peiLinkId;
@@ -29,12 +31,14 @@ class AiCharacter {
   final DateTime createdAt;
   final bool isBuiltIn;
 
-  String get displayName => remark.trim().isEmpty ? characterName : remark.trim();
+  String get displayName =>
+      remark.trim().isEmpty ? characterName : remark.trim();
 
   AiCharacter copyWith({
     String? characterName,
     String? remark,
     String? avatarPath,
+    String? backgroundImage,
     String? portraitPath,
     String? introduction,
     String? relationship,
@@ -50,7 +54,7 @@ class AiCharacter {
       characterName: characterName ?? this.characterName,
       remark: remark ?? this.remark,
       avatarPath: avatarPath ?? this.avatarPath,
-      portraitPath: portraitPath ?? this.portraitPath,
+      backgroundImage: backgroundImage ?? portraitPath ?? this.backgroundImage,
       introduction: introduction ?? this.introduction,
       relationship: relationship ?? this.relationship,
       peiLinkId: peiLinkId ?? this.peiLinkId,
@@ -66,7 +70,7 @@ class AiCharacter {
     'characterName': characterName,
     'remark': remark,
     'avatarPath': avatarPath,
-    'portraitPath': portraitPath,
+    'backgroundImage': backgroundImage,
     'introduction': introduction,
     'relationship': relationship,
     'peiLinkId': peiLinkId,
@@ -86,7 +90,11 @@ class AiCharacter {
       characterName: rawName.isEmpty ? '未命名 AI' : rawName,
       remark: json['remark']?.toString().trim() ?? '',
       avatarPath: json['avatarPath']?.toString().trim() ?? '',
-      portraitPath: json['portraitPath']?.toString().trim() ?? '',
+      backgroundImage:
+          (json['backgroundImage'] ?? json['portraitPath'])
+              ?.toString()
+              .trim() ??
+          '',
       introduction: json.containsKey('introduction')
           ? (json['introduction']?.toString().trim() ?? '')
           : '',
@@ -113,15 +121,12 @@ class AiCharacter {
     return 'peilink_${DateTime.now().millisecondsSinceEpoch}';
   }
 
-  factory AiCharacter.peiJianChe() => AiCharacter(
-    id: defaultCharacterId,
-    characterName: '裴简澈',
-    remark: '老裴',
-    introduction: '银白短发、蓝色眼睛，外冷内热，偶尔嘴硬。',
-    relationship: '恋人',
-    peiLinkId: 'peijianche1212',
-    birthday: DateTime(2000, 12, 12),
+  /// 页面初始占位角色，仅用于 State 初始化，加载真实角色后会被替换。
+  /// 不代表任何具体 AI 角色，用户版首次安装时角色数量为 0。
+  factory AiCharacter.placeholder() => AiCharacter(
+    id: '',
+    characterName: '',
+    remark: '',
     createdAt: DateTime(2024, 12, 12),
-    isBuiltIn: true,
   );
 }

@@ -59,7 +59,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _unreadCount = 0;
   int _pageIndex = 0;
   List<LifeTrace> _recentTraces = const [];
-  AiCharacter _homeCharacter = AiCharacter.peiJianChe();
+  AiCharacter _homeCharacter = AiCharacter.placeholder();
   bool _homeCharacterLoading = true;
   bool _hasVisibleCharacter = false;
 
@@ -490,7 +490,11 @@ class _EmptyCharacterDesktopPage extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF526573), Color(0xFF1A2730), Color(0xFF080D12)],
+                colors: [
+                  Color(0xFF526573),
+                  Color(0xFF1A2730),
+                  Color(0xFF080D12),
+                ],
               ),
             ),
           ),
@@ -1299,9 +1303,7 @@ class _RecentLifeWidget extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  hasCharacter
-                      ? '他的生活还没有开始记录\n等待新的故事发生'
-                      : '暂无生活记录\n等待新的故事发生',
+                  hasCharacter ? '他的生活还没有开始记录\n等待新的故事发生' : '暂无生活记录\n等待新的故事发生',
                   style: const TextStyle(
                     color: HomeVisualTokens.inkSecondary,
                     fontSize: 11,
@@ -1964,24 +1966,11 @@ class _CharacterHeroCard extends StatelessWidget {
   final VoidCallback onTap;
 
   Widget _sourceImage({required BoxFit fit, required Alignment alignment}) {
-    final portraitPath = character.portraitPath.trim();
-    final avatarPath = character.avatarPath.trim();
-    final path = portraitPath.isNotEmpty && File(portraitPath).existsSync()
-        ? portraitPath
-        : avatarPath;
+    final path = character.backgroundImage.trim();
 
     if (path.isNotEmpty && File(path).existsSync()) {
       return Image.file(
         File(path),
-        fit: fit,
-        alignment: alignment,
-        filterQuality: FilterQuality.high,
-        errorBuilder: (_, _, _) => _fallback(),
-      );
-    }
-    if (character.isBuiltIn) {
-      return Image.asset(
-        'assets/images/pei_hero_flower.jpg',
         fit: fit,
         alignment: alignment,
         filterQuality: FilterQuality.high,
@@ -2346,14 +2335,6 @@ class _CharacterAvatar extends StatelessWidget {
         File(avatarPath),
         fit: BoxFit.cover,
         alignment: Alignment.center,
-        filterQuality: FilterQuality.high,
-      );
-    }
-    if (character.isBuiltIn) {
-      return Image.asset(
-        'assets/images/pei_avatar.jpg',
-        fit: BoxFit.cover,
-        alignment: const Alignment(0, -0.12),
         filterQuality: FilterQuality.high,
       );
     }
@@ -3005,13 +2986,6 @@ class _HomeCharacterPicker extends StatelessWidget {
     final path = character.avatarPath.trim();
     if (path.isNotEmpty && File(path).existsSync()) {
       return Image.file(File(path), fit: BoxFit.cover);
-    }
-    if (character.isBuiltIn) {
-      return Image.asset(
-        'assets/images/pei_avatar.jpg',
-        fit: BoxFit.cover,
-        alignment: const Alignment(0, -0.15),
-      );
     }
     return const ColoredBox(
       color: Color(0xFFE5EBEE),

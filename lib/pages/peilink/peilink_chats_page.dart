@@ -158,12 +158,7 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
                     : _conversations.isEmpty && _groups.isEmpty
-                    ? Center(
-                        child: Text(
-                          '暂无消息',
-                          textAlign: TextAlign.center,
-                        ),
-                      )
+                    ? Center(child: Text('暂无消息', textAlign: TextAlign.center))
                     : RefreshIndicator(
                         onRefresh: _loadConversationPreviews,
                         child: ListView(
@@ -392,19 +387,6 @@ class _CharacterAvatar extends StatelessWidget {
           width: AppDimensions.avatarMedium,
           height: AppDimensions.avatarMedium,
           fit: BoxFit.cover,
-        ),
-      );
-    }
-
-    if (character.isBuiltIn) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(7),
-        child: Image.asset(
-          'assets/images/pei_avatar.jpg',
-          width: AppDimensions.avatarMedium,
-          height: AppDimensions.avatarMedium,
-          fit: BoxFit.cover,
-          alignment: const Alignment(0, -0.15),
         ),
       );
     }
@@ -658,9 +640,6 @@ class _MiniAvatar extends StatelessWidget {
     final path = character.avatarPath.trim();
     if (path.isNotEmpty && File(path).existsSync()) {
       return Image.file(File(path), fit: BoxFit.cover);
-    }
-    if (character.isBuiltIn) {
-      return Image.asset('assets/images/pei_avatar.jpg', fit: BoxFit.cover);
     }
     return Container(
       color: const Color(0xFFEDF1F3),

@@ -32,6 +32,13 @@ class CharacterProfile {
     this.relationship = '',
     this.howMet = '',
     this.currentStage = '',
+    this.backgroundStory = '',
+    this.characterRelationships = '',
+    this.interests = '',
+    this.dislikes = '',
+    this.possessions = '',
+    this.specialAbilities = '',
+    this.speakingStyle = '',
   });
 
   final String characterId;
@@ -43,6 +50,8 @@ class CharacterProfile {
   final String surfacePersonality, deepPersonality;
   final String familyBackground, upbringing, importantExperiences, worldview;
   final String relationship, howMet, currentStage;
+  final String backgroundStory, characterRelationships, interests, dislikes;
+  final String possessions, specialAbilities, speakingStyle;
 
   double get basicCompletion => _completion([
     name,
@@ -97,6 +106,13 @@ class CharacterProfile {
     'relationship': relationship,
     'howMet': howMet,
     'currentStage': currentStage,
+    'backgroundStory': backgroundStory,
+    'characterRelationships': characterRelationships,
+    'interests': interests,
+    'dislikes': dislikes,
+    'possessions': possessions,
+    'specialAbilities': specialAbilities,
+    'speakingStyle': speakingStyle,
   };
 
   factory CharacterProfile.fromJson(Map<dynamic, dynamic> json, String id) {
@@ -131,6 +147,21 @@ class CharacterProfile {
       relationship: read('relationship'),
       howMet: read('howMet'),
       currentStage: read('currentStage'),
+      backgroundStory: read('backgroundStory').isNotEmpty
+          ? read('backgroundStory')
+          : [
+              read('familyBackground'),
+              read('upbringing'),
+              read('importantExperiences'),
+            ].where((value) => value.isNotEmpty).join('\n'),
+      characterRelationships: read('characterRelationships').isNotEmpty
+          ? read('characterRelationships')
+          : read('relationship'),
+      interests: read('interests'),
+      dislikes: read('dislikes'),
+      possessions: read('possessions'),
+      specialAbilities: read('specialAbilities'),
+      speakingStyle: read('speakingStyle'),
     );
   }
 

@@ -62,14 +62,6 @@ class CharacterRegistryService {
     ]);
   }
 
-  Future<void> ensureDeveloperCharacterRegistered() async {
-    final characters = await loadAllCharacters();
-    if (characters.any((item) => item.id == AiCharacter.defaultCharacterId)) {
-      return;
-    }
-    await saveAllCharacters([AiCharacter.peiJianChe(), ...characters]);
-  }
-
   Future<void> addCharacter(AiCharacter character) async {
     final characters = await loadAllCharacters();
     final index = characters.indexWhere((item) => item.id == character.id);

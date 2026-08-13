@@ -83,6 +83,7 @@ class _InputAreaHarnessState extends State<_InputAreaHarness> {
             onInputTap: () => setState(() => expanded = false),
             onUserPersona: () {},
             onPickImage: () {},
+            onChangeAvatar: () {},
             onRedPacket: widget.onRedPacket,
             onUnavailable: (_) {},
           ),

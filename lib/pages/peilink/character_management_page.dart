@@ -23,7 +23,7 @@ class CharacterManagementPage extends StatefulWidget {
 class _CharacterManagementPageState extends State<CharacterManagementPage> {
   final CharacterRegistryService _registry = CharacterRegistryService();
 
-  AiCharacter _character = AiCharacter.peiJianChe();
+  AiCharacter _character = AiCharacter.placeholder();
   bool _loading = true;
   bool _deleting = false;
 
@@ -40,7 +40,7 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
     final characters = await _registry.loadCharacters();
     final character = characters.firstWhere(
       (item) => item.id == widget.characterId,
-      orElse: AiCharacter.peiJianChe,
+      orElse: AiCharacter.placeholder,
     );
     if (!mounted) return;
     setState(() {
@@ -115,8 +115,6 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
   }
 
   Future<void> _deleteCharacter() async {
-    if (_character.isBuiltIn) return;
-
     final firstConfirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -234,13 +232,20 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
                       children: [
                         CircleAvatar(
                           radius: 34,
+                          backgroundColor: const Color(0xFFE5EBEE),
                           backgroundImage:
                               _character.avatarPath.isNotEmpty &&
                                   File(_character.avatarPath).existsSync()
                               ? FileImage(File(_character.avatarPath))
-                              : _character.isBuiltIn
-                              ? const AssetImage('assets/images/pei_avatar.jpg')
                               : null,
+                          child:
+                              _character.avatarPath.isNotEmpty &&
+                                  File(_character.avatarPath).existsSync()
+                              ? null
+                              : const Icon(
+                                  Icons.auto_awesome_rounded,
+                                  color: Color(0xFF647C8B),
+                                ),
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -289,12 +294,10 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
                   ),
                   const SizedBox(height: 10),
                   _Tile(
-                    title: _character.isBuiltIn ? '内置角色不可删除' : '删除角色',
-                    subtitle: _character.isBuiltIn
-                        ? '裴简澈是 PeiLink 的内置角色'
-                        : '永久删除角色及其所有独立数据',
-                    destructive: !_character.isBuiltIn,
-                    enabled: !_character.isBuiltIn && !_deleting,
+                    title: '删除角色',
+                    subtitle: '永久删除角色及其所有独立数据',
+                    destructive: true,
+                    enabled: !_deleting,
                     onTap: _deleteCharacter,
                   ),
                 ],
