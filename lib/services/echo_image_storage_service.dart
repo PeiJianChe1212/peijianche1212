@@ -16,8 +16,9 @@ class EchoImageStorageService {
       throw StateError('选择的图片已经不存在。');
     }
 
-    final characterDirectory =
-        await CharacterScopeService(characterId).characterDirectory();
+    final characterDirectory = await CharacterScopeService(
+      characterId,
+    ).characterDirectory();
     final imageDirectory = Directory('${characterDirectory.path}/echo_images');
     if (!await imageDirectory.exists()) {
       await imageDirectory.create(recursive: true);
@@ -42,6 +43,17 @@ class EchoImageStorageService {
           // 图片清理失败不应阻断动态删除。
         }
       }
+    }
+  }
+
+  Future<void> clearAll({Iterable<String> knownPaths = const []}) async {
+    await deleteImages(knownPaths);
+    final characterDirectory = await CharacterScopeService(
+      characterId,
+    ).characterDirectory();
+    final imageDirectory = Directory('${characterDirectory.path}/echo_images');
+    if (await imageDirectory.exists()) {
+      await imageDirectory.delete(recursive: true);
     }
   }
 

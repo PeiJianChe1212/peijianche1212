@@ -13,7 +13,9 @@ import '../services/memory_storage_service.dart';
 import 'memory_review_page.dart';
 
 class MemoryPage extends StatefulWidget {
-  const MemoryPage({super.key});
+  const MemoryPage({super.key, required this.characterId});
+
+  final String characterId;
 
   @override
   State<MemoryPage> createState() => _MemoryPageState();
@@ -34,10 +36,10 @@ class _MemoryPageState extends State<MemoryPage> {
     '收藏回复',
   ];
 
-  final MemoryStorageService _storage = MemoryStorageService();
-  final MemoryReviewService _reviewStorage = MemoryReviewService();
+  late final MemoryStorageService _storage;
+  late final MemoryReviewService _reviewStorage;
   final TextEditingController _searchController = TextEditingController();
-  final ChatStorageService _chatStorage = ChatStorageService();
+  late final ChatStorageService _chatStorage;
   final DeepSeekService _deepSeekService = DeepSeekService();
 
   List<MemoryItem> _items = [];
@@ -52,6 +54,9 @@ class _MemoryPageState extends State<MemoryPage> {
   @override
   void initState() {
     super.initState();
+    _storage = MemoryStorageService(characterId: widget.characterId);
+    _reviewStorage = MemoryReviewService(characterId: widget.characterId);
+    _chatStorage = ChatStorageService(characterId: widget.characterId);
     _load();
   }
 
@@ -110,6 +115,7 @@ class _MemoryPageState extends State<MemoryPage> {
     try {
       final candidates = await _deepSeekService.extractMemories(
         messages: List<ChatMessage>.from(messages),
+        characterId: widget.characterId,
       );
       final added = await _reviewStorage.addCandidates(candidates);
       await _load();
@@ -125,7 +131,8 @@ class _MemoryPageState extends State<MemoryPage> {
     } on SocketException {
       _showSnack('当前无法连接网络');
     } catch (error) {
-      _showSnack('记忆分析失败：$error');
+      debugPrint('记忆分析失败：$error');
+      _showSnack('记忆分析失败，请稍后再试');
     } finally {
       if (mounted) setState(() => _isAnalyzing = false);
     }
@@ -228,66 +235,26 @@ class _MemoryPageState extends State<MemoryPage> {
       _items.where((item) => item.isArchived == _showArchived).length;
 
   Future<void> _openReview() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const MemoryReviewPage()));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MemoryReviewPage(characterId: widget.characterId),
+      ),
+    );
     await _load();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
+      value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: const Color(0xFF10151D),
+        backgroundColor: const Color(0xFFF7F4FA),
         appBar: AppBar(
           backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
-          title: const Text('裴简澈的记忆'),
+          centerTitle: true,
+          title: const Text('Memory'),
           actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 2),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  IconButton(
-                    tooltip: '待审核记忆',
-                    onPressed: _openReview,
-                    icon: const Icon(Icons.inbox_outlined),
-                  ),
-                  if (_pendingCount > 0)
-                    Positioned(
-                      right: 3,
-                      top: 3,
-                      child: Container(
-                        constraints: const BoxConstraints(
-                          minWidth: 18,
-                          minHeight: 18,
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFD86B7E),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: const Color(0xFF10151D),
-                            width: 1.5,
-                          ),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _pendingCount > 99 ? '99+' : '$_pendingCount',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
             PopupMenuButton<_MemorySort>(
               tooltip: '排序',
               initialValue: _sort,
@@ -317,112 +284,105 @@ class _MemoryPageState extends State<MemoryPage> {
           onPressed: () => _openEditor(initialCategory: _selectedCategory),
           icon: const Icon(Icons.add_rounded),
           label: const Text('新增记忆'),
+          backgroundColor: const Color(0xFFE7E2FF),
+          foregroundColor: const Color(0xFF5E55A0),
         ),
-        body: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF273748), Color(0xFF151D27), Color(0xFF090D13)],
-            ),
-          ),
-          child: SafeArea(
-            top: false,
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                    children: [
-                      _MemoryIntro(
-                        showArchived: _showArchived,
-                        count: _currentMemoryCount,
-                        pendingCount: _pendingCount,
-                      ),
-                      const SizedBox(height: 14),
-
-                      Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.psychology_alt_outlined),
-                          title: Text(_isAnalyzing ? '正在分析记忆…' : '分析当前聊天'),
-                          subtitle: const Text('提取候选记忆，送入待审核列表'),
-                          onTap: _isAnalyzing ? null : _analyzeMemory,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _searchController,
-                        onChanged: (value) => setState(() => _query = value),
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: '搜索记忆，例如：历史、旅行、害怕……',
-                          hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.42),
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.search_rounded,
-                            color: Colors.white60,
-                          ),
-                          suffixIcon: _query.isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _query = '');
-                                  },
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    color: Colors.white60,
-                                  ),
-                                ),
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.08),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _CategoryChip(
-                              label: '全部',
-                              selected: _selectedCategory == null,
-                              onTap: () =>
-                                  setState(() => _selectedCategory = null),
-                            ),
-                            for (final category in _categories)
-                              _CategoryChip(
-                                label: category,
-                                selected: _selectedCategory == category,
-                                onTap: () => setState(
-                                  () => _selectedCategory = category,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      for (final category in _visibleCategories) ...[
-                        _MemorySection(
-                          title: category,
-                          items: _visibleItemsFor(category),
-                          onAdd: () => _openEditor(initialCategory: category),
-                          onEdit: (item) => _openEditor(item: item),
-                          onPin: _togglePinned,
-                          onArchive: _toggleArchived,
-                          onDelete: _delete,
-                          showArchived: _showArchived,
-                          isSearching: _query.trim().isNotEmpty,
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                    ],
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(16, 2, 16, 100),
+                children: [
+                  const Center(
+                    child: Text(
+                      '让角色记住真正重要的事',
+                      style: TextStyle(color: Color(0xFF938C9E), fontSize: 13),
+                    ),
                   ),
-          ),
-        ),
+                  const SizedBox(height: 18),
+                  _MemoryIntro(
+                    showArchived: _showArchived,
+                    count: _currentMemoryCount,
+                    pendingCount: _pendingCount,
+                    onPendingTap: _openReview,
+                  ),
+                  const SizedBox(height: 14),
+                  Material(
+                    color: const Color(0xFFF0EDFF),
+                    borderRadius: BorderRadius.circular(18),
+                    child: ListTile(
+                      leading: const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: Color(0xFF7669CC),
+                      ),
+                      title: Text(_isAnalyzing ? '正在整理记忆…' : '从当前聊天整理记忆'),
+                      subtitle: const Text('从最近聊天中发现值得长期记住的内容'),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: _isAnalyzing ? null : _analyzeMemory,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _query = value),
+                    decoration: InputDecoration(
+                      hintText: '搜索记忆内容……',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _query = '');
+                              },
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.78),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _CategoryChip(
+                          label: '全部',
+                          selected: _selectedCategory == null,
+                          onTap: () => setState(() => _selectedCategory = null),
+                        ),
+                        for (final category in _categories)
+                          _CategoryChip(
+                            label: category,
+                            selected: _selectedCategory == category,
+                            onTap: () =>
+                                setState(() => _selectedCategory = category),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  for (final category in _visibleCategories) ...[
+                    _MemorySection(
+                      title: category,
+                      items: _visibleItemsFor(category),
+                      onAdd: () => _openEditor(initialCategory: category),
+                      onEdit: (item) => _openEditor(item: item),
+                      onPin: _togglePinned,
+                      onArchive: _toggleArchived,
+                      onDelete: _delete,
+                      showArchived: _showArchived,
+                      isSearching: _query.trim().isNotEmpty,
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                ],
+              ),
       ),
     );
   }
@@ -433,64 +393,83 @@ class _MemoryIntro extends StatelessWidget {
     required this.showArchived,
     required this.count,
     required this.pendingCount,
+    required this.onPendingTap,
   });
 
   final bool showArchived;
   final int count;
   final int pendingCount;
+  final VoidCallback onPendingTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _CountPill(label: showArchived ? '已归档' : '长期记忆', count: count),
-              const SizedBox(width: 8),
-              _CountPill(label: '待审核', count: pendingCount),
-            ],
+    return Row(
+      children: [
+        Expanded(
+          child: _CountPill(label: showArchived ? '已归档' : '长期记忆', count: count),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _CountPill(
+            label: '待审核',
+            count: pendingCount,
+            onTap: onPendingTap,
           ),
-          const SizedBox(height: 12),
-          Text(
-            showArchived
-                ? '这里放暂时不参与聊天的旧记忆。需要时可以随时恢复。'
-                : 'AI 只会读取未归档的记忆。你可以搜索、筛选、编辑和归档，记忆不会偷偷越长越胖。',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.72),
-              height: 1.55,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
 class _CountPill extends StatelessWidget {
-  const _CountPill({required this.label, required this.count});
+  const _CountPill({required this.label, required this.count, this.onTap});
 
   final String label;
   final int count;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$label $count',
-        style: const TextStyle(color: Colors.white70, fontSize: 12),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              label == '待审核'
+                  ? Icons.fact_check_outlined
+                  : Icons.bookmarks_outlined,
+              color: const Color(0xFF776BC8),
+            ),
+            const SizedBox(width: 11),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF746E7C),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '$count 条',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -517,12 +496,12 @@ class _CategoryChip extends StatelessWidget {
         onSelected: (_) => onTap(),
         showCheckmark: false,
         labelStyle: TextStyle(
-          color: selected ? const Color(0xFF17202B) : Colors.white70,
+          color: selected ? Colors.white : const Color(0xFF716B79),
           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
         ),
-        selectedColor: const Color(0xFFE7D7DE),
-        backgroundColor: Colors.white.withValues(alpha: 0.08),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        selectedColor: const Color(0xFF8072D1),
+        backgroundColor: Colors.white.withValues(alpha: 0.76),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.9)),
       ),
     );
   }
@@ -553,67 +532,58 @@ class _MemorySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.075),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-      ),
-      child: Column(
-        children: [
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(17, 13, 8, 9),
+          child: Row(
+            children: [
+              Text(
+                '$title · ${items.length}',
+                style: const TextStyle(
+                  color: Color(0xFF332F3B),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: '添加到$title',
+                onPressed: onAdd,
+                icon: const Icon(Icons.add_rounded, color: Color(0xFF756AC1)),
+              ),
+            ],
+          ),
+        ),
+        if (items.isEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(17, 13, 8, 9),
-            child: Row(
-              children: [
-                Text(
-                  '$title  ${items.length}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '添加到$title',
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add_rounded, color: Colors.white70),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(17, 0, 17, 18),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                isSearching
+                    ? '没有找到匹配的记忆。'
+                    : showArchived
+                    ? '这里还没有归档内容。'
+                    : '还没有记录',
+                style: TextStyle(color: const Color(0xFFA09AA6), fontSize: 13),
+              ),
+            ),
+          )
+        else
+          ...items.map(
+            (item) => _MemoryTile(
+              item: item,
+              onEdit: () => onEdit(item),
+              onPin: () => onPin(item),
+              onArchive: () => onArchive(item),
+              onDelete: () => onDelete(item),
+              showArchived: showArchived,
             ),
           ),
-          if (items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(17, 0, 17, 18),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  isSearching
-                      ? '没有找到匹配的记忆。'
-                      : showArchived
-                      ? '这里还没有归档内容。'
-                      : '还没有内容，点右上角的＋添加。',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.42),
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            )
-          else
-            ...items.map(
-              (item) => _MemoryTile(
-                item: item,
-                onEdit: () => onEdit(item),
-                onPin: () => onPin(item),
-                onArchive: () => onArchive(item),
-                onDelete: () => onDelete(item),
-                showArchived: showArchived,
-              ),
-            ),
-          const SizedBox(height: 7),
-        ],
-      ),
+        const SizedBox(height: 7),
+        const Divider(height: 1, color: Color(0xFFE8E3EC)),
+      ],
     );
   }
 }
@@ -639,9 +609,9 @@ class _MemoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-      padding: const EdgeInsets.fromLTRB(14, 13, 8, 13),
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 10),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.18),
+        color: Colors.white.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(17),
       ),
       child: Row(
@@ -653,21 +623,34 @@ class _MemoryTile extends StatelessWidget {
               child: Icon(
                 Icons.push_pin_rounded,
                 size: 16,
-                color: Color(0xFFD9B7C6),
+                color: Color(0xFF8175CB),
               ),
             ),
           Expanded(
-            child: Text(
-              item.content,
-              style: const TextStyle(
-                color: Colors.white,
-                height: 1.5,
-                fontSize: 14,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.content,
+                  style: const TextStyle(
+                    color: Color(0xFF38333E),
+                    height: 1.5,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _memoryDateLabel(item.createdAt),
+                  style: const TextStyle(
+                    color: Color(0xFFA29CA8),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ),
           ),
           PopupMenuButton<String>(
-            iconColor: Colors.white60,
+            iconColor: const Color(0xFF8E8795),
             onSelected: (value) {
               switch (value) {
                 case 'edit':
@@ -705,6 +688,10 @@ class _MemoryTile extends StatelessWidget {
     );
   }
 }
+
+String _memoryDateLabel(DateTime value) =>
+    '${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} '
+    '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
 class _MemoryEditorDialog extends StatefulWidget {
   const _MemoryEditorDialog({

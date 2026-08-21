@@ -144,14 +144,23 @@ class EchoItem {
 
   factory EchoItem.fromJson(Map<dynamic, dynamic> json) {
     final rawImages = json['imagePaths'];
+    final legacyImagePath = json['imagePath']?.toString().trim() ?? '';
+    final parsedImagePaths = rawImages is List
+        ? rawImages
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList()
+        : <String>[];
+    if (legacyImagePath.isNotEmpty &&
+        !parsedImagePaths.contains(legacyImagePath)) {
+      parsedImagePaths.add(legacyImagePath);
+    }
     final rawComments = json['comments'];
     return EchoItem(
       id: json['id']?.toString() ?? '',
       characterId: json['characterId']?.toString() ?? '',
       content: json['content']?.toString() ?? '',
-      imagePaths: rawImages is List
-          ? rawImages.map((item) => item.toString()).toList()
-          : const [],
+      imagePaths: parsedImagePaths,
       createdAt:
           DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.now(),
@@ -175,7 +184,7 @@ class EchoItem {
           : const [],
       imagePrompt: json['imagePrompt']?.toString() ?? '',
       imageStatus: json['imageStatus']?.toString() ?? 'none',
-      imagePath: json['imagePath']?.toString() ?? '',
+      imagePath: legacyImagePath,
       sourceLifeEventId: json['sourceLifeEventId']?.toString() ?? '',
       sourceSharedExperienceId:
           json['sourceSharedExperienceId']?.toString() ?? '',

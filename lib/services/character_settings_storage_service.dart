@@ -132,8 +132,13 @@ class CharacterSettingsStorageService {
 
       String readMode() {
         final value = decoded['conversationMode']?.toString();
-        return const {'basic', 'heart', 'delicate', 'long', 'deep'}
-                .contains(value)
+        return const {
+              'basic',
+              'heart',
+              'delicate',
+              'long',
+              'deep',
+            }.contains(value)
             ? value!
             : defaults.conversationMode;
       }

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 
 import '../ai/model_hub.dart';
@@ -11,13 +9,12 @@ import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'echo_storage_service.dart';
 import 'context_builder.dart';
+import 'structured_model_output_exception.dart';
 
 class MomentEngineService {
-  MomentEngineService({
-    required this.character,
-    http.Client? client,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null {
+  MomentEngineService({required this.character, http.Client? client})
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null {
     _modelHub = ModelHub(client: _client);
   }
 
@@ -56,28 +53,27 @@ class MomentEngineService {
           'content': ContextBuilder.build(
             task: ContextTask.momentSelection,
             settings: settings,
-            taskRules: _buildPrompt(
-            settings: settings,
-            candidates: candidates,
-            echoes: echoes.take(12).toList(),
-            manualRequest: manualRequest,
-          ),
+            taskRules: buildPrompt(
+              settings: settings,
+              candidates: candidates,
+              echoes: echoes.take(12).toList(),
+              manualRequest: manualRequest,
+            ),
           ),
         },
-        {
-          'role': 'user',
-          'content': '判断这些生活片段中是否存在值得发布到 Echo 的瞬间。只返回 JSON。',
-        },
+        {'role': 'user', 'content': '判断这些生活片段中是否存在值得发布到 Echo 的瞬间。只返回 JSON。'},
       ],
       temperature: 0.42,
       maxTokens: 520,
       topP: 0.82,
+      acceptStructuredReasoningFallback: true,
     );
 
     final decoded = _decodeObject(raw);
-    final index = _readInt(decoded['selectedIndex'], 0)
-        .clamp(0, candidates.length - 1)
-        .toInt();
+    final index = _readInt(
+      decoded['selectedIndex'],
+      0,
+    ).clamp(0, candidates.length - 1).toInt();
     final score = _readDouble(decoded['score'], 0).clamp(0, 100).toDouble();
     final modelShouldShare = decoded['shouldShare'] == true;
     final shouldShare = manualRequest
@@ -93,15 +89,18 @@ class MomentEngineService {
     );
   }
 
-  String _buildPrompt({
+  String buildPrompt({
     required CharacterSettings settings,
     required List<LifeMomentCandidate> candidates,
     required List<EchoItem> echoes,
     required bool manualRequest,
   }) {
-    final candidateText = candidates.asMap().entries.map((entry) {
-      final item = entry.value;
-      return '''
+    final candidateText = candidates
+        .asMap()
+        .entries
+        .map((entry) {
+          final item = entry.value;
+          return '''
 [${entry.key}]
 场景：${item.scene}
 事件：${item.event}
@@ -109,14 +108,15 @@ class MomentEngineService {
 感受：${item.feeling}
 分享钩子：${item.shareHook}
 ''';
-    }).join('\n');
+        })
+        .join('\n');
 
     final echoText = echoes.isEmpty
         ? '无。'
         : echoes.map((item) => '- ${_truncate(item.content, 180)}').join('\n');
 
     return '''
-你是 PeiLink 的 Moment Engine。你不是负责凑更新频率，而是判断生活里有没有“值得分享的瞬间”。
+你是 PeiLink 的 Moment Engine。你只判断角色是否可能自然地把某个已发生片段发到 Echo，不负责规定正文文风。
 
 【候选片段】
 $candidateText
@@ -125,22 +125,12 @@ $candidateText
 $echoText
 
 【判断标准】
-高分瞬间通常至少具备两项：
-- 一个只有亲历者才会注意到的具体细节；
-- 轻微反差、意外、糗事、发现或情绪余味；
-- 能体现角色本人的目光和性格；
-- 即使不了解前文，也能单独成立；
-- 与最近 Echo 不重复；
-- 读完会让人觉得“这件小事确实值得他记一下”。
+- 普通状态、吃喝、天气感受、工作摸鱼、吐槽、购物、情绪或一句突然想到的话，都可能成为自然 Echo；不要求值得纪念。
+- 具体细节、反差、发现或情绪余味可以提高分享意愿，但都不是必须条件，也不要求形成完整故事。
+- 优先选择角色此刻确实可能想说、脱离聊天也能成立，并且与最近 Echo 不重复的片段。
+- 不选择尚未发生的安排、纯粹照搬近期聊天、没有任何已发生事实依据或明显重复的内容。
 
-低分内容包括：
-- 单纯报时、报行程、报状态；
-- “今天上班了”“吃饭了”“下班了”“有点累”；
-- 空泛抒情、万能鸡汤、强行浪漫；
-- 只是把近期聊天换一种说法；
-- 为了发而发，没有具体细节。
-
-${manualRequest ? '当前是用户主动点击生成草稿，可以适当放宽，但仍要选出最有记忆点的一条。' : '当前是自动判断。宁可不发，也不要拿普通日程凑数。'}
+${manualRequest ? '当前是用户主动点击生成草稿；从已有片段中选择一条自然可发的内容即可。' : '当前是自动判断；可以不发，但不要仅因为事情普通或正文可能很短就判定不值得。'}
 
 只返回 JSON：
 {
@@ -165,7 +155,7 @@ ${manualRequest ? '当前是用户主动点击生成草稿，可以适当放宽�
     if (start >= 0 && end > start) {
       value = value.substring(start, end + 1);
     }
-    final decoded = jsonDecode(value);
+    final decoded = decodeStructuredModelJson(value, stage: 'Moment Engine');
     if (decoded is! Map) {
       throw const FormatException('Moment Engine 返回格式不正确。');
     }

@@ -27,7 +27,7 @@ class ApiSettingsStorageService {
   Future<ApiSettings> loadSettings() async {
     final values = await _storage.readAll();
     return ApiSettings(
-      provider: values[_key(_providerKey)] ?? 'DeepSeek',
+      provider: AIProviderDetails.fromStored(values[_key(_providerKey)]),
       apiKey: values[_key(_apiKeyKey)] ?? '',
       baseUrl:
           values[_key(_baseUrlKey)] ??
@@ -48,7 +48,7 @@ class ApiSettingsStorageService {
 
   Future<void> saveSettings(ApiSettings settings) async {
     await Future.wait([
-      _storage.write(key: _key(_providerKey), value: settings.provider.trim()),
+      _storage.write(key: _key(_providerKey), value: settings.provider.name),
       _storage.write(key: _key(_apiKeyKey), value: settings.apiKey.trim()),
       _storage.write(key: _key(_baseUrlKey), value: settings.baseUrl.trim()),
       _storage.write(key: _key(_modelKey), value: settings.model.trim()),
@@ -76,6 +76,17 @@ class ApiSettingsStorageService {
         key: _key(_imageModelKey),
         value: settings.imageModel.trim(),
       ),
+    ]);
+  }
+
+  /// Persists only the active chat capability. Legacy Vision/Image fields are
+  /// intentionally left untouched during Chat capability auto-save.
+  Future<void> saveChatSettings(ApiSettings settings) async {
+    await Future.wait([
+      _storage.write(key: _key(_providerKey), value: settings.provider.name),
+      _storage.write(key: _key(_apiKeyKey), value: settings.apiKey.trim()),
+      _storage.write(key: _key(_baseUrlKey), value: settings.baseUrl.trim()),
+      _storage.write(key: _key(_modelKey), value: settings.model.trim()),
     ]);
   }
 

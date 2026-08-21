@@ -30,7 +30,9 @@ class EchoSocialInteractionService {
         .ensureForCharacters(characters);
     final author = _findCharacter(characters, echo.characterId);
     final seed = _hash('${echo.id}|${echo.content}');
-    final target = 3 + seed % 6;
+    // Immediate activity only prevents every new Echo from looking uniformly
+    // empty. Rich, character-specific interaction belongs to the delayed path.
+    final target = immediateTargetFor(echo);
     final desiredCharacters = (target * .4).round();
     final generated = <EchoComment>[];
     final usedStyles = existing
@@ -118,6 +120,9 @@ class EchoSocialInteractionService {
     await AutoEchoCommentService().scheduleForEcho(echo, now: time);
   }
 
+  int immediateTargetFor(EchoItem echo) =>
+      _hash('${echo.id}|${echo.content}') % 3;
+
   EchoComment _characterComment(
     EchoItem echo,
     _CharacterCandidate candidate,
@@ -164,7 +169,24 @@ class EchoSocialInteractionService {
     EchoCommentStyle style,
     List<String> existingContents,
   ) {
-    const names = ['青屿', '晚风来信', '南枝', '山茶', '一页', '路过人间', '小满', '木槿'];
+    const names = [
+      '青屿',
+      '晚风来信',
+      '南枝',
+      '山茶',
+      '一页',
+      '路过人间',
+      '小满',
+      '木槿',
+      '云边',
+      '白露',
+      '拾光',
+      '春深',
+      '听海',
+      '半夏',
+      '小岛日记',
+      '星野',
+    ];
     final slot = (seed + index * 7).abs();
     final content = _diversity.createTemplate(
       echo: echo,

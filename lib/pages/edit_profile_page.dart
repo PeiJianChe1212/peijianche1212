@@ -79,12 +79,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
       await _storage.saveProfile(profile);
       if (!mounted) return;
       Navigator.pop(context, profile);
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('保存资料失败：$error')));
+      ).showSnackBar(const SnackBar(content: Text('保存资料失败，请稍后再试')));
     }
   }
 

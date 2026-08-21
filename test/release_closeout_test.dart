@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peijianche_app/config/peilink_runtime.dart';
 import 'package:peijianche_app/pages/environment_bootstrap_page.dart';
-import 'package:peijianche_app/pages/feedback_page.dart';
 import 'package:peijianche_app/pages/home_page.dart';
 import 'package:peijianche_app/pages/settings_page.dart';
 import 'package:peijianche_app/services/feedback_submission_service.dart';
@@ -64,22 +63,14 @@ void main() {
     expect(find.byType(HomePage), findsOneWidget);
   });
 
-  testWidgets('settings exposes feedback and no developer entry', (
+  testWidgets('settings exposes questionnaire and no legacy help entry', (
     tester,
   ) async {
     await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
-    expect(find.text('帮助与反馈'), findsOneWidget);
+    expect(find.text('帮助与反馈'), findsNothing);
+    expect(find.text('反馈与建议'), findsOneWidget);
+    expect(find.text('前往腾讯问卷提交反馈'), findsOneWidget);
     expect(find.text('开发者与测试环境'), findsNothing);
-
-    await tester.tap(find.text('帮助与反馈'));
-    await tester.pumpAndSettle();
-    expect(find.byType(FeedbackPage), findsOneWidget);
-    expect(find.text('Bug反馈'), findsOneWidget);
-    await tester.tap(find.text('Bug反馈'));
-    await tester.pumpAndSettle();
-    expect(find.text('功能建议'), findsOneWidget);
-    expect(find.text('体验问题'), findsOneWidget);
-    expect(find.text('其他'), findsOneWidget);
   });
 
   test(

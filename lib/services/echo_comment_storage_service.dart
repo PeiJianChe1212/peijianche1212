@@ -5,7 +5,7 @@ import 'character_scope_service.dart';
 
 class EchoCommentStorageService {
   EchoCommentStorageService({required String ownerId})
-      : _scope = CharacterScopeService(ownerId);
+    : _scope = CharacterScopeService(ownerId);
 
   static const String _fileName = 'echo_comments.json';
   final CharacterScopeService _scope;
@@ -96,8 +96,8 @@ class EchoCommentStorageService {
 
   Future<void> deleteForEcho(String echoId) async {
     final comments = await loadAll();
-    await saveAll(
-      comments.where((item) => item.echoId != echoId).toList(),
-    );
+    await saveAll(comments.where((item) => item.echoId != echoId).toList());
   }
+
+  Future<void> clear() => saveAll(const []);
 }

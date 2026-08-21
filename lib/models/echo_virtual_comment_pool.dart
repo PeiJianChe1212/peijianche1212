@@ -15,6 +15,7 @@ class EchoVirtualCommentTemplate {
 }
 
 /// 受控评论池结构。当前阶段只预留模板，不自动挑选或发布。
+@Deprecated('Use EchoSocialInteractionService for immediate resident comments.')
 class EchoVirtualCommentPool {
   const EchoVirtualCommentPool._();
 

@@ -49,6 +49,25 @@ void main() {
     expect(life.content, isNotEmpty);
   });
 
+  test('different characters receive component-based arrival wording', () {
+    final at = DateTime(2026, 8, 21, 20);
+    EchoDailyLife life(String id) => const EchoDailyLifeService().create(
+      character: AiCharacter(
+        id: id,
+        characterName: id,
+        remark: '',
+        createdAt: at,
+      ),
+      at: at,
+      initial: true,
+    );
+    expect(
+      life('arrival-role-a').content,
+      isNot(life('arrival-role-b').content),
+    );
+    expect(life('arrival-role-a').sourceEvent, 'character_arrival');
+  });
+
   test('each character uses its own deterministic daily-life sequence', () {
     final at = DateTime(2026, 8, 2);
     EchoDailyLife life(String id) => const EchoDailyLifeService().create(

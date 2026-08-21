@@ -8,6 +8,8 @@ enum PromptContextType {
   event,
   chatFlow,
   personalityStyle,
+  conversationSpec,
+  providerAdapter,
   replyStrategy,
   extension,
 }
@@ -22,6 +24,8 @@ abstract final class PromptContextPriority {
   static const int event = 475;
   static const int chatFlow = 500;
   static const int personalityStyle = 600;
+  static const int conversationSpec = 640;
+  static const int providerAdapter = 660;
   static const int replyStrategy = 700;
 }
 
@@ -73,6 +77,20 @@ class PromptContext {
     type: PromptContextType.replyStrategy,
     content: content,
     priority: PromptContextPriority.replyStrategy,
+  );
+
+  factory PromptContext.conversationSpec(String content) => PromptContext(
+    id: 'peilink_conversation_spec',
+    type: PromptContextType.conversationSpec,
+    content: content,
+    priority: PromptContextPriority.conversationSpec,
+  );
+
+  factory PromptContext.providerAdapter(String content) => PromptContext(
+    id: 'conversation_provider_adapter',
+    type: PromptContextType.providerAdapter,
+    content: content,
+    priority: PromptContextPriority.providerAdapter,
   );
 
   /// Relationship Engine、Life Event、Echo、World Timeline、Group Context

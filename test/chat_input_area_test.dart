@@ -17,16 +17,16 @@ void main() {
     await tester.tap(find.byTooltip('更多功能'));
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.redeem_outlined), findsOneWidget);
+    expect(find.text('红包'), findsOneWidget);
     expect(tester.getTopLeft(find.byType(TextField)).dy, lessThan(initialY));
 
-    await tester.tap(find.byIcon(Icons.redeem_outlined));
+    await tester.tap(find.text('红包'));
     expect(redPacketOpened, isTrue);
-    expect(find.byIcon(Icons.redeem_outlined), findsOneWidget);
+    expect(find.text('红包'), findsOneWidget);
 
     await tester.tap(find.byTooltip('收起功能栏'));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.redeem_outlined), findsNothing);
+    expect(find.text('红包'), findsNothing);
   });
 
   testWidgets('tapping the input closes the inline panel', (tester) async {
@@ -39,7 +39,7 @@ void main() {
     await tester.tap(find.byType(TextField));
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.redeem_outlined), findsNothing);
+    expect(find.text('红包'), findsNothing);
   });
 }
 

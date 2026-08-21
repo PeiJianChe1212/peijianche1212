@@ -122,6 +122,18 @@ $lines
 ''';
   }
 
+  /// V2 Facts 专用：只列出已确认事件，不附加如何回复的规则。
+  Future<String> buildFactsSection(String characterId, {int limit = 6}) async {
+    final records = await loadRecentForCharacter(
+      characterId,
+      limit: limit,
+      maxAge: const Duration(days: 7),
+    );
+    if (records.isEmpty) return '';
+    return '【Character Facts｜共享世界已确认经历】\n'
+        '${records.map(_formatRecord).join('\n')}';
+  }
+
   Future<String> buildLifeEngineSection(
     String characterId, {
     int limit = 8,

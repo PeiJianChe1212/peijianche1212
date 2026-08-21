@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../config/peilink_runtime.dart';
+import 'peilink/prompt_test_mode_page.dart';
 import 'api_settings_page.dart';
-import 'feedback_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -78,31 +79,35 @@ class SettingsPage extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const ApiSettingsPage()),
                   ),
                 ),
-                const Divider(height: 1, indent: 68),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
+                if (PeiLinkRuntime.developerToolsEnabled) ...[
+                  const Divider(height: 1, indent: 68),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    leading: const _SettingsIcon(
+                      icon: Icons.science_outlined,
+                      color: Color(0xFF7459D9),
+                      background: Color(0xFFF0ECFF),
+                    ),
+                    title: const Text(
+                      'Prompt 测试模式',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: const Text('纯人设、极简规则与完整框架对比'),
+                    trailing: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Colors.black38,
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PromptTestModePage(),
+                      ),
+                    ),
                   ),
-                  leading: const _SettingsIcon(
-                    icon: Icons.help_outline_rounded,
-                    color: Color(0xFF6F78B7),
-                    background: Color(0xFFEDF0FA),
-                  ),
-                  title: const Text(
-                    '帮助与反馈',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: const Text('Bug、建议与体验问题'),
-                  trailing: const Icon(
-                    Icons.chevron_right_rounded,
-                    color: Colors.black38,
-                  ),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const FeedbackPage()),
-                  ),
-                ),
+                ],
                 const Divider(height: 1, indent: 68),
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(

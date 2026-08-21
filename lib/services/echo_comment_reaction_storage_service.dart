@@ -38,4 +38,9 @@ class EchoCommentReactionStorageService {
     await file.writeAsString(jsonEncode(likes), flush: true);
     return likes;
   }
+
+  Future<void> clear() async {
+    final file = await _scope.dataFile(_fileName);
+    if (await file.exists()) await file.delete();
+  }
 }

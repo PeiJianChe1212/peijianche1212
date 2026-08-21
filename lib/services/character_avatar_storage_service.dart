@@ -38,6 +38,38 @@ class CharacterAvatarStorageService {
     return target.path;
   }
 
+  Future<String> savePendingAvatarBytes({
+    required String characterId,
+    required Uint8List bytes,
+  }) async {
+    final directory = await CharacterScopeService(
+      characterId,
+    ).avatarDirectory();
+    final target = File('${directory.path}/pending_avatar.png');
+    await target.writeAsBytes(bytes, flush: true);
+    return target.path;
+  }
+
+  Future<String> acceptPendingAvatar({required String characterId}) async {
+    final directory = await CharacterScopeService(
+      characterId,
+    ).avatarDirectory();
+    final pending = File('${directory.path}/pending_avatar.png');
+    if (!await pending.exists()) throw StateError('待确认头像不存在。');
+    final bytes = await pending.readAsBytes();
+    final path = await saveAvatarBytes(characterId: characterId, bytes: bytes);
+    await pending.delete();
+    return path;
+  }
+
+  Future<void> clearPendingAvatar(String characterId) async {
+    final directory = await CharacterScopeService(
+      characterId,
+    ).avatarDirectory();
+    final pending = File('${directory.path}/pending_avatar.png');
+    if (await pending.exists()) await pending.delete();
+  }
+
   Future<String> savePortrait({
     required String characterId,
     required String sourcePath,

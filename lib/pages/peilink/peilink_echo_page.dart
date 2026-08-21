@@ -20,6 +20,9 @@ import '../../services/character_registry_service.dart';
 import '../../services/character_settings_storage_service.dart';
 import '../../services/chat_storage_service.dart';
 import '../../services/echo_image_storage_service.dart';
+import '../../services/echo_album_service.dart';
+import '../../services/echo_comment_preview_service.dart';
+import '../../services/echo_comment_author_service.dart';
 import '../../services/echo_interaction_stats_service.dart';
 import '../../services/echo_profile_storage_service.dart';
 import '../../services/echo_space_decoration_storage_service.dart';
@@ -33,7 +36,6 @@ import '../../theme/app_theme_background.dart';
 import '../../widgets/echo/echo_interaction_bar.dart';
 import '../../widgets/echo/echo_space_overview.dart';
 import '../../widgets/echo/ai_verified_badge.dart';
-import '../../widgets/echo/echo_recent_visitors_strip.dart';
 import '../../widgets/echo/echo_visitor_card.dart';
 import 'echo_compose_page.dart';
 import 'echo_cover_editor_page.dart';
@@ -101,16 +103,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       ? _userProfile.nickname
       : (_spaceCharacter?.characterName ?? '角色空间');
   String get _signature {
-    if (_isUserPage) {
-      final signature = _userProfile.signature.trim();
-      return signature.isEmpty ? '这里记录我的生活。' : signature;
-    }
-    final character = _spaceCharacter;
-    if (character == null) return '';
-    final introduction = character.introduction.trim();
-    return introduction.isEmpty
-        ? '这里记录 ${character.characterName} 的生活。'
-        : introduction;
+    return echoSignatureText(_echoProfile);
   }
 
   @override
@@ -143,10 +136,13 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
 
       List<EchoItem> items;
       if (_isPublicTimeline) {
-        final ownerIds = <String>[
+        final storedOwnerIds =
+            await EchoStorageService.discoverStoredOwnerIds();
+        final ownerIds = <String>{
           _userEchoId,
           ...characters.map((item) => item.id),
-        ];
+          ...storedOwnerIds,
+        };
         final timelines = await Future.wait(
           ownerIds.map((id) => EchoStorageService(characterId: id).loadItems()),
         );
@@ -209,7 +205,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
 
       var interactionStats = <String, EchoInteractionStats>{};
       var visitors = <EchoVisitorRecord>[];
-      if (_isCharacterSpace) {
+      if (!_isPublicTimeline) {
         final settingsRelation = characterSettings?.relation.trim() ?? '';
         final relation = settingsRelation.isNotEmpty
             ? settingsRelation
@@ -217,24 +213,28 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         interactionStats = await EchoInteractionStatsService(
           ownerId: ownerId,
         ).loadOrCreate(items, hasRelationship: relation.isNotEmpty);
-        visitors = await EchoVisitorStorageService(ownerId: ownerId)
-            .recordDailyVisit(
-              visitorId: _userEchoId,
-              visitorName: userProfile.nickname,
-              visitorAvatarPath: userProfile.avatarPath,
-            );
-        visitors = await const EchoVisitorSocialService().synchronize(
-          owner: character,
-          characters: characters,
-        );
-        growthProfile =
-            await RelationshipGrowthService(
-              characterId: character.id,
-            ).synchronize(
-              messages: chatMessages,
-              echoes: items,
-              metAt: character.createdAt,
-            );
+        if (_isCharacterSpace) {
+          visitors = await EchoVisitorStorageService(ownerId: ownerId)
+              .recordDailyVisit(
+                visitorId: _userEchoId,
+                visitorName: userProfile.nickname,
+                visitorAvatarPath: userProfile.avatarPath,
+              );
+          visitors = await const EchoVisitorSocialService().synchronize(
+            owner: character,
+            characters: characters,
+          );
+          growthProfile =
+              await RelationshipGrowthService(
+                characterId: character.id,
+              ).synchronize(
+                messages: chatMessages,
+                echoes: items,
+                metAt: character.createdAt,
+              );
+        } else {
+          visitors = await EchoVisitorStorageService(ownerId: ownerId).load();
+        }
       }
 
       if (!mounted) return;
@@ -261,7 +261,8 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         _character ??= widget.character;
         _loading = false;
       });
-      _showMessage('Echo 加载失败：$error');
+      debugPrint('Echo 加载失败：$error');
+      _showMessage('Echo 加载失败，请稍后再试');
     }
   }
 
@@ -485,7 +486,8 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       if (!mounted) return;
       setState(() => _echoProfile = updated);
     } catch (error) {
-      _showMessage('更换封面失败：$error');
+      debugPrint('更换 Echo 封面失败：$error');
+      _showMessage('更换封面失败，请稍后再试');
     }
   }
 
@@ -504,6 +506,62 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       ownerId: _ownerId,
     ).loadProfile();
     if (mounted) setState(() => _echoProfile = profile);
+  }
+
+  Future<void> _editSignature() async {
+    final controller = TextEditingController(text: _echoProfile.signature);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('编辑空间签名'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 60,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: '这里记录我的生活。',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) return;
+    final updated = _echoProfile.copyWith(signature: value.trim());
+    try {
+      await EchoProfileStorageService(ownerId: _ownerId).saveProfile(updated);
+      if (mounted) setState(() => _echoProfile = updated);
+    } catch (_) {
+      _showMessage('签名暂时没有保存成功。');
+    }
+  }
+
+  Future<void> _openAuthorSpace(EchoItem item) async {
+    if (!_isPublicTimeline) return;
+    if (item.characterId == _userEchoId) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(builder: (_) => const PeiLinkEchoPage()),
+      );
+      return;
+    }
+    final character = _characterForItem(item);
+    if (character == null) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => PeiLinkEchoPage(character: character)),
+    );
   }
 
   Future<void> _toggleLike(EchoItem item) async {
@@ -535,7 +593,8 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       ).updateItem(updated);
     } catch (error) {
       await _reloadTimeline();
-      _showMessage('保存失败：$error');
+      debugPrint('保存 Echo 失败：$error');
+      _showMessage('保存失败，请稍后再试');
     }
   }
 
@@ -576,6 +635,8 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
           interactionStats: _interactionStats[item.id],
           userProfile: _userProfile,
           character: _characterForItem(item),
+          characters: _characters,
+          currentSpaceCharacterId: _isCharacterSpace ? _ownerId : '',
         ),
       ),
     );
@@ -593,6 +654,19 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
     }
     if (_character?.id == item.characterId) return _character;
     return null;
+  }
+
+  Future<void> _openCommentAuthorSpace(EchoComment comment) async {
+    final character = EchoCommentAuthorService.characterFor(
+      comment,
+      _characters,
+    );
+    if (character == null) return;
+    if (_isCharacterSpace && character.id == _ownerId) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => PeiLinkEchoPage(character: character)),
+    );
   }
 
   String _displayNameForItem(EchoItem item) {
@@ -701,9 +775,11 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const _EchoSpaceLoadingState()
               : _isCharacterSpace
               ? _buildCharacterSpace()
+              : _isUserPage && !_isPublicTimeline
+              ? _buildUserSpace()
               : _buildClassicEcho(),
         ),
       ),
@@ -717,17 +793,24 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(
-            child: _EchoLifeHeader(
-              cover: _cover(),
-              avatar: _avatar(),
-              displayName: _displayName,
-              signature: _signature,
-              onBack: widget.embedded
-                  ? null
-                  : () => Navigator.maybePop(context),
-              onCreate: _showCreateMenu,
-              onOpenCover: _openCoverPreview,
-            ),
+            child: _isPublicTimeline
+                ? _PublicEchoHeader(
+                    onBack: widget.embedded
+                        ? null
+                        : () => Navigator.maybePop(context),
+                  )
+                : _EchoLifeHeader(
+                    cover: _cover(),
+                    avatar: _avatar(),
+                    displayName: _displayName,
+                    signature: _signature,
+                    onBack: widget.embedded
+                        ? null
+                        : () => Navigator.maybePop(context),
+                    onCreate: _showCreateMenu,
+                    onOpenCover: _openCoverPreview,
+                    onEditSignature: _editSignature,
+                  ),
           ),
           if (_items.isEmpty)
             SliverFillRemaining(
@@ -772,6 +855,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
               slivers: [
                 SliverToBoxAdapter(
                   child: _CharacterSpaceHeader(
+                    cover: _cover(),
                     avatar: _avatar(size: 92),
                     displayName: _displayName,
                     signature: _signature,
@@ -783,13 +867,11 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                     sharedExperienceCount: _memories.length,
                     visitors: _visitors,
                     growthProfile: _growthProfile,
-                    anniversary: _parseAnniversary(
-                      _characterSettings?.anniversary,
-                      DateTime.now(),
-                    ),
                     onBack: () => Navigator.maybePop(context),
+                    onOpenCover: _openCoverPreview,
                     onCreate: _showCreateMenu,
                     onMore: _showSpaceMoreMenu,
+                    onEditSignature: _editSignature,
                     onOpenRelationship: () =>
                         setState(() => _spaceTabIndex = 3),
                     onOpenGift: _openGiftCollection,
@@ -807,6 +889,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                     onChanged: (index) =>
                         setState(() => _spaceTabIndex = index),
                     surfaceColor: surfaceColor,
+                    isUserSpace: false,
                   ),
                 ),
                 ..._characterSpaceContentSlivers(),
@@ -817,6 +900,72 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         ),
       ],
     );
+  }
+
+  Widget _buildUserSpace() {
+    const surfaceColor = Color(0xE8FFFFFF);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const _SpaceBackground(config: EchoSpaceDecorationConfig()),
+        Theme(
+          data: Theme.of(context).copyWith(cardColor: surfaceColor),
+          child: RefreshIndicator(
+            onRefresh: _loadPage,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _UserSpaceHeader(
+                    cover: _cover(),
+                    avatar: _avatar(size: 92),
+                    displayName: _displayName,
+                    signature: _signature,
+                    onBack: () => Navigator.maybePop(context),
+                    onCreate: _showCreateMenu,
+                    onOpenCover: _openCoverPreview,
+                    onEditSignature: _editSignature,
+                  ),
+                ),
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _CharacterSpaceTabHeader(
+                    currentIndex: _spaceTabIndex,
+                    onChanged: (index) =>
+                        setState(() => _spaceTabIndex = index),
+                    surfaceColor: surfaceColor,
+                    isUserSpace: true,
+                  ),
+                ),
+                ..._userSpaceContentSlivers(),
+                const SliverToBoxAdapter(child: SizedBox(height: 42)),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _userSpaceContentSlivers() {
+    return switch (_spaceTabIndex) {
+      1 => _albumSlivers(),
+      4 => _visitorSlivers(),
+      _ => [
+        if (_items.isEmpty)
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 300,
+              child: _QuietEmptyState(
+                onCreate: _showCreateMenu,
+                spaceStyle: true,
+              ),
+            ),
+          )
+        else
+          _timelineSliver(spaceStyle: true),
+      ],
+    };
   }
 
   List<Widget> _characterSpaceContentSlivers() {
@@ -878,18 +1027,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   }
 
   List<String> get _albumImagePaths {
-    final paths = <String>[];
-    final seen = <String>{};
-    for (final item in _items) {
-      for (final rawPath in item.imagePaths) {
-        final path = rawPath.trim();
-        if (path.isEmpty || !seen.add(path) || !File(path).existsSync()) {
-          continue;
-        }
-        paths.add(path);
-      }
-    }
-    return paths;
+    return EchoAlbumService.imagePathsFor(_items);
   }
 
   List<Widget> _albumSlivers() {
@@ -921,12 +1059,14 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
             final path = paths[index];
             return _AlbumTile(
               path: path,
-              onTap: () => Navigator.push<void>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => _AlbumImagePreview(path: path),
-                ),
-              ),
+              onTap: File(path).existsSync()
+                  ? () => Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => _AlbumImagePreview(path: path),
+                      ),
+                    )
+                  : null,
             );
           },
         ),
@@ -1002,6 +1142,18 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
               sharedExperienceCount: _memories.length,
             ),
             const SizedBox(height: 11),
+            EchoInteractionSummaryEntry(
+              interactionCount: _chatInteractionCount,
+              sharedExperienceCount: _memories.length,
+              onTap: () => setState(() => _spaceTabIndex = 2),
+            ),
+            const SizedBox(height: 11),
+            _BondQuickCards(
+              growthProfile: _growthProfile,
+              onOpenGift: _openGiftCollection,
+              onOpenGrowth: _openRelationshipGrowth,
+            ),
+            const SizedBox(height: 11),
             const RelationshipTimelineCard(),
             const SizedBox(height: 11),
             RelationshipGiftEntryCard(onTap: _openGiftCollection),
@@ -1024,11 +1176,18 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
           onLike: () => _toggleLike(item),
           onCollect: () => _toggleCollected(item),
           onComment: () => _openComments(item),
+          onCommentAuthorTap: _openCommentAuthorSpace,
           onDelete: () => _deleteItem(item),
+          onAuthorTap:
+              _isPublicTimeline &&
+                  (item.characterId == _userEchoId ||
+                      _characterForItem(item) != null)
+              ? () => _openAuthorSpace(item)
+              : null,
           onOpenMemory: item.isFromSharedExperience && _isCharacterSpace
               ? () => setState(() => _spaceTabIndex = 2)
               : null,
-          spaceStyle: spaceStyle,
+          spaceStyle: true,
         );
       },
     );
@@ -1037,6 +1196,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
 
 class _CharacterSpaceHeader extends StatelessWidget {
   const _CharacterSpaceHeader({
+    required this.cover,
     required this.avatar,
     required this.displayName,
     required this.signature,
@@ -1048,10 +1208,11 @@ class _CharacterSpaceHeader extends StatelessWidget {
     required this.sharedExperienceCount,
     required this.visitors,
     required this.growthProfile,
-    required this.anniversary,
     required this.onBack,
+    required this.onOpenCover,
     required this.onCreate,
     required this.onMore,
+    required this.onEditSignature,
     required this.onOpenRelationship,
     required this.onOpenGift,
     required this.onOpenGrowth,
@@ -1060,6 +1221,7 @@ class _CharacterSpaceHeader extends StatelessWidget {
     required this.onOpenPlaceholder,
   });
 
+  final Widget cover;
   final Widget avatar;
   final String displayName;
   final String signature;
@@ -1071,10 +1233,11 @@ class _CharacterSpaceHeader extends StatelessWidget {
   final int sharedExperienceCount;
   final List<EchoVisitorRecord> visitors;
   final RelationshipGrowthProfile? growthProfile;
-  final _AnniversaryInfo? anniversary;
   final VoidCallback onBack;
+  final VoidCallback onOpenCover;
   final VoidCallback onCreate;
   final VoidCallback onMore;
+  final VoidCallback onEditSignature;
   final VoidCallback onOpenRelationship;
   final VoidCallback onOpenGift;
   final VoidCallback onOpenGrowth;
@@ -1082,6 +1245,8 @@ class _CharacterSpaceHeader extends StatelessWidget {
   final VoidCallback onOpenInteractions;
   final VoidCallback onOpenPlaceholder;
 
+  // Retained for the legacy relationship card while existing layouts migrate.
+  // ignore: unused_element
   String? get _relationshipLabel {
     const emptyValues = {'', '未设置', '暂未设置', '未填写'};
     return emptyValues.contains(relationship) ? null : relationship;
@@ -1094,12 +1259,15 @@ class _CharacterSpaceHeader extends StatelessWidget {
       child: Column(
         children: [
           SizedBox(
-            height: 168,
+            height: 218,
             child: Stack(
               fit: StackFit.expand,
               clipBehavior: Clip.none,
               children: [
-                const ColoredBox(color: Colors.transparent),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(onTap: onOpenCover, child: cover),
+                ),
                 const IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -1107,9 +1275,9 @@ class _CharacterSpaceHeader extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Color(0x66000000),
+                          Color(0x77000000),
                           Colors.transparent,
-                          Colors.transparent,
+                          Color(0x33000000),
                         ],
                         stops: [0, 0.38, 1],
                       ),
@@ -1152,7 +1320,7 @@ class _CharacterSpaceHeader extends StatelessWidget {
                 ),
                 Positioned(
                   left: 22,
-                  bottom: -24,
+                  bottom: -28,
                   child: Container(
                     width: 88,
                     height: 88,
@@ -1175,7 +1343,7 @@ class _CharacterSpaceHeader extends StatelessWidget {
                 ),
                 const Positioned(
                   left: 132,
-                  bottom: 10,
+                  bottom: 12,
                   child: Text(
                     'PEILINK SPACE',
                     style: TextStyle(
@@ -1219,14 +1387,34 @@ class _CharacterSpaceHeader extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(132, 3, 20, 0),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                signature,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF7B838C),
-                  fontSize: 12.5,
-                  height: 1.35,
+              child: InkWell(
+                onTap: onEditSignature,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          signature,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF7B838C),
+                            fontSize: 12.5,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      const Icon(
+                        Icons.edit_outlined,
+                        size: 13,
+                        color: Color(0xFFA0A8AF),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1236,33 +1424,151 @@ class _CharacterSpaceHeader extends StatelessWidget {
             currentStatus: currentStatus,
             recentActivity: recentActivity,
           ),
-          const SizedBox(height: 10),
-          EchoRecentVisitorsStrip(visitors: visitors, onTap: onOpenVisitors),
-          const SizedBox(height: 10),
-          _SpaceRelationshipCard(
-            relationship: _relationshipLabel,
-            metAt: metAt,
-            sharedExperienceCount: sharedExperienceCount,
-            interactionCount: interactionCount,
-            onOpen: onOpenRelationship,
-          ),
-          const SizedBox(height: 8),
-          EchoInteractionSummaryEntry(
-            interactionCount: interactionCount,
-            sharedExperienceCount: sharedExperienceCount,
-            onTap: onOpenInteractions,
-          ),
-          const SizedBox(height: 8),
-          _BondQuickCards(
-            anniversary: anniversary,
-            growthProfile: growthProfile,
-            onOpenGift: onOpenGift,
-            onOpenGrowth: onOpenGrowth,
-            onOpenPlaceholder: onOpenPlaceholder,
-          ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
         ],
       ),
+    );
+  }
+}
+
+class _UserSpaceHeader extends StatelessWidget {
+  const _UserSpaceHeader({
+    required this.cover,
+    required this.avatar,
+    required this.displayName,
+    required this.signature,
+    required this.onBack,
+    required this.onCreate,
+    required this.onOpenCover,
+    required this.onEditSignature,
+  });
+
+  final Widget cover;
+  final Widget avatar;
+  final String displayName;
+  final String signature;
+  final VoidCallback onBack;
+  final VoidCallback onCreate;
+  final VoidCallback onOpenCover;
+  final VoidCallback onEditSignature;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 218,
+          child: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(onTap: onOpenCover, child: cover),
+              ),
+              const IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0x77000000),
+                        Colors.transparent,
+                        Color(0x33000000),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 5,
+                left: 9,
+                child: _SpaceRoundButton(
+                  tooltip: '返回',
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  onTap: onBack,
+                ),
+              ),
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 5,
+                right: 9,
+                child: _SpaceRoundButton(
+                  tooltip: '发布 Echo',
+                  icon: Icons.add_rounded,
+                  onTap: onCreate,
+                ),
+              ),
+              Positioned(
+                left: 22,
+                bottom: -28,
+                child: Container(
+                  width: 88,
+                  height: 88,
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: Color(0x55B7D5F4), blurRadius: 22),
+                    ],
+                  ),
+                  child: ClipOval(child: avatar),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(132, 6, 20, 0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF1B2028),
+                fontSize: 23,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(132, 3, 20, 16),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: InkWell(
+              onTap: onEditSignature,
+              borderRadius: BorderRadius.circular(8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      signature,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF7B838C),
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  const Icon(
+                    Icons.edit_outlined,
+                    size: 13,
+                    color: Color(0xFFA0A8AF),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1299,6 +1605,8 @@ class _SpaceRoundButton extends StatelessWidget {
   }
 }
 
+// Kept as a compatibility widget for older space layouts.
+// ignore: unused_element
 class _SpaceRelationshipCard extends StatelessWidget {
   const _SpaceRelationshipCard({
     required this.relationship,
@@ -1490,22 +1798,17 @@ class _SpaceProfileMetric extends StatelessWidget {
 
 class _BondQuickCards extends StatelessWidget {
   const _BondQuickCards({
-    required this.anniversary,
     required this.growthProfile,
     required this.onOpenGift,
     required this.onOpenGrowth,
-    required this.onOpenPlaceholder,
   });
 
-  final _AnniversaryInfo? anniversary;
   final RelationshipGrowthProfile? growthProfile;
   final VoidCallback onOpenGift;
   final VoidCallback onOpenGrowth;
-  final VoidCallback onOpenPlaceholder;
 
   @override
   Widget build(BuildContext context) {
-    final anniversaryInfo = anniversary;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: SizedBox(
@@ -1527,20 +1830,6 @@ class _BondQuickCards extends StatelessWidget {
                 value: '${growthProfile?.gifts.length ?? 0} 件',
                 footer: '查看礼物  ›',
                 onTap: onOpenGift,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _BondSmallCard(
-                icon: Icons.event_note_rounded,
-                title: '纪念日',
-                value: anniversaryInfo?.dateLabel ?? '未设置',
-                footer: anniversaryInfo == null
-                    ? '设置纪念日  ›'
-                    : anniversaryInfo.daysUntil == 0
-                    ? '就是今天'
-                    : '还有 ${anniversaryInfo.daysUntil} 天',
-                onTap: onOpenPlaceholder,
               ),
             ),
           ],
@@ -1737,13 +2026,16 @@ class _CharacterSpaceTabHeader extends SliverPersistentHeaderDelegate {
     required this.currentIndex,
     required this.onChanged,
     required this.surfaceColor,
+    required this.isUserSpace,
   });
 
   static const _labels = ['动态', '相册', '回忆', '关系', '访客'];
+  static const _userTabs = [(0, '动态'), (1, '相册'), (4, '访客')];
 
   final int currentIndex;
   final ValueChanged<int> onChanged;
   final Color surfaceColor;
+  final bool isUserSpace;
 
   @override
   double get minExtent => 52;
@@ -1772,60 +2064,66 @@ class _CharacterSpaceTabHeader extends SliverPersistentHeaderDelegate {
             ),
           ),
           child: Row(
-            children: List.generate(_labels.length, (index) {
-              final selected = currentIndex == index;
-              return Expanded(
-                child: InkWell(
-                  onTap: () => onChanged(index),
-                  splashColor: const Color(0x146E9AB2),
-                  highlightColor: const Color(0x0A6E9AB2),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Text(
-                        _labels[index],
-                        style: TextStyle(
-                          color: selected
-                              ? const Color(0xFF496F84)
-                              : const Color(0xFF8E969D),
-                          fontSize: 13.5,
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
-                      ),
-                      if (selected)
-                        Positioned(
-                          bottom: 1,
-                          child: SizedBox(
-                            width: 30,
-                            height: 3,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF79AFC8),
-                                    Color(0xFF8B86C9),
-                                  ],
+            children:
+                (isUserSpace
+                        ? _userTabs
+                        : List.generate(_labels.length, (i) => (i, _labels[i])))
+                    .map((entry) {
+                      final index = entry.$1;
+                      final selected = currentIndex == index;
+                      return Expanded(
+                        child: InkWell(
+                          onTap: () => onChanged(index),
+                          splashColor: const Color(0x146E9AB2),
+                          highlightColor: const Color(0x0A6E9AB2),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Text(
+                                entry.$2,
+                                style: TextStyle(
+                                  color: selected
+                                      ? const Color(0xFF496F84)
+                                      : const Color(0xFF8E969D),
+                                  fontSize: 13.5,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
                                 ),
-                                borderRadius: BorderRadius.vertical(
-                                  top: Radius.circular(3),
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x3379AFC8),
-                                    blurRadius: 5,
-                                  ),
-                                ],
                               ),
-                            ),
+                              if (selected)
+                                Positioned(
+                                  bottom: 1,
+                                  child: SizedBox(
+                                    width: 30,
+                                    height: 3,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFF79AFC8),
+                                            Color(0xFF8B86C9),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.vertical(
+                                          top: Radius.circular(3),
+                                        ),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Color(0x3379AFC8),
+                                            blurRadius: 5,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                    ],
-                  ),
-                ),
-              );
-            }),
+                      );
+                    })
+                    .toList(),
           ),
         ),
       ),
@@ -1835,7 +2133,8 @@ class _CharacterSpaceTabHeader extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(covariant _CharacterSpaceTabHeader oldDelegate) {
     return oldDelegate.currentIndex != currentIndex ||
-        oldDelegate.surfaceColor != surfaceColor;
+        oldDelegate.surfaceColor != surfaceColor ||
+        oldDelegate.isUserSpace != isUserSpace;
   }
 }
 
@@ -1885,7 +2184,7 @@ class _AlbumTile extends StatelessWidget {
   const _AlbumTile({required this.path, required this.onTap});
 
   final String path;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2326,6 +2625,27 @@ class _SpaceEmptyState extends StatelessWidget {
   }
 }
 
+class _EchoSpaceLoadingState extends StatelessWidget {
+  const _EchoSpaceLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.graphic_eq_rounded, size: 28, color: Color(0xFF91A8B5)),
+          SizedBox(height: 10),
+          Text(
+            '正在打开这片生活空间…',
+            style: TextStyle(color: Color(0xFF7D868C), fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _VisitorEmptyCard extends StatelessWidget {
   const _VisitorEmptyCard();
 
@@ -2406,47 +2726,52 @@ int _daysSince(DateTime start, DateTime now) {
   return today.difference(startDate).inDays + 1;
 }
 
-class _AnniversaryInfo {
-  const _AnniversaryInfo({required this.dateLabel, required this.daysUntil});
+class _PublicEchoHeader extends StatelessWidget {
+  const _PublicEchoHeader({this.onBack});
 
-  final String dateLabel;
-  final int daysUntil;
-}
+  final VoidCallback? onBack;
 
-_AnniversaryInfo? _parseAnniversary(String? rawValue, DateTime now) {
-  final value = rawValue?.trim() ?? '';
-  if (value.isEmpty || const {'未设置', '暂未设置', '无'}.contains(value)) {
-    return null;
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 18, 12),
+        child: Row(
+          children: [
+            if (onBack != null)
+              IconButton(
+                onPressed: onBack,
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              )
+            else
+              const SizedBox(width: 8),
+            const SizedBox(width: 4),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Echo',
+                    style: TextStyle(
+                      color: Color(0xFF293943),
+                      fontSize: 25,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    '看看大家最近留下的生活片段',
+                    style: TextStyle(color: Color(0xFF8B969D), fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
-
-  var month = 0;
-  var day = 0;
-  final chineseMatch = RegExp(r'^(\d{1,2})月(\d{1,2})日$').firstMatch(value);
-  if (chineseMatch != null) {
-    month = int.tryParse(chineseMatch.group(1) ?? '') ?? 0;
-    day = int.tryParse(chineseMatch.group(2) ?? '') ?? 0;
-  } else {
-    final parsed = DateTime.tryParse(value);
-    if (parsed == null) return null;
-    month = parsed.month;
-    day = parsed.day;
-  }
-
-  final today = DateTime(now.year, now.month, now.day);
-  DateTime? nextDate;
-  for (var year = now.year; year <= now.year + 4; year += 1) {
-    final candidate = DateTime(year, month, day);
-    if (candidate.month != month || candidate.day != day) continue;
-    if (!candidate.isBefore(today)) {
-      nextDate = candidate;
-      break;
-    }
-  }
-  if (nextDate == null) return null;
-  return _AnniversaryInfo(
-    dateLabel: '$month月$day日',
-    daysUntil: nextDate.difference(today).inDays,
-  );
 }
 
 class _EchoLifeHeader extends StatelessWidget {
@@ -2458,6 +2783,7 @@ class _EchoLifeHeader extends StatelessWidget {
     required this.onBack,
     required this.onCreate,
     required this.onOpenCover,
+    required this.onEditSignature,
   });
 
   final Widget cover;
@@ -2467,6 +2793,7 @@ class _EchoLifeHeader extends StatelessWidget {
   final VoidCallback? onBack;
   final VoidCallback onCreate;
   final VoidCallback onOpenCover;
+  final VoidCallback onEditSignature;
 
   @override
   Widget build(BuildContext context) {
@@ -2560,15 +2887,35 @@ class _EchoLifeHeader extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(22, 54, 106, 18),
           child: Align(
             alignment: Alignment.centerRight,
-            child: Text(
-              signature,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Color(0xFF6E7780),
-                fontSize: 14,
-                height: 1.4,
+            child: InkWell(
+              onTap: onEditSignature,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        signature,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          color: Color(0xFF6E7780),
+                          fontSize: 14,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    const Icon(
+                      Icons.edit_outlined,
+                      size: 14,
+                      color: Color(0xFF98A2AA),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2697,6 +3044,8 @@ class _TimelineItem extends StatelessWidget {
     required this.onCollect,
     required this.onComment,
     required this.onDelete,
+    required this.onCommentAuthorTap,
+    this.onAuthorTap,
     this.onOpenMemory,
     this.spaceStyle = false,
   });
@@ -2709,11 +3058,16 @@ class _TimelineItem extends StatelessWidget {
   final VoidCallback onCollect;
   final VoidCallback onComment;
   final VoidCallback onDelete;
+  final ValueChanged<EchoComment> onCommentAuthorTap;
+  final VoidCallback? onAuthorTap;
   final VoidCallback? onOpenMemory;
   final bool spaceStyle;
 
   Widget _buildSpaceCard(BuildContext context) {
-    final hasInteractions = item.likeCount > 0 || item.comments.isNotEmpty;
+    final visibleCommentCount = EchoCommentPreviewService.visibleComments(
+      item.comments,
+    ).length;
+    final hasInteractions = item.likeCount > 0 || visibleCommentCount > 0;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
       decoration: BoxDecoration(
@@ -2747,7 +3101,12 @@ class _TimelineItem extends StatelessWidget {
                         shape: BoxShape.circle,
                         border: Border.all(color: const Color(0xFFDCE8ED)),
                       ),
-                      child: ClipOval(child: avatar),
+                      child: ClipOval(
+                        child: GestureDetector(
+                          onTap: onAuthorTap,
+                          child: avatar,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 11),
                     Expanded(
@@ -2757,14 +3116,18 @@ class _TimelineItem extends StatelessWidget {
                           Row(
                             children: [
                               Flexible(
-                                child: Text(
-                                  displayName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Color(0xFF344E5D),
-                                    fontSize: 14.5,
-                                    fontWeight: FontWeight.w700,
+                                child: InkWell(
+                                  onTap: onAuthorTap,
+                                  borderRadius: BorderRadius.circular(5),
+                                  child: Text(
+                                    displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF344E5D),
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -2864,15 +3227,14 @@ class _TimelineItem extends StatelessWidget {
                 ],
                 if (item.imagePaths.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  _EchoImage(path: item.imagePaths.first, spaceStyle: true),
+                  _EchoImageGrid(paths: item.imagePaths),
                 ],
                 const SizedBox(height: 9),
                 const Divider(height: 1, color: Color(0x66FFFFFF)),
                 EchoInteractionBar(
                   likeCount: (stats?.likeCount ?? 0) + item.likeCount,
-                  commentCount:
-                      item.comments.length > (stats?.commentCount ?? 0)
-                      ? item.comments.length
+                  commentCount: visibleCommentCount > (stats?.commentCount ?? 0)
+                      ? visibleCommentCount
                       : (stats?.commentCount ?? 0),
                   collectCount:
                       (stats?.collectCount ?? 0) + (item.isCollected ? 1 : 0),
@@ -2893,6 +3255,10 @@ class _TimelineItem extends StatelessWidget {
   }
 
   Widget _buildSpaceInteractions() {
+    final visibleComments = EchoCommentPreviewService.visibleComments(
+      item.comments,
+    );
+    final preview = EchoCommentPreviewService.select(visibleComments);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -2922,46 +3288,98 @@ class _TimelineItem extends StatelessWidget {
                 ),
               ],
             ),
-          for (final comment in item.comments)
+          for (final comment in preview)
             Padding(
               padding: EdgeInsets.only(top: item.likeCount > 0 ? 6 : 2),
-              child: Text.rich(
-                TextSpan(
+              child: InkWell(
+                onTap: comment.commentType == EchoCommentType.aiCharacter
+                    ? () => onCommentAuthorTap(comment)
+                    : null,
+                borderRadius: BorderRadius.circular(6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    TextSpan(
-                      text: comment.authorType == EchoCommentAuthorType.user
-                          ? '我'
-                          : (comment.authorNameSnapshot.trim().isEmpty
-                                ? (comment.authorType ==
-                                          EchoCommentAuthorType.character
-                                      ? displayName
-                                      : '世界居民')
-                                : comment.authorNameSnapshot.trim()),
-                      style: const TextStyle(
-                        color: Color(0xFF58768A),
-                        fontWeight: FontWeight.w700,
+                    CircleAvatar(
+                      radius: 9,
+                      backgroundColor:
+                          comment.commentType == EchoCommentType.aiCharacter
+                          ? const Color(0xFFE4ECF8)
+                          : const Color(0xFFECEFF1),
+                      child: Icon(
+                        comment.commentType == EchoCommentType.aiCharacter
+                            ? Icons.auto_awesome_rounded
+                            : Icons.person_outline_rounded,
+                        size: 11,
+                        color: const Color(0xFF718A9C),
                       ),
                     ),
-                    if (comment.replyToAuthorNameSnapshot
-                        .trim()
-                        .isNotEmpty) ...[
-                      const TextSpan(text: ' 回复 '),
-                      TextSpan(
-                        text: comment.replyToAuthorNameSnapshot.trim(),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text:
+                                  comment.authorType ==
+                                      EchoCommentAuthorType.user
+                                  ? '我'
+                                  : (comment.authorNameSnapshot.trim().isEmpty
+                                        ? (comment.authorType ==
+                                                  EchoCommentAuthorType
+                                                      .character
+                                              ? displayName
+                                              : '世界居民')
+                                        : comment.authorNameSnapshot.trim()),
+                              style: const TextStyle(
+                                color: Color(0xFF58768A),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (comment.replyToAuthorNameSnapshot
+                                .trim()
+                                .isNotEmpty) ...[
+                              const TextSpan(text: ' 回复 '),
+                              TextSpan(
+                                text: comment.replyToAuthorNameSnapshot.trim(),
+                                style: const TextStyle(
+                                  color: Color(0xFF58768A),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                            const TextSpan(text: '：'),
+                            TextSpan(text: comment.content),
+                          ],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color(0xFF58768A),
-                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF445159),
+                          fontSize: 12.5,
+                          height: 1.4,
                         ),
                       ),
-                    ],
-                    const TextSpan(text: '：'),
-                    TextSpan(text: comment.content),
+                    ),
                   ],
                 ),
-                style: const TextStyle(
-                  color: Color(0xFF445159),
-                  fontSize: 12.5,
-                  height: 1.4,
+              ),
+            ),
+          if (visibleComments.length > preview.length)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: InkWell(
+                onTap: onComment,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    '查看全部 ${visibleComments.length} 条评论',
+                    style: const TextStyle(
+                      color: Color(0xFF718A9C),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -3265,29 +3683,83 @@ class _EchoLifeMeta extends StatelessWidget {
   }
 }
 
-class _EchoImage extends StatelessWidget {
-  const _EchoImage({required this.path, this.spaceStyle = false});
+class _EchoImageGrid extends StatelessWidget {
+  const _EchoImageGrid({required this.paths});
+
+  final List<String> paths;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanPaths = paths.where((path) => path.trim().isNotEmpty).toList();
+    if (cleanPaths.isEmpty) return const SizedBox.shrink();
+    if (cleanPaths.length == 1) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: AspectRatio(
+          aspectRatio: 4 / 3,
+          child: _EchoImageTile(path: cleanPaths.first),
+        ),
+      );
+    }
+
+    final columns = cleanPaths.length <= 4 ? 2 : 3;
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: cleanPaths.length,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        mainAxisSpacing: 5,
+        crossAxisSpacing: 5,
+      ),
+      itemBuilder: (context, index) => ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: _EchoImageTile(path: cleanPaths[index]),
+      ),
+    );
+  }
+}
+
+class _EchoImageTile extends StatelessWidget {
+  const _EchoImageTile({required this.path});
 
   final String path;
-  final bool spaceStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final file = File(path);
+    if (!file.existsSync()) {
+      return const ColoredBox(
+        color: Color(0xFFF0F2F5),
+        child: Center(
+          child: Icon(Icons.broken_image_outlined, color: Color(0xFFAAB3BA)),
+        ),
+      );
+    }
+    return Image.file(
+      file,
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => const ColoredBox(
+        color: Color(0xFFF0F2F5),
+        child: Center(
+          child: Icon(Icons.broken_image_outlined, color: Color(0xFFAAB3BA)),
+        ),
+      ),
+    );
+  }
+}
+
+class _EchoImage extends StatelessWidget {
+  const _EchoImage({required this.path});
+
+  final String path;
 
   @override
   Widget build(BuildContext context) {
     final file = File(path);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(spaceStyle ? 14 : 3),
-      child: spaceStyle
-          ? AspectRatio(
-              aspectRatio: 4 / 3,
-              child: file.existsSync()
-                  ? Image.file(file, fit: BoxFit.cover)
-                  : Container(
-                      color: const Color(0xFFF0F3F4),
-                      alignment: Alignment.center,
-                      child: const Text('图片已不存在'),
-                    ),
-            )
-          : file.existsSync()
+      borderRadius: BorderRadius.circular(3),
+      child: file.existsSync()
           ? Image.file(file, width: 230, height: 230, fit: BoxFit.cover)
           : Container(
               width: 230,

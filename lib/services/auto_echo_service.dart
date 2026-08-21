@@ -1,6 +1,7 @@
 import '../models/ai_character.dart';
 import '../models/auto_echo_state.dart';
 import '../models/echo_item.dart';
+import '../models/echo_daily_life.dart';
 import '../models/life_moment.dart';
 import 'auto_echo_state_service.dart';
 import 'auto_echo_policy.dart';
@@ -10,6 +11,7 @@ import 'character_settings_storage_service.dart';
 import 'chat_storage_service.dart';
 import 'echo_daily_life_service.dart';
 import 'echo_generation_service.dart';
+import 'echo_duplicate_guard.dart';
 import 'echo_social_interaction_service.dart';
 import 'echo_storage_service.dart';
 import 'life_event_pool_service.dart';
@@ -36,6 +38,7 @@ class AutoEchoService {
   final CharacterRegistryService _registry = CharacterRegistryService();
   final EchoDailyLifeService _dailyLife = const EchoDailyLifeService();
   final AutoEchoPolicy _policy = const AutoEchoPolicy();
+  final EchoDuplicateGuard _duplicateGuard = const EchoDuplicateGuard();
 
   Future<AutoEchoReport> checkAll({DateTime? now}) async {
     if (_running) return const AutoEchoReport(checked: 0, published: 0);
@@ -79,13 +82,15 @@ class AutoEchoService {
     DateTime? now,
   }) async {
     final target = character ?? await _registry.loadActiveCharacter();
-    return _publishDaily(
+    final item = await _publishDaily(
       target,
       now ?? DateTime.now(),
       trigger: AutoEchoTrigger.debug,
       recentUserMessages: await _recentUserMessageCount(target.id, now),
       bypassLimit: true,
     );
+    if (item == null) throw StateError('没有找到不重复的测试 Echo。');
+    return item;
   }
 
   Future<bool> _checkCharacter(AiCharacter character, DateTime now) async {
@@ -105,13 +110,13 @@ class AutoEchoService {
     ).loadItems();
     if (items.isEmpty &&
         now.difference(character.createdAt) <= const Duration(hours: 24)) {
-      await _publishDaily(
+      final initial = await _publishDaily(
         character,
         now,
         trigger: AutoEchoTrigger.initial,
         recentUserMessages: 0,
       );
-      return true;
+      return initial != null;
     }
 
     final recentUserMessages = await _recentUserMessageCount(character.id, now);
@@ -147,7 +152,7 @@ class AutoEchoService {
     // One ordinary life Echo per day is enough; special events may use the
     // remaining two slots above it.
     if (dailyDue && state.publishedToday < _defaultDailyLimit) {
-      await _publishDaily(
+      final daily = await _publishDaily(
         character,
         now,
         trigger: AutoEchoTrigger.daily,
@@ -156,7 +161,7 @@ class AutoEchoService {
             previousCheck != null &&
             now.difference(previousCheck) >= const Duration(hours: 20),
       );
-      return true;
+      return daily != null;
     }
     return false;
   }
@@ -168,11 +173,21 @@ class AutoEchoService {
   ) async {
     final generation = EchoGenerationService(character: character);
     try {
-      final draft = await generation.tryGenerateDraft(manualRequest: false);
-      final decision = generation.lastDecision;
+      var draft = await generation.tryGenerateDraft(manualRequest: false);
+      var decision = generation.lastDecision;
       if (draft == null || decision == null || !decision.shouldShare) {
         return false;
       }
+      final firstContent = draft.content;
+      draft = await _duplicateGuard.acceptOrRetryOnce(
+        initial: draft,
+        isDuplicate: (candidate) async => (await _duplicateGuard.check(
+          content: candidate.content,
+          characterId: character.id,
+        )).isDuplicate,
+        retry: () => generation.retryLastDraft(previousContent: firstContent),
+      );
+      if (draft == null) return false;
       final summary = draft.momentSummary.trim();
       if (summary.isNotEmpty &&
           state.recentSummaries.any((old) => _similar(old, summary))) {
@@ -197,8 +212,8 @@ class AutoEchoService {
             : EchoLifeType.memory,
         sourceEvent: selected.event.trim(),
         characterState: selected.feeling.trim(),
-        imagePrompt: draft.imageScene,
-        imageStatus: draft.imageScene.isEmpty ? 'not_needed' : 'pending',
+        imagePrompt: draft.imagePrompt,
+        imageStatus: draft.imagePrompt.isEmpty ? 'not_needed' : 'pending',
         sourceLifeEventId: selected.id,
         sourceSharedExperienceId: sharedExperience?.id ?? '',
       );
@@ -224,7 +239,7 @@ class AutoEchoService {
     }
   }
 
-  Future<EchoItem> _publishDaily(
+  Future<EchoItem?> _publishDaily(
     AiCharacter character,
     DateTime now, {
     required AutoEchoTrigger trigger,
@@ -246,16 +261,49 @@ class AutoEchoService {
     final growthProfile = await RelationshipGrowthService(
       characterId: character.id,
     ).loadOrCreate(metAt: character.createdAt);
-    final life = _dailyLife.create(
-      character: character,
-      at: now,
-      profile: profile,
-      initial: trigger == AutoEchoTrigger.initial,
-      offlineReturn: offlineReturn,
-      recentUserMessages: recentUserMessages,
-      relationshipLevel: growthProfile.levelFor(),
-      excludedSummaries: state.recentSummaries,
-    );
+    EchoDailyLife? life;
+    const maximumAttempts = 16;
+    for (var variation = 0; variation < maximumAttempts; variation++) {
+      final candidate = _dailyLife.create(
+        character: character,
+        at: now,
+        profile: profile,
+        initial: trigger == AutoEchoTrigger.initial,
+        offlineReturn: offlineReturn,
+        recentUserMessages: recentUserMessages,
+        relationshipLevel: growthProfile.levelFor(),
+        excludedSummaries: state.recentSummaries,
+        variation: variation,
+      );
+      final duplicate = await _duplicateGuard.check(
+        content: candidate.content,
+        characterId: character.id,
+      );
+      if (!duplicate.isDuplicate) {
+        life = candidate;
+        break;
+      }
+    }
+    if (life == null && trigger == AutoEchoTrigger.initial) {
+      final fallback = _dailyLife.create(
+        character: character,
+        at: now,
+        profile: profile,
+        initial: true,
+        variation: maximumAttempts,
+      );
+      life = EchoDailyLife(
+        kind: fallback.kind,
+        content:
+            '${fallback.content}就从${character.createdAt.month}月'
+            '${character.createdAt.day}日 ${character.createdAt.hour}:'
+            '${character.createdAt.minute.toString().padLeft(2, '0')}这一刻开始。',
+        summary: fallback.summary,
+        sourceEvent: fallback.sourceEvent,
+        characterState: fallback.characterState,
+      );
+    }
+    if (life == null) return null;
     final displayedAt = _policy.distributedCreatedAt(
       characterId: character.id,
       now: now,

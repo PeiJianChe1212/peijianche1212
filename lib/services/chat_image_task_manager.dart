@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../models/chat_message.dart';
-import '../models/character_settings.dart';
+import '../models/ai_character.dart';
 import 'chat_image_generation_service.dart';
 import 'chat_storage_service.dart';
 import 'deepseek_service.dart';
@@ -28,7 +28,7 @@ class ChatImageTaskManager extends ChangeNotifier {
 
   Future<void> start({
     required String userRequest,
-    required CharacterSettings characterSettings,
+    required AiCharacter character,
     required List<ChatMessage> recentMessages,
   }) async {
     if (isRunning) return;
@@ -46,7 +46,7 @@ class ChatImageTaskManager extends ChangeNotifier {
     try {
       final generated = await _generationService.generate(
         userRequest: userRequest,
-        characterSettings: characterSettings,
+        character: character,
         recentMessages: recentMessages,
       );
       final caption = await _deepSeekService.composeImageMessage(
@@ -61,7 +61,7 @@ class ChatImageTaskManager extends ChangeNotifier {
         metadata: {
           'imagePath': generated.imagePath,
           'generationPrompt': generated.prompt,
-          'generatedBy': 'doubao_image',
+          'generatedBy': 'image_generation_router',
           'taskId': taskId,
         },
       );
@@ -87,8 +87,8 @@ class ChatImageTaskManager extends ChangeNotifier {
       _fail(taskId, userRequest, '图片生成超时了，这次先不发图。');
     } on SocketException {
       _fail(taskId, userRequest, '当前网络连不上图片模型，这次先不发图。');
-    } catch (error) {
-      _fail(taskId, userRequest, '图片没有生成成功：$error');
+    } catch (_) {
+      _fail(taskId, userRequest, '图片没有生成成功，这次先不发图。');
     }
   }
 
@@ -130,13 +130,13 @@ class ChatImageTaskState {
   });
 
   const ChatImageTaskState.idle()
-      : taskId = '',
-        status = ChatImageTaskStatus.idle,
-        userRequest = '',
-        startedAt = null,
-        completedAt = null,
-        resultMessageId = null,
-        errorMessage = null;
+    : taskId = '',
+      status = ChatImageTaskStatus.idle,
+      userRequest = '',
+      startedAt = null,
+      completedAt = null,
+      resultMessageId = null,
+      errorMessage = null;
 
   final String taskId;
   final ChatImageTaskStatus status;

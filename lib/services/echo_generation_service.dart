@@ -1,14 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../ai/model_hub.dart';
+import '../ai/providers/openai_compatible_chat_provider.dart';
 import '../models/ai_character.dart';
-import '../models/character_settings.dart';
 import '../models/echo_draft.dart';
 import '../models/life_moment.dart';
 import '../models/story_fragment.dart';
 import 'ai_social_protocol_service.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
+import 'character_profile_storage_service.dart';
 import 'context_builder.dart';
 import 'character_registry_service.dart';
 import 'character_relationship_context_service.dart';
@@ -19,13 +21,44 @@ import 'moment_engine_service.dart';
 import 'narrative_engine_service.dart';
 import 'story_fragment_engine_service.dart';
 import 'life_moment_storage_service.dart';
+import 'echo_expression_prompt.dart';
+import 'echo_image_intent_service.dart';
+import 'echo_image_prompt.dart';
+import 'structured_model_output_exception.dart';
+import 'developer_environment_service.dart';
+
+class EchoNoMomentException implements Exception {
+  const EchoNoMomentException();
+
+  @override
+  String toString() => '暂时没有新的生活瞬间';
+}
+
+class EchoDraftGenerationException implements Exception {
+  const EchoDraftGenerationException();
+
+  @override
+  String toString() => '本次生成失败，请重新生成';
+}
+
+String echoDraftUserMessage(Object error) {
+  if (error is EchoNoMomentException) return error.toString();
+  if (error is EchoDraftGenerationException ||
+      error is StructuredModelOutputException ||
+      error is ChatEmptyResponseException ||
+      error is FormatException) {
+    return '本次生成失败，请重新生成';
+  }
+  if (error is StateError && error.toString().contains('设置 → 模型与 API')) {
+    return '请先在“设置 → 模型与 API”中完成聊天模型配置。';
+  }
+  return '本次生成失败，请重新生成';
+}
 
 class EchoGenerationService {
-  EchoGenerationService({
-    required this.character,
-    http.Client? client,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null {
+  EchoGenerationService({required this.character, http.Client? client})
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null {
     _modelHub = ModelHub(client: _client);
     _decisionEngine = LifeDecisionEngineService(
       character: character,
@@ -52,11 +85,21 @@ class EchoGenerationService {
   EchoMomentDecision? get lastDecision => _lastDecision;
 
   Future<EchoDraft> generateDraft() async {
-    final draft = await tryGenerateDraft(manualRequest: true);
-    if (draft == null) {
-      throw const FormatException('当前没有值得发布的生活瞬间。');
+    try {
+      final draft = await tryGenerateDraft(manualRequest: true);
+      if (draft == null) {
+        throw const EchoNoMomentException();
+      }
+      return draft;
+    } on EchoNoMomentException {
+      rethrow;
+    } on StructuredModelOutputException {
+      throw const EchoDraftGenerationException();
+    } on ChatEmptyResponseException {
+      throw const EchoDraftGenerationException();
+    } on FormatException {
+      throw const EchoDraftGenerationException();
     }
-    return draft;
   }
 
   Future<EchoDraft?> tryGenerateDraft({bool manualRequest = false}) async {
@@ -73,10 +116,7 @@ class EchoGenerationService {
     if (events.isEmpty) {
       final nextPendingAt = await _eventPool.nextPendingAt();
       if (nextPendingAt != null) {
-        throw FormatException(
-          '角色已经有接下来的生活安排，但最近一件事要到'
-          '${_formatPendingTime(nextPendingAt)}才真正发生。现在还没有可发布的生活瞬间。',
-        );
+        throw const EchoNoMomentException();
       }
 
       await _refillEventPool();
@@ -85,71 +125,97 @@ class EchoGenerationService {
     if (events.isEmpty) {
       final nextPendingAt = await _eventPool.nextPendingAt();
       if (nextPendingAt != null) {
-        throw FormatException(
-          '新的生活已经安排好，最近一件事会在'
-          '${_formatPendingTime(nextPendingAt)}发生。Echo 不会提前剧透。',
-        );
+        throw const EchoNoMomentException();
       }
-      throw const FormatException('当前没有足够依据决定新的生活事件，事件池暂时为空。');
+      throw const EchoNoMomentException();
     }
 
-    final decision = await _momentEngine.chooseMoment(
-      events,
-      manualRequest: manualRequest,
+    final decision = await _runStage(
+      'Moment Engine',
+      () => _momentEngine.chooseMoment(events, manualRequest: manualRequest),
     );
     _lastDecision = decision;
-    if (!manualRequest && !decision.shouldShare) return null;
+    if (!decision.shouldShare) return null;
 
+    return _generateForDecision(decision);
+  }
+
+  /// One bounded rewrite of the already selected moment. It does not rerun
+  /// Life or Moment selection and therefore cannot switch to a different fact.
+  Future<EchoDraft?> retryLastDraft({required String previousContent}) async {
+    final decision = _lastDecision;
+    if (decision == null || !decision.shouldShare) return null;
+    return _generateForDecision(decision, avoidContent: previousContent);
+  }
+
+  Future<EchoDraft> _generateForDecision(
+    EchoMomentDecision decision, {
+    String avoidContent = '',
+  }) async {
     final settings = await CharacterSettingsStorageService(
       characterId: character.id,
     ).loadSettings();
+    final profile = await CharacterProfileStorageService(
+      characterId: character.id,
+    ).load(character: character, legacySettings: settings);
     final storedMoments = await LifeMomentStorageService(
       characterId: character.id,
     ).loadItems();
-    final fragment = const StoryFragmentEngineService().buildAround(
-      decision.candidate,
-      [...storedMoments, decision.candidate],
-    );
-    final narrative = const NarrativeEngineService().render(
-      fragment,
-      perspective: NarrativePerspective.echo,
-    );
-    final registeredCharacters =
-        await CharacterRegistryService().loadCharacters();
-    final relationshipPrompt =
-        await CharacterRelationshipContextService().buildPromptSection(
-      currentCharacter: character,
-      allCharacters: registeredCharacters,
-    );
+    final narrative = await _runStage('Story Fragment / Narrative', () async {
+      final fragment = const StoryFragmentEngineService().buildAround(
+        decision.candidate,
+        [...storedMoments, decision.candidate],
+      );
+      return const NarrativeEngineService().render(
+        fragment,
+        perspective: NarrativePerspective.echo,
+      );
+    });
+    final registeredCharacters = await CharacterRegistryService()
+        .loadCharacters();
+    final relationshipPrompt = await CharacterRelationshipContextService()
+        .buildPromptSection(
+          currentCharacter: character,
+          allCharacters: registeredCharacters,
+        );
     final socialProtocolPrompt = AiSocialProtocolService.buildPromptSection(
       currentCharacter: character,
       allCharacters: registeredCharacters,
     );
     final provider = await _modelHub.chatProvider();
-    final raw = await provider.complete(
-      messages: [
-        {
-          'role': 'system',
-          'content': ContextBuilder.build(
-            task: ContextTask.echo,
-            settings: settings,
-            taskRules: _echoRules(settings),
-            relationshipContext: relationshipPrompt,
-            socialProtocol: socialProtocolPrompt,
-            sourceFacts: _echoFacts(
-              decision: decision,
-              officialNarrative: narrative.content,
+    final raw = await _runStage(
+      'Echo Generation',
+      () => provider.complete(
+        messages: [
+          {
+            'role': 'system',
+            'content': ContextBuilder.build(
+              task: ContextTask.echo,
+              settings: settings,
+              taskRules: EchoExpressionPrompt.rules(),
+              expressionProfile: EchoExpressionPrompt.expressionProfile(
+                profile: profile,
+              ),
+              relationshipContext: relationshipPrompt,
+              socialProtocol: socialProtocolPrompt,
+              includeBehaviorRules: false,
+              sourceFacts: _echoFacts(
+                decision: decision,
+                officialNarrative: narrative.content,
+              ),
             ),
-          ),
-        },
-        {
-          'role': 'user',
-          'content': '把选中的生活瞬间写成一条 Echo。只输出正文。',
-        },
-      ],
-      temperature: settings.temperature.clamp(0.64, 0.84).toDouble(),
-      maxTokens: 420,
-      topP: 0.9,
+          },
+          {
+            'role': 'user',
+            'content': EchoExpressionPrompt.userInstruction(
+              avoidContent: avoidContent,
+            ),
+          },
+        ],
+        temperature: settings.temperature.clamp(0.64, 0.84).toDouble(),
+        maxTokens: 420,
+        topP: 0.9,
+      ),
     );
 
     final cleaned = _clean(raw);
@@ -158,42 +224,66 @@ class EchoGenerationService {
     }
 
     final moment = decision.candidate;
-    final imageScene = _buildImageScene(moment);
+    final imageIntent = const EchoImageIntentService().resolve(
+      moment: moment,
+      characterId: character.id,
+      suggestedByMoment: decision.suggestImage,
+    );
+    final imagePrompt = EchoImagePrompt.build(
+      intent: imageIntent,
+      characterProfile: imageIntent.requiredCharacterIds.isEmpty
+          ? null
+          : profile,
+    );
 
     return EchoDraft(
       content: cleaned,
       momentSummary: decision.reason.trim().isEmpty
           ? moment.shareHook.trim()
           : decision.reason.trim(),
-      shouldAttachImage: imageScene.isNotEmpty,
-      imageScene: imageScene,
+      shouldAttachImage:
+          imageIntent.shouldGenerateImage && imagePrompt.isNotEmpty,
+      imageScene: imageIntent.visualFocus,
+      imagePrompt: imagePrompt,
+      imageIntent: imageIntent,
     );
   }
 
   Future<void> _refillEventPool() async {
-    final decisions = await _decisionEngine.decide(maxDecisions: 4);
+    final decisions = await _runStage(
+      'Life Decision Engine',
+      () => _decisionEngine.decide(maxDecisions: 4),
+    );
     if (decisions.isEmpty) return;
 
-    final realizedEvents = await _lifeEngine.generateFromDecisions(decisions);
+    final realizedEvents = await _runStage(
+      'Life Engine',
+      () => _lifeEngine.generateFromDecisions(decisions),
+    );
     await _eventPool.addEvents(realizedEvents);
   }
 
+  Future<T> _runStage<T>(String stage, Future<T> Function() action) async {
+    try {
+      return await action();
+    } catch (error) {
+      await _logStageFailure(stage, error);
+      rethrow;
+    }
+  }
 
-  String _formatPendingTime(DateTime time) {
-    final now = DateTime.now();
-    final minute = time.minute.toString().padLeft(2, '0');
-    final sameDay = now.year == time.year &&
-        now.month == time.month &&
-        now.day == time.day;
-    if (sameDay) return '今天 ${time.hour}:$minute';
-
-    final tomorrow = DateTime(now.year, now.month, now.day)
-        .add(const Duration(days: 1));
-    final isTomorrow = tomorrow.year == time.year &&
-        tomorrow.month == time.month &&
-        tomorrow.day == time.day;
-    if (isTomorrow) return '明天 ${time.hour}:$minute';
-    return '${time.month}月${time.day}日 ${time.hour}:$minute';
+  Future<void> _logStageFailure(String stage, Object error) async {
+    try {
+      if (!await DeveloperEnvironmentService().isEnabled()) return;
+      final details = error is ChatEmptyResponseException
+          ? 'empty_response finish=${error.finishReason.isEmpty ? 'unknown' : error.finishReason} reasoning=${error.hasReasoningContent}'
+          : error is StructuredModelOutputException
+          ? 'malformed_json'
+          : error.runtimeType.toString();
+      debugPrint('[EchoPipeline] stage=$stage failure=$details');
+    } catch (_) {
+      // Diagnostics must never replace the original pipeline failure.
+    }
   }
 
   String _echoFacts({
@@ -215,42 +305,9 @@ $officialNarrative
 发生的事：${moment.event}
 具体细节：${moment.detail}
 当时感受：${moment.feeling}
-值得分享的原因：${moment.shareHook}
+可能想发布的原因：${moment.shareHook}
 可自然提及的人：$related
-Moment 评分：${decision.score.toStringAsFixed(0)}
 ''';
-  }
-
-  String _echoRules(CharacterSettings settings) => '''
-你正在为 PeiLink 的 Echo 写一条角色动态，只负责把已经发生的真实生活瞬间写成自然正文。
-1. Echo 是角色自己的生活主页，不是聊天回复，也不是写给用户的情书。
-2. 官方故事片段是唯一叙事依据，只能删减和改写语气，不能增加新事实。
-3. 聚焦具体细节和余味，不要流水账、作文腔、人生道理或强行浪漫。
-4. 不要机械报时，不要为了生活感硬写早中晚。
-5. 不要称呼${settings.userCallName}，不要提问，不要邀请对方回复。
-6. 不使用括号动作、小说旁白、舞台指令、标题、标签或 Markdown。
-7. 只输出动态正文，20 至 180 个汉字，一到三小段。
-8. 只有事实中存在相关人物且正文自然时，才可按“@名字”提及一次。
-9. 不得虚构事件之外的地点、天气、新闻、品牌或关系。
-''';
-
-  String _buildImageScene(LifeMomentCandidate moment) {
-    final parts = <String>[
-      moment.scene.trim(),
-      moment.event.trim(),
-      moment.detail.trim(),
-    ].where((value) => value.isNotEmpty).toList();
-
-    if (parts.isEmpty) return '';
-
-    final combined = parts.join('，');
-    final unsuitable = RegExp(
-      r'纯想法|回忆|梦|抽象|情绪|争吵|危险|受伤|事故',
-      caseSensitive: false,
-    ).hasMatch(combined);
-    if (unsuitable) return '';
-
-    return '$combined。像角色本人用手机随手拍下的生活照片，自然真实，不过度精修，无文字排版。';
   }
 
   String _clean(String raw) {

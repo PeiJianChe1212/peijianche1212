@@ -31,6 +31,28 @@ class PersonalityStyleEngine {
     );
   }
 
+  /// 模块实验专用：只解析 Personality Style，不读取 Reply Strategy。
+  PersonalityStyle resolveForExperiment({required CharacterSettings settings}) {
+    final source = <String>[
+      settings.introduction,
+      settings.coreProfile,
+      settings.behaviorStyle,
+      settings.exampleDialogues,
+    ].join('\n');
+    final tone = _resolveTone(source);
+    final length = _resolveLengthWithoutStrategy(settings, source);
+    final emotion = _resolveEmotion(settings, source);
+    return PersonalityStyle(
+      tone: tone,
+      speechPattern: _resolveSpeechPattern(length, source),
+      emotionExpression: emotion,
+      initiative: _resolveInitiative(settings.initiative),
+      humorLevel: _resolveHumor(source, tone, emotion),
+      formality: _resolveFormality(source),
+      length: length,
+    );
+  }
+
   ContextBuildResult apply({
     required ContextBuildResult context,
     required PersonalityStyle style,
@@ -92,6 +114,23 @@ class PersonalityStyleEngine {
         replyStrategy.length == StrategyLength.short
             ? StyleLength.short
             : StyleLength.medium,
+    };
+  }
+
+  StyleLength _resolveLengthWithoutStrategy(
+    CharacterSettings settings,
+    String source,
+  ) {
+    if (RegExp(r'寡言|惜字如金|言简意赅|回复简短|少说话').hasMatch(source)) {
+      return StyleLength.short;
+    }
+    if (RegExp(r'健谈|话多|详细|长篇|喜欢展开').hasMatch(source)) {
+      return StyleLength.long;
+    }
+    return switch (settings.replyLength) {
+      'short' => StyleLength.short,
+      'long' => StyleLength.long,
+      _ => StyleLength.medium,
     };
   }
 

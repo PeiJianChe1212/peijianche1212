@@ -4,6 +4,11 @@ import '../ai/model_hub.dart';
 import '../models/activity_status.dart';
 import '../models/chat_message.dart';
 import '../models/character_settings.dart';
+import '../conversation/conversation_engine.dart';
+import '../conversation/chat_reply_sanitizer.dart';
+import '../context_builder/context_build_result.dart';
+import '../prompt_composer/prompt_composer.dart';
+import '../prompt_composer/prompt_context.dart';
 import 'context_builder.dart';
 import 'memory_storage_service.dart';
 import 'user_profile_storage_service.dart';
@@ -53,6 +58,10 @@ class ProactiveMessageGenerationService {
       final userProfile = await UserProfileStorageService().loadProfile();
       final memory = await _compactMemory();
       final provider = await _modelHub.chatProvider();
+      final conversationEngine = ConversationEngine.build(
+        messages: messages,
+        conversationMode: 'basic',
+      );
       final prompt = ContextBuilder.build(
         task: ContextTask.proactiveChat,
         settings: settings,
@@ -73,16 +82,23 @@ class ProactiveMessageGenerationService {
       );
 
       for (var attempt = 0; attempt < 2; attempt++) {
+        final userInstruction = attempt == 0
+            ? '生成一条此刻自然发给用户的主动消息，只输出正文。'
+            : '上一条不合格。重新生成一条更短、更自然、且不重复近期内容的消息，只输出正文。';
+        final modelContext =
+            PromptComposer(
+                  baseContext: ContextBuildResult(
+                    messages: [
+                      {'role': 'system', 'content': prompt},
+                      {'role': 'user', 'content': userInstruction},
+                    ],
+                    systemPrompt: prompt,
+                  ),
+                )
+                .addContext(PromptContext.chatFlow(conversationEngine.prompt))
+                .compose();
         final raw = await provider.complete(
-          messages: [
-            {'role': 'system', 'content': prompt},
-            {
-              'role': 'user',
-              'content': attempt == 0
-                  ? '生成一条此刻自然发给用户的主动消息，只输出正文。'
-                  : '上一条不合格。重新生成一条更短、更自然、且不重复近期内容的消息，只输出正文。',
-            },
-          ],
+          messages: modelContext.messages,
           temperature: settings.temperature.clamp(0.58, 0.78).toDouble(),
           maxTokens: 100,
           topP: 0.88,
@@ -116,7 +132,9 @@ class ProactiveMessageGenerationService {
   }
 
   Future<String> _compactMemory() async {
-    final items = await MemoryStorageService(characterId: characterId).loadItems();
+    final items = await MemoryStorageService(
+      characterId: characterId,
+    ).loadItems();
     final usable = items.where((item) => !item.isArchived).toList()
       ..sort((a, b) {
         if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
@@ -126,12 +144,13 @@ class ProactiveMessageGenerationService {
     return usable.take(5).map((item) => '- ${item.content.trim()}').join('\n');
   }
 
-  String _taskRules(CharacterSettings settings) => '''
+  String _taskRules(CharacterSettings settings) =>
+      '''
 你正在以${settings.characterName}的身份，主动给用户发一条私人聊天消息。
 1. 只生成一条消息，以 1 至 2 句话为主，建议 8 至 55 个汉字。
 2. 语气必须符合角色本人，像自然想到用户后发来的话，不像通知、客服或定时问候。
 3. 可以结合当前状态、最近聊天和最近生活，但不要把所有信息都塞进去。
-4. 不写括号动作、小说旁白、标题、编号、Markdown、JSON、代码或系统说明。
+4. 禁止用（）、()、[]、【】或 *动作* 输出独立动作、心理或舞台标签，也不写小说旁白、标题、编号、Markdown、JSON、代码或系统说明。状态或行为只能自然融进消息正文。
 5. 不要自动替用户回答，不开启完整剧情，不连续抛出多个问题。
 6. 禁止“在吗”“怎么不理我”“为什么不回我”等催促，也不要高频亲密动作。
 7. 不直接复制 Echo 或生活事件原句。公开动态与私人联系应使用不同表达。
@@ -164,10 +183,12 @@ class ProactiveMessageGenerationService {
         .toList()
         .reversed;
     if (selected.isEmpty) return '';
-    return selected.map((item) {
-      final speaker = item.role == 'user' ? '用户' : '角色';
-      return '$speaker：${_shorten(item.content, 90)}';
-    }).join('\n');
+    return selected
+        .map((item) {
+          final speaker = item.role == 'user' ? '用户' : '角色';
+          return '$speaker：${_shorten(item.content, 90)}';
+        })
+        .join('\n');
   }
 
   String _sourceFacts({
@@ -200,7 +221,9 @@ class ProactiveMessageGenerationService {
   }) {
     final clean = value.trim();
     if (clean.isEmpty || clean.length > 80) return false;
-    if (RegExp(r'```|\{\s*"|system\s*prompt|系统提示|^\s*\d+[\.、]').hasMatch(clean)) {
+    if (RegExp(
+      r'```|\{\s*"|system\s*prompt|系统提示|^\s*\d+[\.、]',
+    ).hasMatch(clean)) {
       return false;
     }
     if (RegExp(r'在吗|怎么不理我|为什么不回我|忙吗[？?]?$').hasMatch(clean)) {
@@ -229,9 +252,8 @@ class ProactiveMessageGenerationService {
     return chars.intersection(other).length / union >= 0.72;
   }
 
-  String _normalize(String value) => value
-      .toLowerCase()
-      .replaceAll(RegExp(r"[\s，。！？、,.!?~～“”'（）()…]"), '');
+  String _normalize(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r"[\s，。！？、,.!?~～“”'（）()…]"), '');
 
   String _clean(String value) {
     var clean = value.trim();
@@ -239,7 +261,7 @@ class ProactiveMessageGenerationService {
     clean = clean.replaceAll(RegExp(r'\s*```$'), '');
     clean = clean.replaceAll(RegExp(r'^["“]|["”]$'), '');
     clean = clean.replaceAll(RegExp(r'^(消息|正文|回复)[:：]\s*'), '');
-    return clean.trim();
+    return ChatReplySanitizer.clean(clean);
   }
 
   String _shorten(String value, int maxLength) {

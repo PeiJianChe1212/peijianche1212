@@ -49,5 +49,15 @@ humor=${humorLevel.name}
 formality=${formality.name}
 length=${length.name}
 保持这些表达倾向，但不要复述字段，不要据此虚构事实，不要把风格说明写进回复正文。
-即使 length=short 也只表示句子简洁，不代表普通聊天固定只回一句；具体句数服从本轮 Reply Strategy。''';
+即使 length=short 也只表示句子简洁，不代表普通聊天固定只回一句；回复数量仍服从真实语境。''';
+
+  Map<String, String> get snapshotValues => {
+    'tone': tone.key,
+    'speech_pattern': speechPattern.name,
+    'emotion': emotionExpression.name,
+    'initiative': initiative.name,
+    'humor': humorLevel.name,
+    'formality': formality.name,
+    'length': length.name,
+  };
 }

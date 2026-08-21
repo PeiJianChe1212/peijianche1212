@@ -274,11 +274,7 @@ class AutoEchoCommentService {
 
     final commentStorage = EchoCommentStorageService(ownerId: task.echoOwnerId);
     final comments = await commentStorage.loadForEcho(task.echoId);
-    if (comments.any(
-      (item) =>
-          item.authorId == commenter.id &&
-          item.sourceType != EchoCommentSourceType.manualCharacterDebug,
-    )) {
+    if (!canCharacterComment(comments: comments, commenterId: commenter.id)) {
       await _skip(task, '该角色已经评论过这条 Echo');
       return EchoCommentTaskStatus.skipped;
     }
@@ -409,6 +405,7 @@ class AutoEchoCommentService {
     } catch (error) {
       final attempts = task.attempts + 1;
       final terminal = attempts >= 2;
+      final safeFailure = 'generation_failed:${error.runtimeType}';
       await _taskStorage.update(
         task.copyWith(
           status: terminal
@@ -418,12 +415,12 @@ class AutoEchoCommentService {
               ? task.scheduledAt
               : now.add(const Duration(hours: 1)),
           attempts: attempts,
-          lastError: error.toString(),
+          lastError: safeFailure,
         ),
       );
       debugPrint(
         '[EchoComment] 评论生成失败 echoId=${echo.id} '
-        'commenterId=${commenter.id} attempts=$attempts error=$error',
+        'commenterId=${commenter.id} attempts=$attempts error=$safeFailure',
       );
       return terminal
           ? EchoCommentTaskStatus.failed
@@ -431,6 +428,18 @@ class AutoEchoCommentService {
     } finally {
       generator.dispose();
     }
+  }
+
+  bool canCharacterComment({
+    required Iterable<EchoComment> comments,
+    required String commenterId,
+  }) {
+    return !comments.any(
+      (item) =>
+          item.authorId == commenterId &&
+          item.commentType == EchoCommentType.aiCharacter &&
+          item.sourceType != EchoCommentSourceType.manualCharacterDebug,
+    );
   }
 
   Future<bool> _withinDailyLimit(

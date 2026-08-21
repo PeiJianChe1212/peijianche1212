@@ -7,9 +7,8 @@ import '../../theme/app_theme_background.dart';
 import '../../widgets/peilink/relationship_badge.dart';
 import '../memory_page.dart';
 import 'character_detail_page.dart';
-import 'character_management_page.dart';
+import 'character_management_actions.dart';
 import 'character_profile_home_page.dart';
-import 'create_group_chat_page.dart';
 import 'theme_decoration_page.dart';
 
 class ChatSettingsPage extends StatefulWidget {
@@ -22,18 +21,34 @@ class ChatSettingsPage extends StatefulWidget {
 }
 
 class _ChatSettingsPageState extends State<ChatSettingsPage> {
-  bool _pinned = false;
-  bool _hidden = false;
-  bool _muted = false;
-
-  void _soon(String title) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$title功能暂未开放。')));
-  }
-
   Future<void> _open(Widget page) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
+
+  Future<void> _clearChat() async {
+    final changed = await CharacterManagementActions.clearChat(
+      context,
+      widget.character,
+    );
+    if (changed && mounted) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _restartCharacter() async {
+    final changed = await CharacterManagementActions.restart(
+      context,
+      widget.character,
+    );
+    if (changed && mounted) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _deleteCharacter() async {
+    final deleted = await CharacterManagementActions.deleteCharacter(
+      context,
+      widget.character,
+    );
+    if (deleted && mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   ImageProvider? get _avatarProvider {
@@ -86,36 +101,6 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                 ),
               ],
             ),
-            const _SectionLabel('聊天管理'),
-            _GlassSection(
-              children: [
-                _tile(
-                  '发起群聊',
-                  Icons.group_add_outlined,
-                  () => _open(const CreateGroupChatPage()),
-                ),
-                _tile('查找聊天记录', Icons.search_rounded, () => _soon('查找聊天记录')),
-                _switch('置顶聊天', _pinned, (v) => setState(() => _pinned = v)),
-                _tile(
-                  '特别关注',
-                  Icons.favorite_border_rounded,
-                  () => _soon('特别关注'),
-                ),
-                _switch('隐藏会话', _hidden, (v) => setState(() => _hidden = v)),
-                _switch('消息免打扰', _muted, (v) => setState(() => _muted = v)),
-                _tile(
-                  '设置当前聊天背景',
-                  Icons.wallpaper_rounded,
-                  () => _open(const ThemeDecorationPage()),
-                ),
-                _tile(
-                  '删除聊天记录',
-                  Icons.delete_outline_rounded,
-                  () => _soon('删除聊天记录'),
-                  destructive: true,
-                ),
-              ],
-            ),
             const _SectionLabel('角色管理'),
             _GlassSection(
               children: [
@@ -129,16 +114,40 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                 _tile(
                   'Memory',
                   Icons.inbox_outlined,
-                  () => _open(const MemoryPage()),
+                  () => _open(MemoryPage(characterId: widget.character.id)),
                 ),
-                _tile('心声', Icons.cloud_outlined, () => _soon('心声')),
-                _tile('导出角色', Icons.output_rounded, () => _soon('导出角色')),
                 _tile(
-                  '清理与重置',
-                  Icons.cleaning_services_outlined,
-                  () => _open(
-                    CharacterManagementPage(characterId: widget.character.id),
-                  ),
+                  '导出角色',
+                  Icons.output_rounded,
+                  () => _open(CharacterDetailPage(character: widget.character)),
+                ),
+              ],
+            ),
+            const _SectionLabel('当前聊天'),
+            _GlassSection(
+              children: [
+                _tile(
+                  '设置当前聊天背景',
+                  Icons.wallpaper_rounded,
+                  () => _open(const ThemeDecorationPage()),
+                ),
+                _tile('删除聊天记录', Icons.delete_outline_rounded, _clearChat),
+              ],
+            ),
+            const SizedBox(height: 22),
+            _GlassSection(
+              children: [
+                _actionTile(
+                  '重新开始角色',
+                  '重新开始当前角色的聊天与生活线',
+                  _restartCharacter,
+                  color: const Color(0xFF9A654F),
+                ),
+                _actionTile(
+                  '删除角色',
+                  '永久删除角色及其独立数据',
+                  _deleteCharacter,
+                  color: const Color(0xFFD85858),
                 ),
               ],
             ),
@@ -166,12 +175,23 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
     );
   }
 
-  Widget _switch(String title, bool value, ValueChanged<bool> onChanged) {
-    return SwitchListTile(
-      dense: true,
-      title: Text(title),
-      value: value,
-      onChanged: onChanged,
+  Widget _actionTile(
+    String title,
+    String subtitle,
+    VoidCallback onTap, {
+    required Color color,
+  }) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      title: Text(
+        title,
+        style: TextStyle(color: color, fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(color: Color(0xFF8D8792), fontSize: 12),
+      ),
+      onTap: onTap,
     );
   }
 }
@@ -184,8 +204,8 @@ class _GlassSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.68),
-      borderRadius: BorderRadius.circular(16),
+      color: Colors.white.withValues(alpha: 0.74),
+      borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
       child: Column(children: children),
     );
@@ -204,7 +224,7 @@ class _SectionLabel extends StatelessWidget {
       child: Text(
         text,
         style: const TextStyle(
-          color: Color(0xFF666666),
+          color: Color(0xFF8C83A2),
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),

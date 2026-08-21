@@ -92,4 +92,9 @@ class EchoVisitorStorageService {
     );
     return next.take(200).toList();
   }
+
+  Future<void> clear() async {
+    final file = await _scope.dataFile(_fileName);
+    if (await file.exists()) await file.delete();
+  }
 }

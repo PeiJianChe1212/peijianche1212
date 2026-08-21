@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/user_profile.dart';
+import '../../services/character_registry_service.dart';
 import '../../services/user_profile_storage_service.dart';
 import '../../theme/app_theme_background.dart';
 import '../../theme/app_dimensions.dart';
 import '../../theme/app_text_styles.dart';
 import 'ai_creation_center_page.dart';
+import 'character_management_page.dart';
 import 'peilink_chats_page.dart';
 import 'relationship_hub_page.dart';
 import 'peilink_echo_page.dart';
@@ -32,13 +34,12 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   int _chatsRevision = 0;
   UserProfile _profile = const UserProfile();
 
-  static const _titles = ['PeiLink', '羁绊', 'Echo', 'Guide'];
+  static const _titles = ['PeiLink', '羁绊', 'Echo'];
 
   List<Widget> get _pages => [
     PeiLinkChatsPage(key: ValueKey(_chatsRevision)),
     RelationshipHubPage(key: ValueKey(_contactsRevision)),
     const PeiLinkEchoPage(showPublicTimeline: true, embedded: true),
-    const PeiLinkGuidePage(),
   ];
 
   @override
@@ -66,9 +67,48 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
     }
   }
 
-  void _openRelationshipsFromDrawer() {
+  Future<void> _openGuide() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ThemeBackgroundContainer(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              title: const Text('Guide'),
+              centerTitle: true,
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+            ),
+            body: const PeiLinkGuidePage(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCharacterManagementFromDrawer() async {
     Navigator.pop(context);
-    setState(() => _currentIndex = 1);
+    final registry = CharacterRegistryService();
+    final characters = await registry.loadCharacters();
+    if (!mounted || characters.isEmpty) return;
+    final activeId = await registry.loadActiveCharacterId();
+    if (!mounted) return;
+    final character = characters.firstWhere(
+      (item) => item.id == activeId,
+      orElse: () => characters.first,
+    );
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CharacterManagementPage(characterId: character.id),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _contactsRevision += 1;
+      _chatsRevision += 1;
+    });
   }
 
   @override
@@ -85,10 +125,10 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
           extendBody: true,
           backgroundColor: Colors.transparent,
           drawer: PeiLinkProfileDrawer(
+            onOpenCharacterManagement: _openCharacterManagementFromDrawer,
             onProfileChanged: (profile) {
               if (mounted) setState(() => _profile = profile);
             },
-            onOpenRelationships: _openRelationshipsFromDrawer,
           ),
           appBar: AppBar(
             backgroundColor: const Color(0xEAF7F9FA),
@@ -141,7 +181,7 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
             actions: [
               IconButton(
                 key: const ValueKey('peilink-guide-entry'),
-                onPressed: () => setState(() => _currentIndex = 3),
+                onPressed: _openGuide,
                 tooltip: '阿澈 Guide',
                 icon: Image.asset(
                   'assets/images/brand/peilink_butterfly.png',
@@ -149,6 +189,7 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
                   height: 27,
                 ),
               ),
+              const SizedBox(width: 10),
               IconButton(
                 key: const ValueKey('peilink-create-entry'),
                 onPressed: _showCreateMenu,
@@ -217,11 +258,6 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
                           icon: Icon(Icons.waves_outlined),
                           activeIcon: Icon(Icons.waves_rounded),
                           label: 'Echo',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.auto_stories_outlined),
-                          activeIcon: Icon(Icons.auto_stories_rounded),
-                          label: 'Guide',
                         ),
                       ],
                     ),

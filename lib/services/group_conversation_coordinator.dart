@@ -3,11 +3,17 @@ import 'dart:math';
 
 import '../ai/model_hub.dart';
 import '../models/ai_character.dart';
+import '../models/chat_message.dart';
 import '../models/group_chat.dart';
 import '../models/group_message.dart';
+import '../context_builder/context_build_result.dart';
+import '../prompt_composer/prompt_composer.dart';
+import '../prompt_composer/prompt_context.dart';
 import 'character_registry_service.dart';
 import 'character_settings_storage_service.dart';
 import 'context_builder.dart';
+import '../conversation/conversation_engine.dart';
+import '../conversation/chat_reply_sanitizer.dart';
 import 'reborn_group_profile_service.dart';
 
 class GroupReplyStep {
@@ -41,7 +47,7 @@ class GroupGeneratedReply {
 /// 群聊第二批核心：先决定谁说，再让角色按顺序逐个生成。
 class GroupConversationCoordinator {
   GroupConversationCoordinator({ModelHub? modelHub})
-      : _modelHub = modelHub ?? ModelHub();
+    : _modelHub = modelHub ?? ModelHub();
 
   final ModelHub _modelHub;
   final Random _random = Random();
@@ -64,26 +70,30 @@ class GroupConversationCoordinator {
     try {
       final provider = await _modelHub.chatProvider();
       final memberText = members
-          .map((item) =>
-              '- ${item.id}｜${item.displayName}｜${_shortPersona(item)}')
+          .map(
+            (item) => '- ${item.id}｜${item.displayName}｜${_shortPersona(item)}',
+          )
           .join('\n');
       final recent = _recentTranscript(messages, registry, limit: 14);
       final rebornPlanner = RebornGroupProfileService.plannerContext(members);
       final mentioned = latest.mentionedMemberIds;
       final mentionedText = mentioned.isEmpty
           ? '无明确@对象'
-          : mentioned.map((id) {
-              if (id == 'user') return '林念念';
-              for (final item in members) {
-                if (item.id == id) return '${item.displayName}(${item.id})';
-              }
-              return id;
-            }).join('、');
+          : mentioned
+                .map((id) {
+                  if (id == 'user') return '林念念';
+                  for (final item in members) {
+                    if (item.id == id) return '${item.displayName}(${item.id})';
+                  }
+                  return id;
+                })
+                .join('、');
       final repliedMessage = _findMessage(messages, latest.replyToMessageId);
       final replyText = repliedMessage == null
           ? '无引用消息'
           : '${_senderName(repliedMessage, registry)}：${repliedMessage.content}';
-      final prompt = '''
+      final prompt =
+          '''
 你是 PeiLink 群聊调度器，只负责安排发言，不负责代替角色说话。
 
 【群聊原则】
@@ -116,10 +126,7 @@ replyCount只能是1到3。steps最多4项，总replyCount最多6。
 ''';
       final raw = await provider.complete(
         messages: [
-          {
-            'role': 'system',
-            'content': prompt,
-          },
+          {'role': 'system', 'content': prompt},
         ],
         temperature: 0.35,
         maxTokens: 420,
@@ -186,32 +193,41 @@ replyCount只能是1到3。steps最多4项，总replyCount最多6。
           .where((item) => group.memberCharacterIds.contains(item.id))
           .toList(growable: false);
       final otherMembers = registry
-          .where((item) =>
-              group.memberCharacterIds.contains(item.id) &&
-              item.id != character!.id)
+          .where(
+            (item) =>
+                group.memberCharacterIds.contains(item.id) &&
+                item.id != character!.id,
+          )
           .map((item) => '${item.id}=${item.displayName}')
           .join('、');
 
-      final relationshipContext =
-          RebornGroupProfileService.relationshipContext(groupMembers);
-      final socialProtocol =
-          RebornGroupProfileService.socialProtocol(groupMembers);
-      final esportsRules =
-          RebornGroupProfileService.esportsRules(groupMembers);
-      final speechProfile =
-          RebornGroupProfileService.speechProfile(selectedCharacter);
+      final relationshipContext = RebornGroupProfileService.relationshipContext(
+        groupMembers,
+      );
+      final socialProtocol = RebornGroupProfileService.socialProtocol(
+        groupMembers,
+      );
+      final esportsRules = RebornGroupProfileService.esportsRules(groupMembers);
+      final speechProfile = RebornGroupProfileService.speechProfile(
+        selectedCharacter,
+      );
+      final conversationEngine = ConversationEngine.build(
+        messages: _conversationMessages(messages, selectedCharacter.id),
+        conversationMode: 'basic',
+      );
 
       final system = ContextBuilder.build(
         task: ContextTask.groupChat,
         settings: settings,
-        taskRules: '''
+        taskRules:
+            '''
 你正在真实的多人群聊“${group.name}”中发言。
 你只能扮演${selectedCharacter.displayName}，不能替其他成员或用户说话。
 $quotedContext
 $mentionContext
 如果需要点名某人，请使用群内真实名称写成“@名字”，不要虚构不存在的成员。
 先看清最近消息，允许接用户，也允许接刚刚说话的其他角色。
-回复要像手机群聊，口语、自然、短，不写括号动作、旁白、分析或角色名标签。
+回复要像手机群聊，口语、自然、短。禁止用（）、()、[]、【】或 *动作* 输出独立动作、心理或舞台标签，也不写旁白、分析或角色名标签。状态或行为只能自然融进聊天正文。
 不要重复别人已经说过的话，不要做圆桌式总结，不要强行把话题绕回恋爱。
 禁止争风吃醋、威胁用户、要求用户只能选择你。
 普通聊天不要长篇说教；比赛、训练和专业话题才可以明显认真。
@@ -227,10 +243,16 @@ $esportsRules
         relationshipContext: relationshipContext,
         socialProtocol: socialProtocol,
       );
+      final modelContext = PromptComposer(
+        baseContext: ContextBuildResult(
+          messages: [
+            {'role': 'system', 'content': system},
+          ],
+          systemPrompt: system,
+        ),
+      ).addContext(PromptContext.chatFlow(conversationEngine.prompt)).compose();
       final raw = await provider.complete(
-        messages: [
-          {'role': 'system', 'content': system},
-        ],
+        messages: modelContext.messages,
         temperature: settings.temperature.clamp(0.62, 0.86).toDouble(),
         maxTokens: 260,
         topP: 0.88,
@@ -251,8 +273,8 @@ $esportsRules
     GroupMessage latest,
     Set<String> allowedIds,
   ) {
-    final isMentioningAll = latest.content.contains('@全体成员') ||
-        latest.content.contains('@所有人');
+    final isMentioningAll =
+        latest.content.contains('@全体成员') || latest.content.contains('@所有人');
     if (isMentioningAll || latest.mentionedMemberIds.isEmpty) return plan;
 
     final targetIds = latest.mentionedMemberIds
@@ -267,7 +289,8 @@ $esportsRules
     final ordered = <GroupReplyStep>[];
     var total = 0;
     for (final id in targetIds) {
-      final step = byId.remove(id) ??
+      final step =
+          byId.remove(id) ??
           GroupReplyStep(
             characterId: id,
             replyCount: 1,
@@ -314,11 +337,13 @@ $esportsRules
         var count = int.tryParse(item['replyCount']?.toString() ?? '') ?? 1;
         count = count.clamp(1, 3).toInt();
         if (total + count > 6 || steps.length >= 4) break;
-        steps.add(GroupReplyStep(
-          characterId: id,
-          replyCount: count,
-          intent: item['intent']?.toString() ?? '',
-        ));
+        steps.add(
+          GroupReplyStep(
+            characterId: id,
+            replyCount: count,
+            intent: item['intent']?.toString() ?? '',
+          ),
+        );
         total += count;
       }
       return GroupReplyPlan(steps: steps);
@@ -339,8 +364,10 @@ $esportsRules
     }
     final normalized = content.toLowerCase();
     for (final member in members) {
-      final names = [member.characterName, member.remark]
-          .where((value) => value.trim().isNotEmpty);
+      final names = [
+        member.characterName,
+        member.remark,
+      ].where((value) => value.trim().isNotEmpty);
       if (names.any((name) => normalized.contains(name.toLowerCase()))) {
         return member;
       }
@@ -359,26 +386,25 @@ $esportsRules
     final selected = messages.length <= limit
         ? messages
         : messages.sublist(messages.length - limit);
-    return selected.map((message) {
-      final sender = switch (message.senderType) {
-        GroupSenderType.user => '林念念',
-        GroupSenderType.character => names[message.senderId] ?? '未知成员',
-        GroupSenderType.system => '系统',
-      };
-      final mention = message.mentionedMemberIds.isEmpty
-          ? ''
-          : ' [@${message.mentionedMemberIds.map((id) => id == 'user' ? '林念念' : names[id] ?? id).join('、')}]';
-      final reply = message.replyToMessageId == null
-          ? ''
-          : ' [引用:${message.replyToMessageId}]';
-      return '$sender：${message.content}$mention$reply';
-    }).join('\n');
+    return selected
+        .map((message) {
+          final sender = switch (message.senderType) {
+            GroupSenderType.user => '林念念',
+            GroupSenderType.character => names[message.senderId] ?? '未知成员',
+            GroupSenderType.system => '系统',
+          };
+          final mention = message.mentionedMemberIds.isEmpty
+              ? ''
+              : ' [@${message.mentionedMemberIds.map((id) => id == 'user' ? '林念念' : names[id] ?? id).join('、')}]';
+          final reply = message.replyToMessageId == null
+              ? ''
+              : ' [引用:${message.replyToMessageId}]';
+          return '$sender：${message.content}$mention$reply';
+        })
+        .join('\n');
   }
 
-  GroupMessage? _findMessage(
-    List<GroupMessage> messages,
-    String? id,
-  ) {
+  GroupMessage? _findMessage(List<GroupMessage> messages, String? id) {
     if (id == null || id.isEmpty) return null;
     for (final message in messages) {
       if (message.id == id) return message;
@@ -386,10 +412,7 @@ $esportsRules
     return null;
   }
 
-  String _senderName(
-    GroupMessage message,
-    List<AiCharacter> registry,
-  ) {
+  String _senderName(GroupMessage message, List<AiCharacter> registry) {
     if (message.senderType == GroupSenderType.user) return '林念念';
     if (message.senderType == GroupSenderType.system) return '系统';
     for (final character in registry) {
@@ -405,21 +428,44 @@ $esportsRules
   }
 
   List<String> _cleanLines(String raw, int maxCount) {
-    final cleaned = raw
+    final cleaned = ChatReplySanitizer.clean(raw)
         .replaceAll(RegExp(r'^```(?:json|text)?', multiLine: true), '')
         .replaceAll('```', '')
         .trim();
     if (cleaned.isEmpty) return const [];
     final lines = cleaned
         .split(RegExp(r'\n+'))
-        .map((line) => line
-            .replaceFirst(RegExp(r'^[-•]\s*'), '')
-            .replaceFirst(RegExp(r'^\d+[.、]\s*'), '')
-            .replaceFirst(RegExp(r'^[^：:]{1,12}[：:]\s*'), '')
-            .trim())
+        .map(
+          (line) => line
+              .replaceFirst(RegExp(r'^[-•]\s*'), '')
+              .replaceFirst(RegExp(r'^\d+[.、]\s*'), '')
+              .replaceFirst(RegExp(r'^[^：:]{1,12}[：:]\s*'), '')
+              .trim(),
+        )
         .where((line) => line.isNotEmpty)
         .take(maxCount.clamp(1, 3).toInt())
         .toList();
     return lines;
+  }
+
+  List<ChatMessage> _conversationMessages(
+    List<GroupMessage> messages,
+    String speakingCharacterId,
+  ) {
+    final selected = messages.length <= 18
+        ? messages
+        : messages.sublist(messages.length - 18);
+    return selected
+        .map(
+          (message) => ChatMessage(
+            role: message.senderType == GroupSenderType.user
+                ? 'user'
+                : message.senderId == speakingCharacterId
+                ? 'assistant'
+                : 'user',
+            content: message.content,
+          ),
+        )
+        .toList(growable: false);
   }
 }

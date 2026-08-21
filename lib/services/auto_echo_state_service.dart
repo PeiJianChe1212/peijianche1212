@@ -9,7 +9,9 @@ class AutoEchoStateService {
 
   Future<AutoEchoState> load({DateTime? now}) async {
     final time = now ?? DateTime.now();
-    final file = await CharacterScopeService(characterId).dataFile('auto_echo_state.json');
+    final file = await CharacterScopeService(
+      characterId,
+    ).dataFile('auto_echo_state.json');
     if (!await file.exists()) return AutoEchoState.initial(time);
     try {
       final decoded = jsonDecode(await file.readAsString());
@@ -21,7 +23,16 @@ class AutoEchoStateService {
   }
 
   Future<void> save(AutoEchoState state) async {
-    final file = await CharacterScopeService(characterId).dataFile('auto_echo_state.json');
+    final file = await CharacterScopeService(
+      characterId,
+    ).dataFile('auto_echo_state.json');
     await file.writeAsString(jsonEncode(state.toJson()), flush: true);
+  }
+
+  Future<void> clear() async {
+    final file = await CharacterScopeService(
+      characterId,
+    ).dataFile('auto_echo_state.json');
+    if (await file.exists()) await file.delete();
   }
 }

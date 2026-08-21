@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
+import '../config/peilink_runtime.dart';
 import '../models/echo_item.dart';
 import 'character_scope_service.dart';
 import 'echo_comment_storage_service.dart';
@@ -14,6 +16,23 @@ class EchoStorageService {
   static const String _fileName = 'echo_timeline.json';
   final String? _ownerId;
   final CharacterScopeService _scope;
+
+  static Future<List<String>> discoverStoredOwnerIds() async {
+    final documents = await getApplicationDocumentsDirectory();
+    final root = Directory('${documents.path}/characters');
+    if (!await root.exists()) return const [];
+    final ids = <String>[];
+    await for (final entity in root.list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final timeline = File('${entity.path}/$_fileName');
+      if (await timeline.exists()) {
+        ids.add(
+          entity.uri.pathSegments.where((segment) => segment.isNotEmpty).last,
+        );
+      }
+    }
+    return ids;
+  }
 
   Future<List<EchoItem>> loadItems() async {
     final file = await _scope.dataFile(
@@ -31,8 +50,9 @@ class EchoStorageService {
           .where((item) => item.id.isNotEmpty)
           .toList();
       final resolvedOwnerId = _ownerId ?? await _scope.resolveCharacterId();
-      final commentStorage =
-          EchoCommentStorageService(ownerId: resolvedOwnerId);
+      final commentStorage = EchoCommentStorageService(
+        ownerId: resolvedOwnerId,
+      );
       final merged = <EchoItem>[];
       var hadLegacyComments = false;
       for (final item in items) {
@@ -87,8 +107,9 @@ class EchoStorageService {
     items.removeWhere((item) => item.id == echoId);
     await saveItems(items);
     final resolvedOwnerId = _ownerId ?? await _scope.resolveCharacterId();
-    await EchoCommentStorageService(ownerId: resolvedOwnerId)
-        .deleteForEcho(echoId);
+    await EchoCommentStorageService(
+      ownerId: resolvedOwnerId,
+    ).deleteForEcho(echoId);
     await EchoCommentTaskStorageService().deleteForEcho(echoId);
     await EchoCommentReplyTaskStorageService().removeForEcho(echoId);
   }

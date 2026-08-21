@@ -4,7 +4,9 @@ import '../models/pending_memory.dart';
 import '../services/memory_review_service.dart';
 
 class MemoryReviewPage extends StatefulWidget {
-  const MemoryReviewPage({super.key});
+  const MemoryReviewPage({super.key, required this.characterId});
+
+  final String characterId;
 
   @override
   State<MemoryReviewPage> createState() => _MemoryReviewPageState();
@@ -21,13 +23,14 @@ class _MemoryReviewPageState extends State<MemoryReviewPage> {
     '我们的约定',
     '共同纪念',
   ];
-  final MemoryReviewService _service = MemoryReviewService();
+  late final MemoryReviewService _service;
   List<PendingMemory> _items = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _service = MemoryReviewService(characterId: widget.characterId);
     _load();
   }
 

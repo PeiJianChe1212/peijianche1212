@@ -7,6 +7,8 @@ import '../../models/ai_character.dart';
 import '../../models/chat_message.dart';
 import '../../models/character_settings.dart';
 import '../../models/group_chat.dart';
+import '../../models/message_list_status.dart';
+import '../../services/activity_context_service.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/character_settings_storage_service.dart';
 import '../../services/chat_storage_service.dart';
@@ -17,6 +19,7 @@ import '../../theme/app_theme_background.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/peilink/relationship_badge.dart';
+import '../../widgets/peilink/role_status_mark.dart';
 import '../chat_page.dart';
 import 'group_chat_page.dart';
 
@@ -47,6 +50,7 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
       final characters = await _registry.loadCharacters();
       final previews = <_ConversationPreview>[];
       final groups = await _groupStorage.loadGroups();
+      final statusNow = DateTime.now();
 
       for (final character in characters) {
         final messages = await ChatStorageService(
@@ -58,6 +62,15 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
         final unread = await InitiativeService(
           characterId: character.id,
         ).unreadCount();
+        MessageListStatus status;
+        try {
+          final activity = await ActivityContextService(
+            characterId: character.id,
+          ).resolve(now: statusNow);
+          status = MessageListStatus.fromActivity(activity);
+        } catch (_) {
+          status = MessageListStatus.online;
+        }
 
         previews.add(
           _ConversationPreview(
@@ -65,6 +78,7 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
             settings: settings,
             lastMessage: messages.isEmpty ? null : messages.last,
             unreadCount: unread,
+            status: status,
           ),
         );
       }
@@ -193,12 +207,14 @@ class _ConversationPreview {
     required this.settings,
     required this.lastMessage,
     required this.unreadCount,
+    required this.status,
   });
 
   final AiCharacter character;
   final CharacterSettings settings;
   final ChatMessage? lastMessage;
   final int unreadCount;
+  final MessageListStatus status;
 
   String get previewText {
     final message = lastMessage;
@@ -322,13 +338,13 @@ class _ConversationTile extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: AppTextStyles.listTitle.copyWith(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16.5,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              const _StatusMark(label: 'AI · 在线'),
+                              RoleStatusMark(status: preview.status),
                             ],
                           ),
                           if (relationshipText != null) ...[
@@ -344,6 +360,7 @@ class _ConversationTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: AppTextStyles.supporting.copyWith(
                               fontSize: 13,
+                              color: const Color(0xFF8B8790),
                             ),
                           ),
                         ],
@@ -355,8 +372,8 @@ class _ConversationTile extends StatelessWidget {
                         child: Text(
                           preview.timeText,
                           style: const TextStyle(
-                            color: Color(0xFFB2B2B2),
-                            fontSize: 12,
+                            color: Color(0xFFB7B2BC),
+                            fontSize: 11.5,
                           ),
                         ),
                       ),

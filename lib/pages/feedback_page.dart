@@ -66,11 +66,11 @@ class _FeedbackPageState extends State<FeedbackPage> {
           ),
         ),
       );
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('暂时无法打开反馈问卷：$error')));
+      ).showSnackBar(const SnackBar(content: Text('暂时无法打开反馈问卷')));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

@@ -169,6 +169,7 @@ class PeiFileService {
       avatarPath: avatarPath,
       portraitPath: portraitPath,
       introduction: package.character.introduction,
+      characterIntro: package.character.characterIntro,
       relationship: package.character.relationship,
       birthday: package.character.birthday,
       persona: package.character.persona,

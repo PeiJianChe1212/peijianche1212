@@ -7,15 +7,19 @@ import 'package:flutter/services.dart';
 
 import '../models/activity_status.dart';
 import '../models/ai_character.dart';
+import '../models/anniversary_item.dart';
+import '../models/life_feed_entry.dart';
 import '../models/life_trace.dart';
 import '../services/activity_context_service.dart';
 import '../services/activity_service.dart';
 import '../services/auto_echo_comment_service.dart';
 import '../services/auto_echo_service.dart';
+import '../services/anniversary_storage_service.dart';
 import '../services/character_registry_service.dart';
 import '../services/home_character_storage_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
+import '../services/life_feed_service.dart';
 import '../services/presence_service.dart';
 import '../services/today_service.dart';
 import '../services/world_tick_service.dart';
@@ -23,10 +27,11 @@ import '../widgets/home/home_glass.dart';
 import '../widgets/home/home_visual_tokens.dart';
 import 'chat_page.dart';
 import 'peilink/ai_creation_center_page.dart';
+import 'peilink/anniversary_page.dart';
+import 'peilink/calendar_page.dart';
 import 'peilink/peilink_echo_page.dart';
 import 'peilink/peilink_home_page.dart';
 import 'settings_page.dart';
-import 'today_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.initialHasVisibleCharacter});
@@ -50,6 +55,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final AutoEchoService _autoEchoService = AutoEchoService();
   final AutoEchoCommentService _autoEchoCommentService =
       AutoEchoCommentService();
+  final LifeFeedService _lifeFeedService = LifeFeedService();
   final PageController _pageController = PageController();
 
   Timer? _clockTimer;
@@ -59,6 +65,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _unreadCount = 0;
   int _pageIndex = 0;
   List<LifeTrace> _recentTraces = const [];
+  List<LifeFeedEntry> _lifeFeed = const [];
+  AnniversaryItem? _pinnedAnniversary;
   AiCharacter _homeCharacter = AiCharacter.placeholder();
   bool _homeCharacterLoading = true;
   bool _hasVisibleCharacter = false;
@@ -95,6 +103,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await _recordCurrentActivity(now: now);
       await _refreshInitiative(now: now);
       await _loadRecentTraces();
+      await _loadLifeOverview();
     });
     _echoCommentTimer = Timer.periodic(const Duration(minutes: 1), (_) async {
       if (!mounted) return;
@@ -152,6 +161,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           _hasVisibleCharacter = false;
           _homeCharacterLoading = false;
         });
+        await _loadLifeOverview(characters: characters);
         return;
       }
       final character = await _homeCharacterStorage.loadCharacter();
@@ -166,6 +176,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await _recordCurrentActivity();
       await _refreshInitiative();
       await _loadRecentTraces();
+      await _loadLifeOverview(characters: characters);
     } catch (error) {
       debugPrint('加载首页展示角色失败：$error');
       if (!mounted) return;
@@ -265,6 +276,50 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     );
     await _loadRecentTraces();
+    await _loadLifeOverview();
+  }
+
+  Future<void> _openLifeEcho() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const PeiLinkEchoPage(showPublicTimeline: true),
+      ),
+    );
+    await _loadLifeOverview();
+  }
+
+  Future<void> _openCharacterEcho(AiCharacter character) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PeiLinkEchoPage(character: character)),
+    );
+    await _loadLifeOverview();
+  }
+
+  Future<void> _loadLifeOverview({List<AiCharacter>? characters}) async {
+    try {
+      final available = characters ?? await _characterRegistry.loadCharacters();
+      final results = await Future.wait<Object?>([
+        _lifeFeedService.load(available),
+        AnniversaryStorageService().loadPinned(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _lifeFeed = results[0] as List<LifeFeedEntry>;
+        _pinnedAnniversary = results[1] as AnniversaryItem?;
+      });
+    } catch (error) {
+      debugPrint('加载 Life 世界概览失败：$error');
+    }
+  }
+
+  Future<void> _openAnniversaries() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AnniversaryPage()),
+    );
+    await _loadLifeOverview();
   }
 
   Future<void> _openSettings() async {
@@ -338,25 +393,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _showActivityDetails() async {
-    if (!_hasVisibleCharacter) return;
-    final activity = _activity;
-    await TodayService(
-      characterId: _homeCharacter.id,
-    ).recordActivity(activity, now: _now);
-    if (!mounted) return;
+  Future<void> _openCalendar() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => TodayPage(
-          currentActivity: activity,
-          characterId: _homeCharacter.id,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => PeiLinkCalendarPage(initialDate: _now)),
     );
     if (!mounted) return;
     setState(() => _now = DateTime.now());
-    await _loadRecentTraces();
   }
 
   void _openLifeDesktop() {
@@ -391,7 +434,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onChooseCharacter: hasCharacter
             ? _chooseHomeCharacter
             : _openCharacterCreation,
-        onActivityTap: _showActivityDetails,
+        onActivityTap: () => _showPlaceholder('角色状态'),
         onChat: _openChat,
         onCall: () => _showPlaceholder('电话'),
         onEcho: _openEcho,
@@ -401,10 +444,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         now: _now,
         activity: desktopActivity,
         hasCharacter: hasCharacter,
-        traces: hasCharacter ? _recentTraces : const [],
-        onActivityTap: _showActivityDetails,
-        onAnniversaryTap: () => _showPlaceholder('\u7eaa\u5ff5\u65e5'),
-        onRecentTap: _openEcho,
+        feed: _lifeFeed,
+        pinnedAnniversary: _pinnedAnniversary,
+        onCalendarTap: _openCalendar,
+        onWorldStatusTap: () => _showPlaceholder('世界状态'),
+        onAnniversaryTap: _openAnniversaries,
+        onRecentTap: _openLifeEcho,
+        onCharacterTap: _openCharacterEcho,
         onSettingsTap: _openSettings,
         onAppTap: _showPlaceholder,
       ),
@@ -440,7 +486,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 controller: _pageController,
                 physics: const BouncingScrollPhysics(),
                 itemCount: pages.length,
-                onPageChanged: (value) => setState(() => _pageIndex = value),
+                onPageChanged: (value) {
+                  setState(() => _pageIndex = value);
+                  if (value == 1) unawaited(_loadLifeOverview());
+                },
                 itemBuilder: (_, index) => AnimatedSwitcher(
                   duration: _motionDuration,
                   child: KeyedSubtree(
@@ -870,10 +919,13 @@ class _LifeDesktopPage extends StatelessWidget {
     required this.now,
     required this.activity,
     required this.hasCharacter,
-    required this.traces,
-    required this.onActivityTap,
+    required this.feed,
+    required this.pinnedAnniversary,
+    required this.onCalendarTap,
+    required this.onWorldStatusTap,
     required this.onAnniversaryTap,
     required this.onRecentTap,
+    required this.onCharacterTap,
     required this.onSettingsTap,
     required this.onAppTap,
   });
@@ -881,10 +933,13 @@ class _LifeDesktopPage extends StatelessWidget {
   final DateTime now;
   final ActivityStatus activity;
   final bool hasCharacter;
-  final List<LifeTrace> traces;
-  final VoidCallback onActivityTap;
+  final List<LifeFeedEntry> feed;
+  final AnniversaryItem? pinnedAnniversary;
+  final VoidCallback onCalendarTap;
+  final VoidCallback onWorldStatusTap;
   final VoidCallback onAnniversaryTap;
   final VoidCallback onRecentTap;
+  final ValueChanged<AiCharacter> onCharacterTap;
   final VoidCallback onSettingsTap;
   final ValueChanged<String> onAppTap;
 
@@ -951,11 +1006,7 @@ class _LifeDesktopPage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            _LifeClockWidget(
-              now: now,
-              activity: activity,
-              onTap: onActivityTap,
-            ),
+            _LifeClockWidget(now: now, onTap: onCalendarTap),
             const SizedBox(height: 12),
             IntrinsicHeight(
               child: Row(
@@ -964,7 +1015,7 @@ class _LifeDesktopPage extends StatelessWidget {
                   Expanded(
                     child: _AnniversaryWidget(
                       now: now,
-                      hasCharacter: hasCharacter,
+                      item: pinnedAnniversary,
                       onTap: onAnniversaryTap,
                     ),
                   ),
@@ -972,7 +1023,7 @@ class _LifeDesktopPage extends StatelessWidget {
                   Expanded(
                     child: _WorldStatusWidget(
                       activity: activity,
-                      onTap: onActivityTap,
+                      onTap: onWorldStatusTap,
                     ),
                   ),
                 ],
@@ -980,9 +1031,10 @@ class _LifeDesktopPage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _RecentLifeWidget(
-              traces: traces,
+              entries: feed,
               hasCharacter: hasCharacter,
               onTap: onRecentTap,
+              onCharacterTap: onCharacterTap,
             ),
             const SizedBox(height: 13),
             _LifeAppsWidget(onSettingsTap: onSettingsTap, onAppTap: onAppTap),
@@ -995,14 +1047,9 @@ class _LifeDesktopPage extends StatelessWidget {
 }
 
 class _LifeClockWidget extends StatelessWidget {
-  const _LifeClockWidget({
-    required this.now,
-    required this.activity,
-    required this.onTap,
-  });
+  const _LifeClockWidget({required this.now, required this.onTap});
 
   final DateTime now;
-  final ActivityStatus activity;
   final VoidCallback onTap;
 
   String get _weekday =>
@@ -1013,6 +1060,7 @@ class _LifeClockWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _LifeWidgetShell(
+      key: const ValueKey('life-calendar-card'),
       onTap: onTap,
       tint: const Color(0xFFF3F1FB),
       child: SizedBox(
@@ -1062,7 +1110,7 @@ class _LifeClockWidget extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '$_weekday · ${activity.label}',
+                          _weekday,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -1125,20 +1173,13 @@ class _LifeClockWidget extends StatelessWidget {
 class _AnniversaryWidget extends StatelessWidget {
   const _AnniversaryWidget({
     required this.now,
-    required this.hasCharacter,
+    required this.item,
     required this.onTap,
   });
 
   final DateTime now;
-  final bool hasCharacter;
+  final AnniversaryItem? item;
   final VoidCallback onTap;
-
-  int get _daysLeft {
-    final today = DateTime(now.year, now.month, now.day);
-    var target = DateTime(now.year, 1, 17);
-    if (!target.isAfter(today)) target = DateTime(now.year + 1, 1, 17);
-    return target.difference(today).inDays;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1150,50 +1191,54 @@ class _AnniversaryWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _LifeWidgetTitle(icon: Icons.favorite_rounded, title: '纪念日'),
+            Row(
+              children: [
+                const _LifeWidgetTitle(
+                  icon: Icons.favorite_rounded,
+                  title: '纪念日',
+                ),
+              ],
+            ),
             const SizedBox(height: 13),
             Text(
-              hasCharacter ? '相遇纪念日' : '暂无纪念关系',
+              item?.title ?? '还没有纪念日',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: HomeVisualTokens.inkSecondary,
                 fontSize: 11,
               ),
             ),
-            const SizedBox(height: 3),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  hasCharacter ? '$_daysLeft' : '--',
-                  style: const TextStyle(
-                    color: HomeVisualTokens.inkPrimary,
-                    fontSize: 35,
-                    height: 1,
-                    fontWeight: FontWeight.w300,
-                  ),
+            if (item != null) ...[
+              const SizedBox(height: 3),
+              Text(
+                AnniversaryDayStatus.calculate(item!, now: now).displayText,
+                style: const TextStyle(
+                  color: HomeVisualTokens.inkPrimary,
+                  fontSize: 20,
+                  height: 1.1,
+                  fontWeight: FontWeight.w500,
                 ),
-                const Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 3),
-                  child: Text(
-                    '天',
-                    style: TextStyle(
-                      color: HomeVisualTokens.inkSecondary,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const Spacer(),
-            const Text(
-              '每一天都值得被记住',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: HomeVisualTokens.inkTertiary,
-                fontSize: 9.5,
               ),
-            ),
+              const SizedBox(height: 5),
+              Text(
+                '${item!.date.year}.${item!.date.month.toString().padLeft(2, '0')}.${item!.date.day.toString().padLeft(2, '0')}',
+                style: const TextStyle(
+                  color: HomeVisualTokens.inkTertiary,
+                  fontSize: 9.5,
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 5),
+              const Text(
+                '记录一个值得记住的日子',
+                style: TextStyle(
+                  color: HomeVisualTokens.inkTertiary,
+                  fontSize: 9.5,
+                ),
+              ),
+            ],
+            const Spacer(),
           ],
         ),
       ),
@@ -1259,14 +1304,16 @@ class _WorldStatusWidget extends StatelessWidget {
 
 class _RecentLifeWidget extends StatelessWidget {
   const _RecentLifeWidget({
-    required this.traces,
+    required this.entries,
     required this.hasCharacter,
     required this.onTap,
+    required this.onCharacterTap,
   });
 
-  final List<LifeTrace> traces;
+  final List<LifeFeedEntry> entries;
   final bool hasCharacter;
   final VoidCallback onTap;
+  final ValueChanged<AiCharacter> onCharacterTap;
 
   String _timeText(DateTime value) {
     final difference = DateTime.now().difference(value);
@@ -1279,7 +1326,7 @@ class _RecentLifeWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visible = traces.take(3).toList();
+    final visible = entries.take(5).toList();
     return _LifeWidgetShell(
       onTap: onTap,
       tint: const Color(0xFFF2F1FA),
@@ -1303,7 +1350,7 @@ class _RecentLifeWidget extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  hasCharacter ? '他的生活还没有开始记录\n等待新的故事发生' : '暂无生活记录\n等待新的故事发生',
+                  hasCharacter ? 'AI 的生活还没有开始。' : 'AI 的生活还没有开始。',
                   style: const TextStyle(
                     color: HomeVisualTokens.inkSecondary,
                     fontSize: 11,
@@ -1313,8 +1360,10 @@ class _RecentLifeWidget extends StatelessWidget {
             else
               for (var index = 0; index < visible.length; index++) ...[
                 _RecentLifeRow(
-                  trace: visible[index],
-                  timeText: _timeText(visible[index].occurredAt),
+                  entry: visible[index],
+                  timeText: _timeText(visible[index].createdAt),
+                  onCharacterTap: () =>
+                      onCharacterTap(visible[index].character),
                 ),
                 if (index != visible.length - 1) const SizedBox(height: 8),
               ],
@@ -1337,37 +1386,42 @@ class _LifeAppsWidget extends StatelessWidget {
       _AppEntry(
         '相册',
         Icons.photo_library_rounded,
-        () => onAppTap('相册'),
+        null,
         tint: const Color(0xFF8EA0F1),
         assetPath: 'assets/images/app_icons/gallery.png',
+        locked: true,
       ),
       _AppEntry(
         '音乐',
         Icons.headphones_rounded,
-        () => onAppTap('音乐'),
+        null,
         tint: const Color(0xFF9A8FE8),
         assetPath: 'assets/images/app_icons/music.png',
+        locked: true,
       ),
       _AppEntry(
         '礼物',
         Icons.card_giftcard_rounded,
-        () => onAppTap('礼物'),
+        null,
         tint: const Color(0xFFE2AFC5),
         assetPath: 'assets/images/app_icons/gift.png',
+        locked: true,
       ),
       _AppEntry(
         '日记',
         Icons.menu_book_rounded,
-        () => onAppTap('日记'),
+        null,
         tint: const Color(0xFFA18EE6),
         assetPath: 'assets/images/app_icons/diary.png',
+        locked: true,
       ),
       _AppEntry(
         '世界',
         Icons.public_rounded,
-        () => onAppTap('世界'),
+        null,
         tint: const Color(0xFF829CEB),
         assetPath: 'assets/images/app_icons/world.png',
+        locked: true,
       ),
       _AppEntry(
         '设置',
@@ -1441,11 +1495,12 @@ class _LifeDesktopApp extends StatelessWidget {
 
 class _LifeWidgetShell extends StatelessWidget {
   const _LifeWidgetShell({
+    super.key,
     required this.onTap,
     required this.tint,
     required this.child,
   });
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Color tint;
   final Widget child;
 
@@ -1543,42 +1598,64 @@ class _WorldMetric extends StatelessWidget {
 }
 
 class _RecentLifeRow extends StatelessWidget {
-  const _RecentLifeRow({required this.trace, required this.timeText});
-  final LifeTrace trace;
+  const _RecentLifeRow({
+    required this.entry,
+    required this.timeText,
+    required this.onCharacterTap,
+  });
+  final LifeFeedEntry entry;
   final String timeText;
+  final VoidCallback onCharacterTap;
+
+  Widget _avatar() {
+    final path = entry.character.avatarPath.trim();
+    if (path.isNotEmpty && File(path).existsSync()) {
+      return ClipOval(
+        child: Image.file(File(path), width: 31, height: 31, fit: BoxFit.cover),
+      );
+    }
+    return Container(
+      width: 31,
+      height: 31,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.58),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.auto_awesome_rounded,
+        color: HomeVisualTokens.brandBlue,
+        size: 15,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 31,
-          height: 31,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.58),
-            shape: BoxShape.circle,
-          ),
-          child: Text(trace.emoji, style: const TextStyle(fontSize: 15)),
-        ),
+        GestureDetector(onTap: onCharacterTap, child: _avatar()),
         const SizedBox(width: 9),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                trace.title.trim().isEmpty ? '留下了一条生活动态' : trace.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: HomeVisualTokens.inkPrimary,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
+              GestureDetector(
+                onTap: onCharacterTap,
+                child: Text(
+                  entry.character.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: HomeVisualTokens.inkPrimary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               const SizedBox(height: 2),
               Text(
-                trace.detail.trim().isEmpty ? '生活世界刚刚有了新的回声' : trace.detail,
+                entry.summary,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -2694,7 +2771,7 @@ class _AppEntry {
 
   final String label;
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final Color tint;
   final int badgeCount;
   final String? assetPath;

@@ -5,18 +5,28 @@ import 'dart:typed_data';
 import 'character_scope_service.dart';
 
 class EchoProfile {
-  const EchoProfile({this.coverPath = ''});
+  const EchoProfile({this.coverPath = '', this.signature = ''});
 
   final String coverPath;
+  final String signature;
 
-  EchoProfile copyWith({String? coverPath}) {
-    return EchoProfile(coverPath: coverPath ?? this.coverPath);
+  EchoProfile copyWith({String? coverPath, String? signature}) {
+    return EchoProfile(
+      coverPath: coverPath ?? this.coverPath,
+      signature: signature ?? this.signature,
+    );
   }
 
-  Map<String, dynamic> toJson() => {'coverPath': coverPath};
+  Map<String, dynamic> toJson() => {
+    'coverPath': coverPath,
+    'signature': signature,
+  };
 
   factory EchoProfile.fromJson(Map<dynamic, dynamic> json) {
-    return EchoProfile(coverPath: json['coverPath']?.toString() ?? '');
+    return EchoProfile(
+      coverPath: json['coverPath']?.toString() ?? '',
+      signature: json['signature']?.toString() ?? '',
+    );
   }
 }
 
@@ -91,4 +101,9 @@ class EchoProfileStorageService {
     final extension = path.substring(dot).toLowerCase();
     return extension.length <= 6 ? extension : '.jpg';
   }
+}
+
+String echoSignatureText(EchoProfile profile) {
+  final signature = profile.signature.trim();
+  return signature.isEmpty ? '这里记录我的生活。' : signature;
 }

@@ -7,6 +7,7 @@ import 'package:peijianche_app/config/peilink_runtime.dart';
 import 'package:peijianche_app/main.dart' show PeiJianCheApp;
 import 'package:peijianche_app/models/user_profile.dart';
 import 'package:peijianche_app/pages/home_page.dart';
+import 'package:peijianche_app/pages/peilink/calendar_page.dart';
 import 'package:peijianche_app/pages/peilink/peilink_echo_page.dart';
 import 'package:peijianche_app/pages/peilink/peilink_home_page.dart';
 import 'package:peijianche_app/services/user_profile_storage_service.dart';
@@ -44,7 +45,10 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 100)),
     );
     await tester.pump();
-    expect(find.byKey(const ValueKey('ai-world-character-card')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ai-world-character-card')),
+      findsOneWidget,
+    );
     expect(find.text('暂无角色'), findsOneWidget);
     expect(find.textContaining('等待连接'), findsWidgets);
     expect(find.byKey(const ValueKey('ai-world-create-entry')), findsOneWidget);
@@ -52,11 +56,28 @@ void main() {
     await tester.fling(find.byType(PageView), const Offset(-800, 0), 1200);
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('PEILINK LIFE'), findsOneWidget);
-    expect(find.text('暂无纪念关系'), findsOneWidget);
+    expect(find.text('还没有纪念日'), findsOneWidget);
+    expect(find.text('记录一个值得记住的日子'), findsOneWidget);
+    expect(find.text('星期'), findsNothing);
+    expect(find.byKey(const ValueKey('life-calendar-card')), findsOneWidget);
 
     await tester.fling(find.byType(PageView), const Offset(-800, 0), 1200);
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.byKey(const ValueKey('ai-world-apps-page')), findsOneWidget);
+  });
+
+  testWidgets('日历页只展示本地月历与选中日期', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PeiLinkCalendarPage(initialDate: DateTime(2026, 8, 22)),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CalendarDatePicker), findsOneWidget);
+    expect(find.text('日历'), findsOneWidget);
+    expect(find.text('2026年8月22日'), findsOneWidget);
+    expect(find.text('星期六'), findsOneWidget);
   });
 
   testWidgets('User 无角色时 Echo 正常打开', (tester) async {
@@ -88,10 +109,7 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 1));
 
-    expect(
-      find.byType(PeiLinkHomePage, skipOffstage: false),
-      findsOneWidget,
-    );
+    expect(find.byType(PeiLinkHomePage, skipOffstage: false), findsOneWidget);
   });
 
   test('User 首次资料使用空状态默认值', () async {

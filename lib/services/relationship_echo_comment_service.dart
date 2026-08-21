@@ -18,6 +18,7 @@ import 'shared_experience_storage_service.dart';
 /// 把真实共享经历自然延伸成一条角色 Echo 评论。
 ///
 /// 本服务只处理“是否评论、由谁评论、评论写什么”，不负责修改关系阶段。
+@Deprecated('Use EchoSocialInteractionService and AutoEchoCommentService.')
 class RelationshipEchoCommentService {
   RelationshipEchoCommentService({http.Client? client})
     : _client = client ?? http.Client(),

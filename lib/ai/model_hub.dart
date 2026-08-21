@@ -1,6 +1,7 @@
 import 'package:http/http.dart' as http;
 
 import '../models/ai_capability.dart';
+import '../models/api_settings.dart';
 import '../services/api_settings_storage_service.dart';
 import 'chat_model_provider.dart';
 import 'image_model_provider.dart';
@@ -11,17 +12,18 @@ import 'speech_to_text_provider.dart';
 import 'text_to_speech_provider.dart';
 
 class ModelHub {
-  ModelHub({
-    ApiSettingsStorageService? storage,
-    this.client,
-  }) : _storage = storage ?? ApiSettingsStorageService();
+  ModelHub({ApiSettingsStorageService? storage, this.client})
+    : _storage = storage ?? ApiSettingsStorageService();
 
   final ApiSettingsStorageService _storage;
   final http.Client? client;
 
-  Future<ChatModelProvider> chatProvider() async {
-    final settings = await _storage.loadSettings();
-    return OpenAiCompatibleChatProvider(settings: settings, client: client);
+  Future<ChatModelProvider> chatProvider({ApiSettings? settings}) async {
+    final resolvedSettings = settings ?? await _storage.loadSettings();
+    return OpenAiCompatibleChatProvider(
+      settings: resolvedSettings,
+      client: client,
+    );
   }
 
   Future<VolcengineMultimodalProvider?> multimodalProvider() async {
@@ -30,6 +32,7 @@ class ModelHub {
     return VolcengineMultimodalProvider(settings: settings, client: client);
   }
 
+  @Deprecated('正式生图入口请使用 ImageGenerationService，由 Router 选择 Provider。')
   Future<ImageModelProvider?> imageProvider() async {
     final settings = await _storage.loadSettings();
     if (!settings.isImageConfigured) return null;

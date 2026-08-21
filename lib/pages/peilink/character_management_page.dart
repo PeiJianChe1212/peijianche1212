@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../../models/ai_character.dart';
 import '../../services/character_registry_service.dart';
-import '../../services/character_scope_service.dart';
-import '../../services/session_reset_service.dart';
 import '../../theme/app_theme_background.dart';
 import '../memory_page.dart';
+import 'character_detail_page.dart';
+import 'character_management_actions.dart';
 import 'character_profile_home_page.dart';
 
 class CharacterManagementPage extends StatefulWidget {
@@ -26,9 +26,7 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
   AiCharacter _character = AiCharacter.placeholder();
   bool _loading = true;
   bool _deleting = false;
-
-  SessionResetService get _sessionReset =>
-      SessionResetService(characterId: _character.id);
+  bool _missing = false;
 
   @override
   void initState() {
@@ -38,13 +36,19 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
 
   Future<void> _load() async {
     final characters = await _registry.loadCharacters();
-    final character = characters.firstWhere(
+    final index = characters.indexWhere(
       (item) => item.id == widget.characterId,
-      orElse: AiCharacter.placeholder,
     );
     if (!mounted) return;
+    if (index < 0) {
+      setState(() {
+        _missing = true;
+        _loading = false;
+      });
+      return;
+    }
     setState(() {
-      _character = character;
+      _character = characters[index];
       _loading = false;
     });
   }
@@ -52,143 +56,38 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
   Future<void> _openMemory() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const MemoryPage()),
+      MaterialPageRoute(builder: (_) => MemoryPage(characterId: _character.id)),
     );
   }
 
-  Future<void> _showCleanupOptions() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline_rounded),
-              title: const Text('仅清空聊天'),
-              subtitle: const Text('删除消息，保留长期记忆、待审核记忆和 Today'),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                await _sessionReset.clearChatOnly();
-                _showSnack('聊天记录已清空，记忆仍然保留');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.restart_alt_rounded, color: Colors.red),
-              title: const Text('重新开始', style: TextStyle(color: Colors.red)),
-              subtitle: const Text('清空聊天、长期记忆、待审核记忆和 Today'),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (dialogContext) => AlertDialog(
-                    title: const Text('重新开始这段关系？'),
-                    content: Text(
-                      '这会清空你和${_character.characterName}的聊天、长期记忆、待审核记忆、Today 与生活痕迹，但不会删除角色本身。',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, false),
-                        child: const Text('取消'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(dialogContext, true),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.red,
-                        ),
-                        child: const Text('重新开始'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed != true) return;
-                await _sessionReset.resetSharedStory();
-                _showSnack('已经重新开始');
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+  Future<void> _restartCharacter() async {
+    final restarted = await CharacterManagementActions.restart(
+      context,
+      _character,
     );
+    if (!restarted || !mounted) return;
+    _showSnack('已经重新开始');
+    Navigator.of(context).pop(true);
   }
 
   Future<void> _deleteCharacter() async {
-    final firstConfirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('删除${_character.characterName}？'),
-        content: const Text('角色资料、聊天、Memory、Today 和所有独立数据都会一起删除。这个操作无法撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('继续删除'),
-          ),
-        ],
-      ),
-    );
-    if (firstConfirmed != true || !mounted) return;
-
-    var typedName = '';
-    final secondConfirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('最后确认'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('请输入角色本名“${_character.characterName}”确认删除：'),
-            const SizedBox(height: 12),
-            TextField(
-              autofocus: true,
-              onChanged: (value) => typedName = value.trim(),
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(
-                dialogContext,
-                typedName == _character.characterName,
-              );
-            },
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('永久删除'),
-          ),
-        ],
-      ),
-    );
-
-    if (secondConfirmed != true || !mounted) {
-      if (secondConfirmed == false && typedName.isNotEmpty) {
-        _showSnack('名称不一致，没有删除');
-      }
-      return;
-    }
-
     setState(() => _deleting = true);
     try {
-      await CharacterScopeService(_character.id).deleteAllData();
-      await _registry.deleteCharacter(_character.id);
+      final deleted = await CharacterManagementActions.deleteCharacter(
+        context,
+        _character,
+      );
+      if (!deleted) {
+        if (mounted) setState(() => _deleting = false);
+        return;
+      }
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (error) {
       if (!mounted) return;
       setState(() => _deleting = false);
-      _showSnack('删除失败：$error');
+      debugPrint('删除角色失败：$error');
+      _showSnack('删除失败，请稍后再试');
     }
   }
 
@@ -197,12 +96,6 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  void _soon(String title) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$title会在后面的版本开放。')));
   }
 
   @override
@@ -218,6 +111,13 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
+            : _missing
+            ? const Center(
+                child: Text(
+                  '这个角色已经不在了',
+                  style: TextStyle(color: Color(0xFF8D8792)),
+                ),
+              )
             : ListView(
                 padding: const EdgeInsets.only(top: 10, bottom: 30),
                 children: [
@@ -275,22 +175,24 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
                     subtitle: '${_character.characterName}独立保存的长期记忆',
                     onTap: _openMemory,
                   ),
-                  _Tile(
-                    title: '心声',
-                    subtitle: '看看他最近没有说出口的话',
-                    onTap: () => _soon('心声'),
-                  ),
                   const SizedBox(height: 10),
                   _Tile(
                     title: '导出角色',
-                    subtitle: '以后可生成角色文件或分享码',
-                    onTap: () => _soon('导出角色'),
+                    subtitle: '导出角色文件',
+                    onTap: () => Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            CharacterDetailPage(character: _character),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   _Tile(
-                    title: '清理与重置',
-                    subtitle: '清空聊天，或重新开始这段关系',
-                    onTap: _showCleanupOptions,
+                    title: '重新开始角色',
+                    subtitle: '重新开始当前角色的聊天与生活线',
+                    warning: true,
+                    onTap: _restartCharacter,
                   ),
                   const SizedBox(height: 10),
                   _Tile(
@@ -313,12 +215,14 @@ class _Tile extends StatelessWidget {
     required this.onTap,
     this.subtitle,
     this.destructive = false,
+    this.warning = false,
     this.enabled = true,
   });
 
   final String title;
   final String? subtitle;
   final bool destructive;
+  final bool warning;
   final bool enabled;
   final VoidCallback onTap;
 
@@ -328,10 +232,16 @@ class _Tile extends StatelessWidget {
         ? const Color(0xFFAAAAAA)
         : destructive
         ? const Color(0xFFFA5151)
+        : warning
+        ? const Color(0xFF9A654F)
         : const Color(0xFF171717);
 
     return Container(
-      color: Colors.white,
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: ListTile(
         enabled: enabled,
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),

@@ -1,14 +1,16 @@
+import '../models/ai_character.dart';
+import '../models/chat_image_scene_intent.dart';
 import '../models/chat_message.dart';
-import '../models/character_settings.dart';
+import '../models/peilink_character_visual_profile.dart';
+import '../models/peilink_visual_intent.dart';
+import 'chat_image_intent_service.dart';
 import 'chat_image_storage_service.dart';
 import 'image_generation_service.dart';
-import 'multimodal_service.dart';
+import 'peilink_character_visual_profile_service.dart';
+import 'peilink_image_prompt_builder.dart';
 
 class ChatGeneratedImage {
-  const ChatGeneratedImage({
-    required this.imagePath,
-    required this.prompt,
-  });
+  const ChatGeneratedImage({required this.imagePath, required this.prompt});
 
   final String imagePath;
   final String prompt;
@@ -16,31 +18,36 @@ class ChatGeneratedImage {
 
 class ChatImageGenerationService {
   ChatImageGenerationService({
-    MultimodalService? multimodalService,
     ImageGenerationService? imageGenerationService,
     ChatImageStorageService? imageStorageService,
-  }) : _multimodalService = multimodalService ?? MultimodalService(),
-       _imageGenerationService =
+    PeiLinkCharacterVisualProfileService? visualProfileService,
+  }) : _imageGenerationService =
            imageGenerationService ?? ImageGenerationService(),
        _imageStorageService =
-           imageStorageService ?? const ChatImageStorageService();
+           imageStorageService ?? const ChatImageStorageService(),
+       _visualProfileService =
+           visualProfileService ?? const PeiLinkCharacterVisualProfileService();
 
-  final MultimodalService _multimodalService;
   final ImageGenerationService _imageGenerationService;
   final ChatImageStorageService _imageStorageService;
+  final PeiLinkCharacterVisualProfileService _visualProfileService;
+  static const ChatImageIntentService _intentService = ChatImageIntentService();
 
   Future<ChatGeneratedImage> generate({
     required String userRequest,
-    required CharacterSettings characterSettings,
+    required AiCharacter character,
     List<ChatMessage> recentMessages = const [],
   }) async {
-    final scene = _buildScene(userRequest, recentMessages);
-    final prompt = await _multimodalService.buildImagePrompt(
-      scene: scene,
-      purpose: '聊天中由${characterSettings.characterName}发给用户的图片',
-      visualStyle: _buildVisualStyle(characterSettings),
-      characterSettings: characterSettings,
+    final intent = _intentService.resolve(
+      userRequest: userRequest,
+      characterId: character.id,
+      recentMessages: recentMessages,
     );
+    final visualProfile =
+        intent.characterPresence == ChatCharacterPresence.required
+        ? await _visualProfileService.loadForCharacter(character)
+        : null;
+    final prompt = buildPrompt(intent: intent, visualProfile: visualProfile);
     final targetDirectory = await _imageStorageService.imageDirectory();
     final imagePath = await _imageGenerationService.generateAndSave(
       prompt: prompt,
@@ -50,41 +57,39 @@ class ChatImageGenerationService {
     return ChatGeneratedImage(imagePath: imagePath, prompt: prompt);
   }
 
-  String _buildScene(String userRequest, List<ChatMessage> messages) {
-    final visible = messages
-        .where((message) =>
-            message.role == 'user' || message.role == 'assistant')
-        .toList();
-    final recent = visible.length > 8
-        ? visible.sublist(visible.length - 8)
-        : visible;
-    final context = recent.map((message) {
-      final speaker = message.role == 'user' ? '用户' : '角色';
-      final content = message.type == MessageType.image
-          ? '[图片] ${message.content}'
-          : message.content;
-      return '$speaker：$content';
-    }).join('\n');
-
-    return '''
-用户当前要求：$userRequest
-最近对话背景：
-$context
-
-请根据最近对话补全用户省略的信息。例如用户追问“照片呢”，应从上一轮对话判断要拍什么。不要把“角色说已经发图”的文字描述当成真实图片。
-''';
-  }
-
-  String _buildVisualStyle(CharacterSettings settings) {
-    return '''
-角色：${settings.characterName}
-角色简介：${settings.introduction}
-图片应符合角色自己的审美和当前请求。若用户没有明确要求人物出镜，优先生成环境、物品、食物、背影或第一人称随手拍，避免硬塞人物正脸。若需要角色本人出镜，保持成年感、自然姿态和稳定外貌，不做海报，不加文字。
-''';
+  static String buildPrompt({
+    required ChatImageSceneIntent intent,
+    PeiLinkCharacterVisualProfile? visualProfile,
+  }) {
+    final profiles = visualProfile == null
+        ? const <String, PeiLinkCharacterVisualProfile>{}
+        : {visualProfile.characterId: visualProfile};
+    return PeiLinkImagePromptBuilder.build(
+      intent: PeiLinkVisualIntent(
+        subject: switch (intent.subject) {
+          ChatImageSubject.object => PeiLinkVisualSubject.object,
+          ChatImageSubject.environment => PeiLinkVisualSubject.environment,
+          ChatImageSubject.selfie => PeiLinkVisualSubject.selfie,
+          ChatImageSubject.outfit => PeiLinkVisualSubject.outfit,
+          ChatImageSubject.character => PeiLinkVisualSubject.character,
+          ChatImageSubject.other => PeiLinkVisualSubject.other,
+        },
+        characterPresence:
+            intent.characterPresence == ChatCharacterPresence.required
+            ? PeiLinkCharacterPresence.required
+            : PeiLinkCharacterPresence.none,
+        visualFocus: intent.visualFocus,
+        mood: intent.mood,
+        requiredCharacterIds: intent.requiredCharacterIds,
+        includeEyes: intent.subject == ChatImageSubject.selfie,
+        includeClothing: intent.subject == ChatImageSubject.outfit,
+        includeBodyProportions: intent.subject == ChatImageSubject.outfit,
+      ),
+      context: PeiLinkVisualContext(characterProfiles: profiles),
+    );
   }
 
   void dispose() {
-    _multimodalService.dispose();
     _imageGenerationService.dispose();
   }
 }

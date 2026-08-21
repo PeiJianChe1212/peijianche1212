@@ -12,6 +12,23 @@ class EchoChatContextService {
   final String characterId;
 
   Future<String> buildPromptSection() async {
+    final facts = await buildFactsSection();
+    if (facts.isEmpty) return '';
+    return '''
+$facts
+
+使用规则：
+1. 这些是角色自己的近期经历，不是用户说过的话，也不是必须主动提起的话题。
+2. 只有用户问到近况、Echo 内容，或当前聊天自然相关时，才可以顺手接上。
+3. 不要逐条复述，不要像汇报行程，也不要说“根据我的朋友圈”。
+4. 同一故事片段只能改变说法，不能新增地点、天气、人物或事件。
+5. 不要把尚未公开的故事片段说成已经发过 Echo。
+'''
+        .trim();
+  }
+
+  /// V2 Facts 专用：只输出已经存储的近期生活，不附加回复策略。
+  Future<String> buildFactsSection() async {
     final echoes = await EchoStorageService(
       characterId: characterId,
     ).loadItems();
@@ -51,15 +68,6 @@ class EchoChatContextService {
         }
       }
     }
-
-    buffer.writeln('''
-使用规则：
-1. 这些是角色自己的近期经历，不是用户说过的话，也不是必须主动提起的话题。
-2. 只有用户问到近况、Echo 内容，或当前聊天自然相关时，才可以顺手接上。
-3. 不要逐条复述，不要像汇报行程，也不要说“根据我的朋友圈”。
-4. 同一故事片段只能改变说法，不能新增地点、天气、人物或事件。
-5. 不要把尚未公开的故事片段说成已经发过 Echo。
-''');
 
     return buffer.toString().trim();
   }

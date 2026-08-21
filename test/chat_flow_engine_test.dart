@@ -72,7 +72,9 @@ void main() {
       );
 
       expect(plan.intent, ReplyIntent.endNaturally);
-      expect(plan.toPromptSection(), contains('自然结束时'));
+      expect(plan.shouldAvoidQuestion, isTrue);
+      expect(plan.toPromptSection(), contains('自然停住'));
+      expect(plan.toPromptSection(), contains('自然结束可以只用口语碎片'));
     });
 
     test('连续 20 轮不会每轮都安排提问', () {

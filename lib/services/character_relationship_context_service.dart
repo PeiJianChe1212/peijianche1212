@@ -39,4 +39,25 @@ $lines
 6. 后台维度不代表公开分数，不得在回复里说关系值、好感度或百分比。
 ''';
   }
+
+  /// V2 Facts 专用：只输出关系网络快照，不附加关系推进策略。
+  Future<String> buildFactsSection({
+    required AiCharacter currentCharacter,
+    required List<AiCharacter> allCharacters,
+  }) async {
+    final others = allCharacters
+        .where((item) => item.id != currentCharacter.id)
+        .toList();
+    if (others.isEmpty) return '';
+    final snapshot = await _networkService.buildSnapshot(
+      characters: allCharacters,
+    );
+    final lines = _networkService.buildCompactContext(
+      snapshot: snapshot,
+      currentCharacterId: currentCharacter.id,
+    );
+    return lines.trim().isEmpty
+        ? ''
+        : '【Character Facts｜角色关系网络】\n${lines.trim()}';
+  }
 }

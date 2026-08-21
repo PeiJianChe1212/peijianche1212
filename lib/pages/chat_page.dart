@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/activity_status.dart';
+import '../conversation/reply_segment_parser.dart';
 import '../models/ai_character.dart';
 import '../models/chat_message.dart';
+import '../models/message_list_status.dart';
 import '../models/red_packet_data.dart';
 import '../models/character_settings.dart';
 import '../models/user_profile.dart';
@@ -18,6 +19,7 @@ import '../services/ai_red_packet_event_service.dart';
 import '../services/ai_red_packet_opportunity_service.dart';
 import '../services/character_registry_service.dart';
 import '../services/character_avatar_storage_service.dart';
+import '../services/avatar_change_request_service.dart';
 import '../services/chat_image_task_manager.dart';
 import '../services/chat_image_request_router_service.dart';
 import '../services/chat_image_storage_service.dart';
@@ -27,6 +29,7 @@ import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
 import '../services/memory_storage_service.dart';
 import '../services/multimodal_service.dart';
+import '../services/session_reset_service.dart';
 import '../services/character_settings_storage_service.dart';
 import '../services/today_service.dart';
 import '../services/user_profile_storage_service.dart';
@@ -40,6 +43,7 @@ import '../widgets/chat/message_renderer.dart';
 import '../widgets/chat/red_packet_send_dialog.dart';
 import '../widgets/chat/renderers/red_packet_message_renderer.dart';
 import '../widgets/peilink/relationship_badge.dart';
+import '../widgets/peilink/role_status_mark.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, this.backDestinationBuilder});
@@ -78,6 +82,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Timer? _activityTimer;
   Timer? _activityVisibilityTimer;
+  StreamSubscription<String>? _chatResetSubscription;
   DateTime _now = DateTime.now();
   ActivityStatus? _resolvedActivity;
 
@@ -88,7 +93,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _showMoreFunctions = false;
   DateTime? _previousSeenAt;
   bool _conversationTraceRecorded = false;
-  bool _lastAvatarRequestRejected = false;
   UserProfile _profile = const UserProfile();
   AiCharacter _activeCharacter = AiCharacter.placeholder();
   CharacterSettings _characterSettings = CharacterSettings.defaults();
@@ -105,6 +109,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _imageTaskManager.addListener(_onImageTaskChanged);
+    _chatResetSubscription = SessionResetService.chatResets.listen(
+      _onChatReset,
+    );
     _syncImageTaskState();
     _initializeApp();
     _recordCurrentActivity();
@@ -123,6 +130,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   void dispose() {
     _activityTimer?.cancel();
     _activityVisibilityTimer?.cancel();
+    _chatResetSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _inputFocusNode.dispose();
@@ -310,7 +318,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     await _imageTaskManager.start(
       userRequest: userRequest,
-      characterSettings: _characterSettings,
+      character: _activeCharacter,
       recentMessages: List<ChatMessage>.from(_messages),
     );
   }
@@ -468,15 +476,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       );
       if (bytes == null || !mounted) return;
 
-      final accepted = _lastAvatarRequestRejected || Random().nextDouble() < .8;
-      _lastAvatarRequestRejected = !accepted;
-      if (accepted) {
-        final path = await const CharacterAvatarStorageService()
-            .saveAvatarBytes(characterId: _activeCharacter.id, bytes: bytes);
+      final avatarStorage = const CharacterAvatarStorageService();
+      await avatarStorage.savePendingAvatarBytes(
+        characterId: _activeCharacter.id,
+        bytes: bytes,
+      );
+      final decision = await AvatarChangeRequestService(
+        characterId: _activeCharacter.id,
+      ).decide();
+      if (decision.accepted) {
+        final path = await avatarStorage.acceptPendingAvatar(
+          characterId: _activeCharacter.id,
+        );
         final updated = _activeCharacter.copyWith(avatarPath: path);
         await _characterRegistry.updateCharacter(updated);
         if (!mounted) return;
         setState(() => _activeCharacter = updated);
+      } else {
+        await avatarStorage.clearPendingAvatar(_activeCharacter.id);
       }
 
       const userText = '给你换了个头像，喜欢吗？';
@@ -493,7 +510,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           _messages.add(
             ChatMessage(
               role: 'assistant',
-              content: accepted ? '嗯，新头像还不错，挺像我的。' : '这个不太符合我的风格，下次换一个？',
+              content: decision.accepted
+                  ? '嗯，新头像还不错，挺像我的。'
+                  : '这个不太符合我的风格，下次换一个？',
             ),
           );
           _isLoading = false;
@@ -502,12 +521,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return;
       }
       await _requestReply(
-        transientEventContext: accepted
-            ? '用户刚为你更换了头像。你已经接受，请按角色性格自然回应，表达喜欢或带一点个性化评价。'
-            : '用户提出更换头像，但你这次没有接受。请按角色性格温和拒绝，不要刻薄；下一次请求必须接受。',
+        transientEventContext: decision.accepted
+            ? '【AvatarChangeRequest】用户正在请求为你更换头像，业务结果为接受${decision.forced ? '（上次已拒绝，本次强制接受）' : ''}。请只针对换头像事件，结合核心人设、性格和说话风格自然回应，不要转回之前话题。'
+            : '【AvatarChangeRequest】用户正在请求为你更换头像，业务结果为拒绝。请只针对换头像事件，结合核心人设、性格和说话风格温和拒绝，不要转回之前话题。下一次请求业务上必须接受。',
       );
     } catch (error) {
-      if (mounted) _showSnack('更换头像失败：$error');
+      debugPrint('更换角色头像失败：$error');
+      if (mounted) _showSnack('更换头像失败，请稍后再试');
     }
   }
 
@@ -533,23 +553,45 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         });
         return;
       }
-      final readingDelay = Duration(
-        milliseconds: (350 + reply.length * 7).clamp(650, 1800).toInt(),
-      );
-      await Future<void>.delayed(readingDelay);
-      if (!mounted) return;
-      _hideActivitySubtitle();
-      setState(() {
-        _messages.add(ChatMessage(role: 'assistant', content: reply));
-        _isLoading = false;
-        _isRegenerating = false;
-      });
-      await _saveMessages();
+      final segments = ReplySegmentParser.parse(reply);
+      if (segments.isEmpty) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+      final streamId = DateTime.now().microsecondsSinceEpoch.toString();
+      for (var index = 0; index < segments.length; index++) {
+        final segment = segments[index];
+        final delay = index == 0
+            ? (320 + segment.length * 8).clamp(520, 1500)
+            : (260 + segment.length * 10).clamp(380, 1100);
+        await Future<void>.delayed(Duration(milliseconds: delay.toInt()));
+        if (!mounted) return;
+        _hideActivitySubtitle();
+        setState(() {
+          _messages.add(
+            ChatMessage(
+              role: 'assistant',
+              content: segment,
+              source: 'reply_segment',
+              metadata: {
+                'replyStreamId': streamId,
+                'segmentIndex': index,
+                'segmentCount': segments.length,
+              },
+            ),
+          );
+          if (index == segments.length - 1) {
+            _isLoading = false;
+            _isRegenerating = false;
+          }
+        });
+        await _saveMessages();
+        _scrollToBottom();
+      }
       if (!_conversationTraceRecorded) {
         _conversationTraceRecorded = true;
         await _lifeTraceService.recordConversation();
       }
-      _scrollToBottom();
       if (transientEventContext.trim().isEmpty) {
         await _maybeSendAiRedPacket();
       }
@@ -652,7 +694,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _openCharacterSettings() async {
-    await Navigator.of(context).push(
+    final chatReset = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => ChatSettingsPage(character: _activeCharacter),
       ),
@@ -660,6 +702,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     await _loadChatSettings();
     await _loadActiveCharacter();
     await _refreshActivity();
+    if (chatReset == true) await _loadMessages();
+  }
+
+  void _onChatReset(String _) {
+    if (!mounted) return;
+    _loadMessages();
   }
 
   void _toggleMorePanel() {
@@ -884,6 +932,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _regenerateFrom(int index) async {
     if (_isLoading || index < 0 || index >= _messages.length) return;
     if (_messages[index].role != 'assistant') return;
+    final streamId = _messages[index].metadata['replyStreamId']?.toString();
+    var regenerateFrom = index;
+    if (streamId != null && streamId.isNotEmpty) {
+      final firstSegment = _messages.indexWhere(
+        (message) => message.metadata['replyStreamId']?.toString() == streamId,
+      );
+      if (firstSegment >= 0) regenerateFrom = firstSegment;
+    }
     if (!await _deepSeekService.hasApiKey) {
       _showSnack('还没有配置模型与 API，请先到设置中填写。');
       return;
@@ -891,15 +947,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
     final confirmed = await _confirmTimelineChange(
       title: '重新生成这条回复？',
-      content: index == _messages.length - 1
+      content: regenerateFrom == _messages.length - 1
           ? '当前回复会被替换。'
-          : '这条回复和它之后的聊天都会被移除，再从这里重新生成。',
+          : '这一组回复和它之后的聊天都会被移除，再从这里重新生成。',
       confirmText: '重新生成',
     );
     if (!confirmed || !mounted) return;
 
     setState(() {
-      _messages.removeRange(index, _messages.length);
+      _messages.removeRange(regenerateFrom, _messages.length);
       _isLoading = true;
       _isRegenerating = true;
     });
@@ -1117,6 +1173,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                       const SizedBox(height: 2),
                       _ChatIdentityStatus(
                         relationship: _activeCharacter.relationship,
+                        status: _resolvedActivity == null
+                            ? MessageListStatus.online
+                            : MessageListStatus.fromActivity(
+                                _resolvedActivity!,
+                              ),
                       ),
                     ],
                   ),
@@ -1222,9 +1283,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 }
 
 class _ChatIdentityStatus extends StatelessWidget {
-  const _ChatIdentityStatus({required this.relationship});
+  const _ChatIdentityStatus({required this.relationship, required this.status});
 
   final String relationship;
+  final MessageListStatus status;
 
   @override
   Widget build(BuildContext context) {
@@ -1243,40 +1305,8 @@ class _ChatIdentityStatus extends StatelessWidget {
             ),
           ),
         ],
-        const _AiOnlinePill(),
+        RoleStatusMark(key: const ValueKey('chat-role-status'), status: status),
       ],
-    );
-  }
-}
-
-class _AiOnlinePill extends StatelessWidget {
-  const _AiOnlinePill();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const ValueKey('chat-ai-online-pill'),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE6F3ED).withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.circle, size: 5, color: Color(0xFF43A875)),
-          SizedBox(width: 4),
-          Text(
-            'AI在线',
-            style: TextStyle(
-              color: Color(0xFF3F8062),
-              fontSize: 10.5,
-              height: 1.1,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -5,6 +5,7 @@ class UserProfile {
     this.gender = '',
     this.region = '',
     this.signature = '',
+    this.profileBirthday = '',
     this.peiCallName = '未填写',
     this.birthday = '',
     this.identity = '未填写',
@@ -22,6 +23,9 @@ class UserProfile {
   final String gender;
   final String region;
   final String signature;
+
+  /// 用户个人资料中的公开生日，不参与模型 Context。
+  final String profileBirthday;
   final String avatarPath;
 
   /// AI 可见资料。与上面的公开个人资料分开保存和使用。
@@ -39,6 +43,7 @@ class UserProfile {
     String? gender,
     String? region,
     String? signature,
+    String? profileBirthday,
     String? peiCallName,
     String? birthday,
     String? identity,
@@ -54,6 +59,7 @@ class UserProfile {
       gender: gender ?? this.gender,
       region: region ?? this.region,
       signature: signature ?? this.signature,
+      profileBirthday: profileBirthday ?? this.profileBirthday,
       peiCallName: peiCallName ?? this.peiCallName,
       birthday: birthday ?? this.birthday,
       identity: identity ?? this.identity,
@@ -72,6 +78,7 @@ class UserProfile {
     'gender': gender,
     'region': region,
     'signature': signature,
+    'profileBirthday': profileBirthday,
     'peiCallName': peiCallName,
     'birthday': birthday,
     'identity': identity,
@@ -92,8 +99,12 @@ class UserProfile {
       nickname: read('nickname', '未设置'),
       peiLinkId: read('peiLinkId', '未设置'),
       gender: json['gender']?.toString().trim() ?? '',
-      region: json['region']?.toString().trim() ?? '',
+      region:
+          json['region']?.toString().trim() ??
+          json['location']?.toString().trim() ??
+          '',
       signature: json['signature']?.toString().trim() ?? '',
+      profileBirthday: json['profileBirthday']?.toString().trim() ?? '',
       peiCallName: read('peiCallName', '未填写'),
       birthday: json['birthday']?.toString().trim() ?? '',
       identity: read('identity', '未填写'),

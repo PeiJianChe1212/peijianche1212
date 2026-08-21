@@ -34,6 +34,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
       'height',
       'identity',
       'core',
+      'intro',
       'backgroundStory',
       'worldview',
       'appearance',
@@ -107,7 +108,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
       'gender': '性别',
       'height': '身高',
       'identity': '身份',
-      'core': '核心人设/简介',
+      'core': '核心人设',
       'backgroundStory': '背景经历',
       'worldview': '世界观',
       'appearance': '外貌',
@@ -145,6 +146,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
         avatarPath: avatar,
         backgroundImage: background,
         introduction: value('appearance'),
+        characterIntro: value('intro'),
         persona: value('core'),
       );
       final defaults = CharacterSettings.fromAiCharacter(character);
@@ -194,12 +196,12 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
         await AutoEchoService().generateInitialEcho(character, now: now);
       } catch (_) {}
       if (mounted) Navigator.pop(context, true);
-    } catch (error) {
+    } catch (_) {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('创建失败：$error')));
+        ).showSnackBar(const SnackBar(content: Text('创建失败，请稍后再试')));
       }
     }
   }
@@ -242,7 +244,8 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                 _field('height', '身高', required: true, suffix: 'cm'),
               ]),
               _field('identity', '身份', required: true),
-              _field('core', '核心人设 / 简介', required: true, lines: 4),
+              _field('core', '核心人设', required: true, lines: 4),
+              _field('intro', '角色简介', lines: 2, hint: '用于角色资料页公开展示的简短介绍…'),
             ]),
             _section('世界设定', Icons.public, [
               _field(
@@ -400,8 +403,8 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
                 aspectRatio: avatar ? 1 : 16 / 9,
                 child: Container(
                   decoration: BoxDecoration(
-                    shape: avatar ? BoxShape.circle : BoxShape.rectangle,
-                    borderRadius: avatar ? null : BorderRadius.circular(14),
+                    shape: BoxShape.rectangle,
+                    borderRadius: BorderRadius.circular(14),
                     color: const Color(0xFFEDE9FF),
                     image: provider == null
                         ? null
@@ -517,13 +520,21 @@ class _AvatarCropDialogState extends State<AvatarCropDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+    backgroundColor: const Color(0xFF171717),
     title: const Text('调整头像'),
+    titleTextStyle: const TextStyle(
+      color: Colors.white,
+      fontSize: 20,
+      fontWeight: FontWeight.w700,
+    ),
     content: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('双指缩放，拖动调整位置', style: TextStyle(color: Colors.black54)),
+        const Text('拖动或缩放图片，方框内为最终头像', style: TextStyle(color: Colors.white70)),
         const SizedBox(height: 12),
-        ClipOval(
+        Container(
+          padding: const EdgeInsets.all(18),
+          color: Colors.black54,
           child: RepaintBoundary(
             key: _key,
             child: SizedBox(

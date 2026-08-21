@@ -79,9 +79,12 @@ class ContextBuilder {
     String relationshipContext = '',
     String socialProtocol = '',
     String styleExamples = '',
+    String expressionProfile = '',
     String sourceFacts = '',
     CharacterProfile? characterProfile,
     CharacterArchive? characterArchive,
+    bool includeBehaviorRules = true,
+    bool includeBaseRelationshipRules = true,
   }) {
     final profile = profileFor(task);
     final sections = <String>[
@@ -93,9 +96,12 @@ class ContextBuilder {
         styleExamples: styleExamples,
         characterProfile: characterProfile,
         characterArchive: characterArchive,
+        includeBehaviorRules: includeBehaviorRules,
+        includeBaseRelationshipRules: includeBaseRelationshipRules,
       ),
     ];
 
+    _add(sections, '本次表达所需角色资料', expressionProfile);
     _add(sections, '任务规则', taskRules);
     _add(sections, '当前动态状态', dynamicState);
     _add(sections, '本次任务相关记忆', relevantMemory);
@@ -122,6 +128,8 @@ class ContextBuilder {
     required ConversationContext conversation,
     required ResponseStrategyContext responseStrategy,
     required String Function(ChatMessage message) messageContent,
+    bool includeBehaviorRules = true,
+    bool includeBaseRelationshipRules = true,
   }) {
     final stablePrompt = build(
       task: ContextTask.chat,
@@ -130,6 +138,8 @@ class ContextBuilder {
       styleExamples: character.styleExamples,
       characterProfile: character.profile,
       characterArchive: character.archive,
+      includeBehaviorRules: includeBehaviorRules,
+      includeBaseRelationshipRules: includeBaseRelationshipRules,
     );
     final latestUserMessage = conversation.recentMessages
         .where((message) => message.role == 'user')
@@ -186,6 +196,8 @@ class ContextBuilder {
     required String styleExamples,
     CharacterProfile? characterProfile,
     CharacterArchive? characterArchive,
+    required bool includeBehaviorRules,
+    required bool includeBaseRelationshipRules,
   }) {
     final key = <Object?>[
       profile.name,
@@ -202,6 +214,8 @@ class ContextBuilder {
       styleExamples,
       characterProfile?.toJson().toString() ?? '',
       _fixedArchiveBehavior(characterArchive),
+      includeBehaviorRules,
+      includeBaseRelationshipRules,
     ].join('|');
 
     return _stableCache.putIfAbsent(key, () {
@@ -216,9 +230,15 @@ class ContextBuilder {
       if (_usesUserProfile(profile) && userProfile != null) {
         sections.add(userProfile.toPromptSection());
       }
-      if (_usesRelationshipBase(profile)) sections.add(relationshipPrompt);
-      if (_usesBehavior(profile)) {
+      if (includeBaseRelationshipRules && _usesRelationshipBase(profile)) {
+        sections.add(relationshipPrompt);
+      }
+      if (includeBehaviorRules && _usesBehavior(profile)) {
         sections.add(_behaviorRules(settings, characterArchive));
+      } else if (_fixedArchiveBehavior(characterArchive).isNotEmpty) {
+        sections.add(
+          '【角色档案中的表达资料】\n${_fixedArchiveBehavior(characterArchive)}',
+        );
       }
       if (_usesAppearance(profile)) {
         final extension = extensionProfile.trim().isEmpty

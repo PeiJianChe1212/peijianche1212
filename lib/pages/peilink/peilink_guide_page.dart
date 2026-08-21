@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import '../../models/guide_knowledge.dart';
 
@@ -17,6 +18,7 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
   final _searchController = TextEditingController();
   final _askController = TextEditingController();
   String _query = '';
+  String? _category;
   String? _acheReply;
 
   @override
@@ -32,13 +34,19 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
     setState(() => _acheReply = GuideKnowledge.answer(question));
   }
 
-  IconData _guideIcon(String topic) {
-    if (topic.contains('Echo')) return Icons.waves_rounded;
-    if (topic.contains('羁绊')) return Icons.favorite_rounded;
-    if (topic.contains('创建')) return Icons.person_add_alt_1_rounded;
-    if (topic.contains('API')) return Icons.psychology_rounded;
-    if (topic.contains('导入')) return Icons.file_download_outlined;
-    return Icons.shield_rounded;
+  IconData _guideIcon(String category) {
+    return switch (category) {
+      '开始使用' => Icons.rocket_launch_outlined,
+      '聊天' => Icons.chat_bubble_outline_rounded,
+      '角色' => Icons.person_outline_rounded,
+      'Memory' => Icons.inbox_outlined,
+      'Echo' => Icons.waves_rounded,
+      'PeiLink Life' => Icons.auto_awesome_rounded,
+      '纪念日' => Icons.favorite_border_rounded,
+      '数据与重置' => Icons.restart_alt_rounded,
+      'API 与模型' => Icons.psychology_rounded,
+      _ => Icons.help_outline_rounded,
+    };
   }
 
   void _openPage(Widget page) {
@@ -47,16 +55,12 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
 
   @override
   Widget build(BuildContext context) {
-    final query = _query.trim().toLowerCase();
-    final visible = query.isEmpty
-        ? GuideKnowledge.entries
-        : GuideKnowledge.entries
-              .where(
-                (item) =>
-                    '${item.topic}${item.answer}'.toLowerCase().contains(query),
-              )
-              .toList();
+    final visible = GuideKnowledge.entries
+        .where((item) => _category == null || item.category == _category)
+        .where((item) => item.matches(_query))
+        .toList();
     return ListView(
+      scrollCacheExtent: const ScrollCacheExtent.pixels(10000),
       padding: EdgeInsets.fromLTRB(
         18,
         18,
@@ -91,7 +95,7 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '你好，我是阿澈 👋',
+                          '🦋 PeiLink Guide',
                           style: TextStyle(
                             color: Color(0xFF5964C6),
                             fontSize: 20,
@@ -100,7 +104,7 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
                         ),
                         SizedBox(height: 6),
                         Text(
-                          '有什么问题可以问我吗？🦋',
+                          '关于 PeiLink，有什么想知道的？',
                           style: TextStyle(
                             color: Color(0xFF68728A),
                             fontSize: 13,
@@ -159,6 +163,7 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
         ),
         const SizedBox(height: 14),
         TextField(
+          key: const ValueKey('guide-search-field'),
           controller: _searchController,
           onChanged: (value) => setState(() => _query = value),
           decoration: InputDecoration(
@@ -179,6 +184,26 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
               borderRadius: BorderRadius.circular(22),
               borderSide: BorderSide.none,
             ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _CategoryChip(
+                label: '全部',
+                selected: _category == null,
+                onTap: () => setState(() => _category = null),
+              ),
+              for (final category in GuideKnowledge.categories)
+                _CategoryChip(
+                  label: category,
+                  selected: _category == category,
+                  onTap: () => setState(() => _category = category),
+                ),
+            ],
           ),
         ),
         const SizedBox(height: 18),
@@ -215,7 +240,7 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
         ),
         const SizedBox(height: 22),
         const Text(
-          '新手指南',
+          '使用说明',
           style: TextStyle(
             color: Color(0xFF30354D),
             fontSize: 17,
@@ -234,7 +259,20 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
             ),
           )
         else
-          for (final item in visible)
+          for (var index = 0; index < visible.length; index++) ...[
+            if (index == 0 ||
+                visible[index - 1].category != visible[index].category)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(3, 10, 3, 8),
+                child: Text(
+                  visible[index].category,
+                  style: const TextStyle(
+                    color: Color(0xFF7770A0),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             Card(
               elevation: 0,
               color: Colors.white.withValues(alpha: 0.78),
@@ -243,13 +281,13 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
                 leading: CircleAvatar(
                   backgroundColor: const Color(0xFFEEF1FC),
                   child: Icon(
-                    _guideIcon(item.topic),
+                    _guideIcon(visible[index].category),
                     color: const Color(0xFF7483DD),
                     size: 19,
                   ),
                 ),
                 title: Text(
-                  item.topic,
+                  visible[index].topic,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 children: [
@@ -258,7 +296,7 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        item.answer,
+                        visible[index].answer,
                         style: const TextStyle(
                           color: Color(0xFF68727D),
                           height: 1.55,
@@ -269,9 +307,43 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
                 ],
               ),
             ),
+          ],
       ],
     );
   }
+}
+
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(right: 8),
+    child: ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      showCheckmark: false,
+      selectedColor: const Color(0xFFE7E3FA),
+      backgroundColor: Colors.white.withValues(alpha: 0.72),
+      side: BorderSide(
+        color: selected ? const Color(0xFF8B7ED5) : const Color(0xFFE7E2EC),
+      ),
+      labelStyle: TextStyle(
+        color: selected ? const Color(0xFF6257B2) : const Color(0xFF77717F),
+        fontSize: 12,
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      ),
+    ),
+  );
 }
 
 class _GuideActionCard extends StatelessWidget {

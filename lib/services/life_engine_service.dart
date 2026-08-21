@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 
 import '../ai/model_hub.dart';
@@ -27,13 +25,12 @@ import 'memory_storage_service.dart';
 import 'ai_social_protocol_service.dart';
 import 'shared_experience_service.dart';
 import 'shared_world_resource_service.dart';
+import 'structured_model_output_exception.dart';
 
 class LifeEngineService {
-  LifeEngineService({
-    required this.character,
-    http.Client? client,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null {
+  LifeEngineService({required this.character, http.Client? client})
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null {
     _modelHub = ModelHub(client: _client);
   }
 
@@ -48,9 +45,7 @@ class LifeEngineService {
   ///
   /// 新链路会先经过 Life Decision Engine，再由 Life Engine 把已经确定
   /// 发生的事情生成成具体生活事件。
-  Future<List<LifeMomentCandidate>> generateCandidates({
-    int count = 4,
-  }) async {
+  Future<List<LifeMomentCandidate>> generateCandidates({int count = 4}) async {
     final decisionEngine = LifeDecisionEngineService(
       character: character,
       client: _client,
@@ -92,11 +87,11 @@ class LifeEngineService {
       characterId: characterId,
     ).loadItems();
     final allCharacters = await CharacterRegistryService().loadCharacters();
-    final relationshipPrompt =
-        await CharacterRelationshipContextService().buildPromptSection(
-      currentCharacter: character,
-      allCharacters: allCharacters,
-    );
+    final relationshipPrompt = await CharacterRelationshipContextService()
+        .buildPromptSection(
+          currentCharacter: character,
+          allCharacters: allCharacters,
+        );
 
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
@@ -107,26 +102,24 @@ class LifeEngineService {
             task: ContextTask.lifeGeneration,
             settings: settings,
             taskRules: _buildPrompt(
-            settings: settings,
-            messages: messages,
-            memories: memories,
-            echoes: echoes,
-            lifeMoments: lifeMoments,
-            decisions: decisions,
-            relationshipPrompt: relationshipPrompt,
-          ),
+              settings: settings,
+              messages: messages,
+              memories: memories,
+              echoes: echoes,
+              lifeMoments: lifeMoments,
+              decisions: decisions,
+              relationshipPrompt: relationshipPrompt,
+            ),
             relationshipContext: relationshipPrompt,
             socialProtocol: AiSocialProtocolService.compactRules,
           ),
         },
-        {
-          'role': 'user',
-          'content': '把这些已经确定发生的决定生成成具体生活事件。只返回 JSON。',
-        },
+        {'role': 'user', 'content': '把这些已经确定发生的决定生成成具体生活事件。只返回 JSON。'},
       ],
       temperature: settings.temperature.clamp(0.58, 0.78).toDouble(),
       maxTokens: 1500,
       topP: 0.9,
+      acceptStructuredReasoningFallback: true,
     );
 
     final decoded = _decodeJson(raw);
@@ -146,10 +139,9 @@ class LifeEngineService {
     );
 
     await _persistLifeCauses(items, decisionsById: decisionById, now: now);
-    await DecisionHistoryService(characterId: characterId).markMaterialized(
-      items.map((item) => item.decisionId),
-      now: now,
-    );
+    await DecisionHistoryService(
+      characterId: characterId,
+    ).markMaterialized(items.map((item) => item.decisionId), now: now);
     final resourceService = SharedWorldResourceService();
     for (final decisionId in items.map((item) => item.decisionId).toSet()) {
       await resourceService.commitDecision(decisionId, now: now);
@@ -177,7 +169,6 @@ class LifeEngineService {
     }
     return items;
   }
-
 
   Future<void> _persistLifeCauses(
     List<LifeMomentCandidate> events, {
@@ -208,15 +199,12 @@ class LifeEngineService {
           'resourceClaims': event.resourceClaims,
           'renderedAt': event.renderedAt?.toIso8601String(),
           'rendererVersion': event.rendererVersion,
-          'relationshipOpportunityId':
-              event.relationshipOpportunityId,
+          'relationshipOpportunityId': event.relationshipOpportunityId,
         },
       );
     }).toList();
     await CausalGraphService().upsertAll(nodes, now: now);
   }
-
-
 
   String _buildPrompt({
     required CharacterSettings settings,
@@ -240,11 +228,12 @@ class LifeEngineService {
     final selectedEchoes = echoes.take(8).toList();
     final selectedLifeMoments = lifeMoments.take(10).toList();
 
-    final decisionText = decisions.map((decision) {
-      final names = decision.relatedCharacterNames.isEmpty
-          ? '无'
-          : decision.relatedCharacterNames.join('、');
-      return '''
+    final decisionText = decisions
+        .map((decision) {
+          final names = decision.relatedCharacterNames.isEmpty
+              ? '无'
+              : decision.relatedCharacterNames.join('、');
+          return '''
 - decisionId：${decision.id}
   确定事项：${decision.summary}
   因果：${decision.reason}
@@ -253,32 +242,37 @@ class LifeEngineService {
   相关角色：$names
   关系机会：${decision.relationshipOpportunityId.isEmpty ? '无' : decision.relationshipOpportunityId}
 ''';
-    }).join('\n');
+        })
+        .join('\n');
 
     final chatText = selectedMessages.isEmpty
         ? '无。'
-        : selectedMessages.map((item) {
-            final speaker = item.role == 'user'
-                ? settings.userCallName
-                : settings.characterName;
-            return '$speaker：${_truncate(item.content, 120)}';
-          }).join('\n');
+        : selectedMessages
+              .map((item) {
+                final speaker = item.role == 'user'
+                    ? settings.userCallName
+                    : settings.characterName;
+                return '$speaker：${_truncate(item.content, 120)}';
+              })
+              .join('\n');
     final memoryText = selectedMemories.isEmpty
         ? '无。'
         : selectedMemories
-            .map((item) => '- ${_truncate(item.content, 140)}')
-            .join('\n');
+              .map((item) => '- ${_truncate(item.content, 140)}')
+              .join('\n');
     final echoText = selectedEchoes.isEmpty
         ? '无。'
         : selectedEchoes
-            .map((item) => '- ${_truncate(item.content, 150)}')
-            .join('\n');
+              .map((item) => '- ${_truncate(item.content, 150)}')
+              .join('\n');
     final lifeText = selectedLifeMoments.isEmpty
         ? '无。'
-        : selectedLifeMoments.map((item) {
-            return '- ${item.occurredAt.month}/${item.occurredAt.day}：'
-                '${_truncate(item.event, 100)}；${_truncate(item.detail, 90)}';
-          }).join('\n');
+        : selectedLifeMoments
+              .map((item) {
+                return '- ${item.occurredAt.month}/${item.occurredAt.day}：'
+                    '${_truncate(item.event, 100)}；${_truncate(item.detail, 90)}';
+              })
+              .join('\n');
 
     return '''
 你是 PeiLink 的 Life Engine。
@@ -330,7 +324,6 @@ $echoText
 ''';
   }
 
-
   dynamic _decodeJson(String raw) {
     var value = raw.trim();
     value = value.replaceFirst(
@@ -345,7 +338,7 @@ $echoText
     } else if (firstArray >= 0) {
       value = value.substring(firstArray);
     }
-    return jsonDecode(value);
+    return decodeStructuredModelJson(value, stage: 'Life Engine');
   }
 
   String _truncate(String value, int maxLength) {

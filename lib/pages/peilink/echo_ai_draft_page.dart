@@ -6,15 +6,15 @@ import '../../models/ai_character.dart';
 import '../../models/echo_draft.dart';
 import '../../models/echo_item.dart';
 import '../../services/character_scope_service.dart';
-import '../../services/character_settings_storage_service.dart';
 import '../../services/echo_generation_service.dart';
+import '../../services/echo_duplicate_guard.dart';
+import '../../services/echo_image_prompt.dart';
 import '../../services/echo_storage_service.dart';
 import '../../services/echo_social_interaction_service.dart';
 import '../../services/image_generation_service.dart';
 import '../../services/life_moment_storage_service.dart';
 import '../../services/life_event_pool_service.dart';
 import '../../services/shared_world_event_service.dart';
-import '../../services/multimodal_service.dart';
 
 class EchoAiDraftPage extends StatefulWidget {
   const EchoAiDraftPage({super.key, required this.character});
@@ -27,8 +27,8 @@ class EchoAiDraftPage extends StatefulWidget {
 class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
   final TextEditingController _controller = TextEditingController();
   late final EchoGenerationService _generationService;
-  late final MultimodalService _multimodalService;
   late final ImageGenerationService _imageGenerationService;
+  final EchoDuplicateGuard _duplicateGuard = const EchoDuplicateGuard();
 
   bool _generating = true;
   bool _generatingImage = false;
@@ -36,14 +36,15 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
   String _errorText = '';
   String _momentSummary = '';
   String _imageScene = '';
+  String _imagePrompt = '';
   bool _imageRecommended = false;
+  bool _imageGenerationFailed = false;
   String _imagePath = '';
 
   @override
   void initState() {
     super.initState();
     _generationService = EchoGenerationService(character: widget.character);
-    _multimodalService = MultimodalService();
     _imageGenerationService = ImageGenerationService();
     _generate();
   }
@@ -51,7 +52,6 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
   @override
   void dispose() {
     _generationService.dispose();
-    _multimodalService.dispose();
     _imageGenerationService.dispose();
     _controller.dispose();
     super.dispose();
@@ -63,9 +63,20 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
       _generating = true;
       _errorText = '';
       _imagePath = '';
+      _imageGenerationFailed = false;
     });
     try {
-      final draft = await _generationService.generateDraft();
+      final initial = await _generationService.generateDraft();
+      final draft = await _duplicateGuard.acceptOrRetryOnce(
+        initial: initial,
+        isDuplicate: (candidate) async => (await _duplicateGuard.check(
+          content: candidate.content,
+          characterId: widget.character.id,
+        )).isDuplicate,
+        retry: () =>
+            _generationService.retryLastDraft(previousContent: initial.content),
+      );
+      if (draft == null) throw const EchoDraftGenerationException();
       if (!mounted) return;
       _applyDraft(draft);
     } catch (error, stackTrace) {
@@ -84,7 +95,7 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _errorText = error.toString().replaceFirst('Bad state: ', '');
+        _errorText = echoDraftUserMessage(error);
       });
     }
   }
@@ -99,33 +110,22 @@ class _EchoAiDraftPageState extends State<EchoAiDraftPage> {
       _imageRecommended =
           draft.shouldAttachImage && draft.imageScene.isNotEmpty;
       _imageScene = draft.imageScene;
+      _imagePrompt = draft.imagePrompt;
+      _imageGenerationFailed = false;
       _generating = false;
     });
   }
 
   Future<void> _generateImage() async {
     if (_generating || _generatingImage || _publishing) return;
-    final scene = _imageScene.trim();
-    if (scene.isEmpty) {
+    final prompt = _imagePrompt.trim();
+    if (prompt.isEmpty) {
       _showMessage('这条动态暂时没有适合配图的画面。');
       return;
     }
 
     setState(() => _generatingImage = true);
     try {
-      final settings = await CharacterSettingsStorageService(
-        characterId: widget.character.id,
-      ).loadSettings();
-      final visualStyle =
-          '''
-${settings.characterName}的生活摄影风格应来自人物设定：${settings.introduction}
-整体像本人用手机随手拍，真实、自然、不过度精修。不要海报感，不要文字排版，不要默认出现完整人物正脸。
-''';
-      final prompt = await _multimodalService.buildImagePrompt(
-        scene: scene,
-        visualStyle: visualStyle,
-        purpose: 'Echo 单张生活配图',
-      );
       final characterDirectory = await CharacterScopeService(
         widget.character.id,
       ).characterDirectory();
@@ -138,11 +138,15 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
       setState(() {
         _imagePath = path;
         _generatingImage = false;
+        _imageGenerationFailed = false;
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _generatingImage = false);
-      _showMessage('图片没有生成成功，但文字草稿还在：$error');
+      setState(() {
+        _generatingImage = false;
+        _imageGenerationFailed = true;
+      });
+      _showMessage('配图生成失败，请稍后重新生成。文字草稿已保留。');
     }
   }
 
@@ -167,6 +171,13 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
         imagePaths: _imagePath.isEmpty ? const [] : [_imagePath],
         createdAt: now,
         sourceType: EchoSourceType.aiGenerated,
+        imagePrompt: _imagePrompt,
+        imageStatus: echoImageStatus(
+          prompt: _imagePrompt,
+          imagePath: _imagePath,
+          generationFailed: _imageGenerationFailed,
+        ),
+        imagePath: _imagePath,
       );
       await EchoStorageService(characterId: widget.character.id).addItem(echo);
       try {
@@ -196,10 +207,10 @@ ${settings.characterName}的生活摄影风格应来自人物设定：${settings
 
       if (!mounted) return;
       Navigator.pop(context, true);
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       setState(() => _publishing = false);
-      _showMessage('发布失败：$error');
+      _showMessage('发布失败，请稍后重试。草稿已保留。');
     }
   }
 

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 
 import '../ai/model_hub.dart';
@@ -25,14 +23,13 @@ import 'memory_storage_service.dart';
 import 'relationship_opportunity_engine_service.dart';
 import 'ai_social_protocol_service.dart';
 import 'shared_world_resource_service.dart';
+import 'structured_model_output_exception.dart';
 import 'world_timeline_service.dart';
 
 class LifeDecisionEngineService {
-  LifeDecisionEngineService({
-    required this.character,
-    http.Client? client,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null {
+  LifeDecisionEngineService({required this.character, http.Client? client})
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null {
     _modelHub = ModelHub(client: _client);
   }
 
@@ -85,11 +82,11 @@ class LifeDecisionEngineService {
     final otherCharacters = allCharacters
         .where((item) => item.id != character.id)
         .toList();
-    final relationshipPrompt =
-        await CharacterRelationshipContextService().buildPromptSection(
-      currentCharacter: character,
-      allCharacters: allCharacters,
-    );
+    final relationshipPrompt = await CharacterRelationshipContextService()
+        .buildPromptSection(
+          currentCharacter: character,
+          allCharacters: allCharacters,
+        );
     final opportunityEngine = RelationshipOpportunityEngineService();
     final relationshipOpportunities = await opportunityEngine.evaluate(
       currentCharacter: character,
@@ -97,8 +94,9 @@ class LifeDecisionEngineService {
       worldEvents: worldEvents,
       now: time,
     );
-    final opportunityPrompt =
-        opportunityEngine.buildPromptSection(relationshipOpportunities);
+    final opportunityPrompt = opportunityEngine.buildPromptSection(
+      relationshipOpportunities,
+    );
 
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
@@ -109,19 +107,19 @@ class LifeDecisionEngineService {
             task: ContextTask.lifeDecision,
             settings: settings,
             taskRules: _buildPrompt(
-            settings: settings,
-            messages: messages,
-            memories: memories,
-            lifeMoments: lifeMoments,
-            otherCharacters: otherCharacters,
-            relationshipPrompt: relationshipPrompt,
-            worldEvents: worldEvents,
-            decisionHistory: decisionHistory,
-            worldResources: worldResources,
-            now: time,
-            maxDecisions: maxDecisions.clamp(1, 4),
-            relationshipOpportunityPrompt: opportunityPrompt,
-          ),
+              settings: settings,
+              messages: messages,
+              memories: memories,
+              lifeMoments: lifeMoments,
+              otherCharacters: otherCharacters,
+              relationshipPrompt: relationshipPrompt,
+              worldEvents: worldEvents,
+              decisionHistory: decisionHistory,
+              worldResources: worldResources,
+              now: time,
+              maxDecisions: maxDecisions.clamp(1, 4),
+              relationshipOpportunityPrompt: opportunityPrompt,
+            ),
             relationshipContext: '$relationshipPrompt\n\n$opportunityPrompt',
             socialProtocol: AiSocialProtocolService.buildPromptSection(
               currentCharacter: character,
@@ -137,6 +135,7 @@ class LifeDecisionEngineService {
       temperature: 0.45,
       maxTokens: 1200,
       topP: 0.86,
+      acceptStructuredReasoningFallback: true,
     );
 
     final decoded = _decodeJson(raw);
@@ -146,7 +145,6 @@ class LifeDecisionEngineService {
     }
 
     final allowedWorldIds = worldEvents.map((item) => item.id).toSet();
-    
 
     final decisions = <LifeDecision>[];
     for (var index = 0; index < rawItems.length; index++) {
@@ -182,7 +180,9 @@ class LifeDecisionEngineService {
       final allowedResourceIds = worldResources.map((item) => item.id).toSet();
       final safeClaims = <String, int>{};
       for (final entry in decision.resourceClaims.entries) {
-        if (!allowedResourceIds.contains(entry.key) || entry.value <= 0) continue;
+        if (!allowedResourceIds.contains(entry.key) || entry.value <= 0) {
+          continue;
+        }
         safeClaims[entry.key] = entry.value;
       }
 
@@ -217,10 +217,9 @@ class LifeDecisionEngineService {
       worldEvents: worldEvents,
       now: time,
     );
-    await DecisionHistoryService(characterId: character.id).addAll(
-      selected,
-      now: time,
-    );
+    await DecisionHistoryService(
+      characterId: character.id,
+    ).addAll(selected, now: time);
     return selected;
   }
 
@@ -253,63 +252,80 @@ class LifeDecisionEngineService {
 
     final worldText = worldEvents.isEmpty
         ? '无。'
-        : worldEvents.map((event) {
-            final location = event.locationName?.trim();
-            final locationText = location == null || location.isEmpty
-                ? ''
-                : '；地点：$location';
-            final timing = event.isActiveAt(now)
-                ? '当前有效'
-                : '未来 ${event.startAt.toIso8601String()} 开始';
-            final confidence = (event.normalizedConfidence * 100).round();
-            return '- ID=${event.id}；状态=$timing；类型=${event.type.name}；'
-                '依据=${event.evidence.name}；可信度=$confidence%；'
-                '${event.title}$locationText；${event.description}';
-          }).join('\n');
+        : worldEvents
+              .map((event) {
+                final location = event.locationName?.trim();
+                final locationText = location == null || location.isEmpty
+                    ? ''
+                    : '；地点：$location';
+                final timing = event.isActiveAt(now)
+                    ? '当前有效'
+                    : '未来 ${event.startAt.toIso8601String()} 开始';
+                final confidence = (event.normalizedConfidence * 100).round();
+                return '- ID=${event.id}；状态=$timing；类型=${event.type.name}；'
+                    '依据=${event.evidence.name}；可信度=$confidence%；'
+                    '${event.title}$locationText；${event.description}';
+              })
+              .join('\n');
     final resourceText = worldResources.isEmpty
         ? '无。'
-        : worldResources.map((item) {
-            final location = item.locationName == null ? '' : '；地点：${item.locationName}';
-            return '- ID=${item.id}；${item.name}$location；可用数量=${item.availableAt(now)}';
-          }).join('\n');
+        : worldResources
+              .map((item) {
+                final location = item.locationName == null
+                    ? ''
+                    : '；地点：${item.locationName}';
+                return '- ID=${item.id}；${item.name}$location；可用数量=${item.availableAt(now)}';
+              })
+              .join('\n');
     final memoryText = selectedMemories.isEmpty
         ? '无。'
         : selectedMemories
-            .map((item) => '- ${_truncate(item.content, 140)}')
-            .join('\n');
+              .map((item) => '- ${_truncate(item.content, 140)}')
+              .join('\n');
     final lifeText = selectedMoments.isEmpty
         ? '无。'
-        : selectedMoments.map((item) {
-            return '- ${item.occurredAt.month}/${item.occurredAt.day}：'
-                '${_truncate(item.event, 100)}';
-          }).join('\n');
+        : selectedMoments
+              .map((item) {
+                return '- ${item.occurredAt.month}/${item.occurredAt.day}：'
+                    '${_truncate(item.event, 100)}';
+              })
+              .join('\n');
     final chatText = selectedMessages.isEmpty
         ? '无。'
-        : selectedMessages.map((item) {
-            final speaker = item.role == 'user'
-                ? settings.userCallName
-                : settings.characterName;
-            return '$speaker：${_truncate(item.content, 120)}';
-          }).join('\n');
+        : selectedMessages
+              .map((item) {
+                final speaker = item.role == 'user'
+                    ? settings.userCallName
+                    : settings.characterName;
+                return '$speaker：${_truncate(item.content, 120)}';
+              })
+              .join('\n');
     final decisionHistoryText = selectedHistory.isEmpty
         ? '无。'
-        : selectedHistory.map((item) {
-            final hour = item.scheduledAt.hour.toString().padLeft(2, '0');
-            final minute = item.scheduledAt.minute.toString().padLeft(2, '0');
-            return '- ${item.decidedAt.month}/${item.decidedAt.day} '
-                '$hour:$minute：[${item.status.label}] '
-                '${_truncate(item.summary, 100)}；'
-                '原因：${_truncate(item.reason, 120)}'
-                '${item.statusReason.isEmpty ? '' : '；状态说明：${_truncate(item.statusReason, 80)}'}';
-          }).join('\n');
+        : selectedHistory
+              .map((item) {
+                final hour = item.scheduledAt.hour.toString().padLeft(2, '0');
+                final minute = item.scheduledAt.minute.toString().padLeft(
+                  2,
+                  '0',
+                );
+                return '- ${item.decidedAt.month}/${item.decidedAt.day} '
+                    '$hour:$minute：[${item.status.label}] '
+                    '${_truncate(item.summary, 100)}；'
+                    '原因：${_truncate(item.reason, 120)}'
+                    '${item.statusReason.isEmpty ? '' : '；状态说明：${_truncate(item.statusReason, 80)}'}';
+              })
+              .join('\n');
     final characterText = otherCharacters.isEmpty
         ? '无。'
-        : otherCharacters.map((item) {
-            final relationship = item.relationship.trim().isEmpty
-                ? '关系未填写'
-                : item.relationship.trim();
-            return '- ${item.displayName}（本名：${item.characterName}，$relationship）';
-          }).join('\n');
+        : otherCharacters
+              .map((item) {
+                final relationship = item.relationship.trim().isEmpty
+                    ? '关系未填写'
+                    : item.relationship.trim();
+                return '- ${item.displayName}（本名：${item.characterName}，$relationship）';
+              })
+              .join('\n');
 
     return '''
 你是 PeiLink 的 Life Decision Engine。
@@ -383,7 +399,6 @@ $relationshipOpportunityPrompt
 ''';
   }
 
-
   Future<void> _persistDecisionCauses({
     required List<LifeDecision> decisions,
     required List<WorldEvent> worldEvents,
@@ -432,8 +447,7 @@ $relationshipOpportunityPrompt
           metadata: {
             'location': decision.location,
             'relatedCharacterNames': decision.relatedCharacterNames,
-            'relationshipOpportunityId':
-                decision.relationshipOpportunityId,
+            'relationshipOpportunityId': decision.relationshipOpportunityId,
             'resourceClaims': decision.resourceClaims,
           },
         ),
@@ -457,7 +471,7 @@ $relationshipOpportunityPrompt
     } else if (firstArray >= 0) {
       value = value.substring(firstArray);
     }
-    return jsonDecode(value);
+    return decodeStructuredModelJson(value, stage: 'Life Decision Engine');
   }
 
   String _truncate(String value, int maxLength) {

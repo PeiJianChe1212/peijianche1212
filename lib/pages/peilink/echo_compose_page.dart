@@ -47,8 +47,8 @@ class _EchoComposePageState extends State<EchoComposePage> {
       );
       if (result == null || !mounted) return;
       setState(() => _selectedImagePath = result.path);
-    } catch (error) {
-      _showMessage('选择图片失败：$error');
+    } catch (_) {
+      _showMessage('图片暂时无法读取，请重新选择。');
     }
   }
 
@@ -93,10 +93,10 @@ class _EchoComposePageState extends State<EchoComposePage> {
 
       if (!mounted) return;
       Navigator.pop(context, true);
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      _showMessage('发布失败：$error');
+      _showMessage('发布失败，请稍后重试。内容已保留。');
     }
   }
 

@@ -57,7 +57,8 @@ void main() {
       expect(prompt, contains('goal=comfort'));
       expect(prompt, contains('tone=gentle'));
       expect(prompt, contains('length=medium'));
-      expect(prompt, contains('普通聊天默认组织成 2 到 5 句'));
+      expect(prompt, contains('约 60% 使用 1 到 2 句'));
+      expect(prompt, contains('角色观点、情绪反馈或相关延续'));
       expect(prompt, contains('question=false'));
       expect(prompt, isNot(contains('辛苦啦')));
       expect(prompt, isNot(contains('抱抱')));

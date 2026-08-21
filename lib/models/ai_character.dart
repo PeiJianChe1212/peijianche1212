@@ -8,6 +8,7 @@ class AiCharacter {
     String? backgroundImage,
     String portraitPath = '',
     this.introduction = '',
+    this.characterIntro = '',
     this.relationship = '',
     this.peiLinkId = '',
     this.birthday,
@@ -24,6 +25,7 @@ class AiCharacter {
   final String backgroundImage;
   String get portraitPath => backgroundImage;
   final String introduction;
+  final String characterIntro;
   final String relationship;
   final String peiLinkId;
   final DateTime? birthday;
@@ -41,6 +43,7 @@ class AiCharacter {
     String? backgroundImage,
     String? portraitPath,
     String? introduction,
+    String? characterIntro,
     String? relationship,
     String? peiLinkId,
     DateTime? birthday,
@@ -56,6 +59,7 @@ class AiCharacter {
       avatarPath: avatarPath ?? this.avatarPath,
       backgroundImage: backgroundImage ?? portraitPath ?? this.backgroundImage,
       introduction: introduction ?? this.introduction,
+      characterIntro: characterIntro ?? this.characterIntro,
       relationship: relationship ?? this.relationship,
       peiLinkId: peiLinkId ?? this.peiLinkId,
       birthday: clearBirthday ? null : (birthday ?? this.birthday),
@@ -72,6 +76,7 @@ class AiCharacter {
     'avatarPath': avatarPath,
     'backgroundImage': backgroundImage,
     'introduction': introduction,
+    'characterIntro': characterIntro,
     'relationship': relationship,
     'peiLinkId': peiLinkId,
     'birthday': birthday?.toIso8601String(),
@@ -98,6 +103,7 @@ class AiCharacter {
       introduction: json.containsKey('introduction')
           ? (json['introduction']?.toString().trim() ?? '')
           : '',
+      characterIntro: json['characterIntro']?.toString().trim() ?? '',
       relationship: json['relationship']?.toString().trim() ?? '',
       peiLinkId: _readPeiLinkId(json, rawId),
       birthday: DateTime.tryParse(json['birthday']?.toString() ?? ''),

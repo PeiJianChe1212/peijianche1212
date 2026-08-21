@@ -53,9 +53,9 @@ void main() {
       expect(strategy.question, isFalse);
       expect(result.systemPrompt, contains('goal=comfort'));
       expect(result.systemPrompt, contains('question=false'));
-      expect(result.systemPrompt, contains('普通聊天默认组织成 2 到 5 句'));
+      expect(result.systemPrompt, contains('约 60% 使用 1 到 2 句'));
       expect(
-        result.systemPrompt.indexOf('普通聊天默认组织成 2 到 5 句'),
+        result.systemPrompt.indexOf('约 60% 使用 1 到 2 句'),
         greaterThan(result.systemPrompt.indexOf('【Chat Flow｜本轮回复节奏】')),
       );
     });
@@ -105,6 +105,29 @@ void main() {
       );
       expect(
         prompt.indexOf('PERSONALITY_STYLE'),
+        lessThan(prompt.indexOf('REPLY_STRATEGY')),
+      );
+    });
+
+    test('统一规范和 Provider 适配位于人格之后、本轮策略之前', () {
+      final result = PromptComposer(baseContext: base('角色', '消息'))
+          .addContext(PromptContext.replyStrategy('REPLY_STRATEGY'))
+          .addContext(PromptContext.providerAdapter('PROVIDER_ADAPTER'))
+          .addContext(PromptContext.conversationSpec('CONVERSATION_SPEC'))
+          .addContext(PromptContext.personalityStyle('PERSONALITY_STYLE'))
+          .compose();
+      final prompt = result.systemPrompt;
+
+      expect(
+        prompt.indexOf('PERSONALITY_STYLE'),
+        lessThan(prompt.indexOf('CONVERSATION_SPEC')),
+      );
+      expect(
+        prompt.indexOf('CONVERSATION_SPEC'),
+        lessThan(prompt.indexOf('PROVIDER_ADAPTER')),
+      );
+      expect(
+        prompt.indexOf('PROVIDER_ADAPTER'),
         lessThan(prompt.indexOf('REPLY_STRATEGY')),
       );
     });

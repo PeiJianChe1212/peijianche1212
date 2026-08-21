@@ -33,7 +33,6 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
   final TextEditingController _remarkController = TextEditingController();
   final TextEditingController _relationController = TextEditingController();
   final TextEditingController _birthdayController = TextEditingController();
-  final TextEditingController _anniversaryController = TextEditingController();
   final TextEditingController _introductionController = TextEditingController();
 
   CharacterSettings _settings = CharacterSettings.defaults();
@@ -55,7 +54,6 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
     _remarkController.dispose();
     _relationController.dispose();
     _birthdayController.dispose();
-    _anniversaryController.dispose();
     _introductionController.dispose();
     super.dispose();
   }
@@ -76,8 +74,7 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
     _remarkController.text = settings.remark;
     _relationController.text = settings.relation;
     _birthdayController.text = settings.birthday;
-    _anniversaryController.text = settings.anniversary;
-    _introductionController.text = settings.introduction;
+    _introductionController.text = character.characterIntro;
     setState(() => _loading = false);
   }
 
@@ -93,11 +90,11 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
         _avatarPath = picked.path;
         _removeAvatar = false;
       });
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('选择头像失败：$error')));
+      ).showSnackBar(const SnackBar(content: Text('选择头像失败，请稍后再试')));
     }
   }
 
@@ -132,8 +129,6 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
         remark: _remarkController.text.trim(),
         relation: _relationController.text.trim(),
         birthday: _birthdayController.text.trim(),
-        anniversary: _anniversaryController.text.trim(),
-        introduction: _introductionController.text.trim(),
       );
       await _storage.saveSettings(updatedSettings);
 
@@ -143,19 +138,19 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
           remark: _remarkController.text.trim(),
           relationship: _relationController.text.trim(),
           avatarPath: savedAvatarPath,
-          introduction: _introductionController.text.trim(),
+          characterIntro: _introductionController.text.trim(),
           persona: _character.persona,
         ),
       );
 
       if (!mounted) return;
       Navigator.pop(context, true);
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('保存失败：$error')));
+      ).showSnackBar(const SnackBar(content: Text('保存失败，请稍后再试')));
     }
   }
 
@@ -284,7 +279,6 @@ class _CharacterProfileEditPageState extends State<CharacterProfileEditPage> {
                 _field('关系', _relationController, hint: '例如：恋人、朋友、家人'),
                 const SizedBox(height: 10),
                 _field('生日', _birthdayController, hint: '例如：12月12日'),
-                _field('纪念日', _anniversaryController, hint: '例如：1月17日'),
                 const SizedBox(height: 10),
                 _field(
                   '角色简介',

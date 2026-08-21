@@ -6,5 +6,6 @@ abstract class ChatModelProvider extends AiModelProvider {
     required double temperature,
     required int maxTokens,
     double? topP,
+    bool acceptStructuredReasoningFallback = false,
   });
 }

@@ -68,6 +68,24 @@ class EchoCommentInteractionStorageService {
     );
   }
 
+  Future<void> removeForEchoIds(Set<String> echoIds) async {
+    if (echoIds.isEmpty) return;
+    final interactions = List<EchoCommentInteraction>.from(
+      await loadInteractions(),
+    );
+    final removedInteractionIds = interactions
+        .where((item) => echoIds.contains(item.echoId))
+        .map((item) => item.id)
+        .toSet();
+    interactions.removeWhere((item) => echoIds.contains(item.echoId));
+    final candidates =
+        List<EchoLifeOpportunityCandidate>.from(await loadCandidates())
+          ..removeWhere(
+            (item) => removedInteractionIds.contains(item.sourceInteractionId),
+          );
+    await _save(interactions, candidates);
+  }
+
   Future<void> _save(
     List<EchoCommentInteraction> interactions,
     List<EchoLifeOpportunityCandidate> candidates,

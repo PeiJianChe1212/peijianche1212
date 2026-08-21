@@ -11,8 +11,10 @@ import '../../services/echo_comment_reply_service.dart';
 import '../../services/auto_echo_comment_reply_service.dart';
 import '../../services/echo_comment_storage_service.dart';
 import '../../services/echo_comment_interaction_service.dart';
+import '../../services/echo_comment_author_service.dart';
 import '../../services/echo_comment_reaction_storage_service.dart';
 import '../../widgets/echo/ai_verified_badge.dart';
+import 'peilink_echo_page.dart';
 
 class EchoCommentsPage extends StatefulWidget {
   const EchoCommentsPage({
@@ -22,6 +24,8 @@ class EchoCommentsPage extends StatefulWidget {
     required this.userProfile,
     this.interactionStats,
     this.character,
+    this.characters = const [],
+    this.currentSpaceCharacterId = '',
   });
 
   final String ownerId;
@@ -29,6 +33,8 @@ class EchoCommentsPage extends StatefulWidget {
   final UserProfile userProfile;
   final EchoInteractionStats? interactionStats;
   final AiCharacter? character;
+  final List<AiCharacter> characters;
+  final String currentSpaceCharacterId;
 
   @override
   State<EchoCommentsPage> createState() => _EchoCommentsPageState();
@@ -130,7 +136,8 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
       _focusNode.unfocus();
       setState(() => _replyingTo = null);
     } catch (error) {
-      _showMessage('评论保存失败：$error');
+      debugPrint('评论保存失败：$error');
+      _showMessage('评论保存失败，请稍后再试');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -220,7 +227,8 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
           .toList();
       await _setEcho(_echo.copyWith(comments: next));
     } catch (error) {
-      _showMessage('删除失败：$error');
+      debugPrint('删除评论失败：$error');
+      _showMessage('删除失败，请稍后再试');
     }
   }
 
@@ -324,6 +332,11 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
                                 characterName: _characterName,
                                 characterAvatarPath:
                                     widget.character?.avatarPath ?? '',
+                                resolvedCharacter:
+                                    EchoCommentAuthorService.characterFor(
+                                      comment,
+                                      widget.characters,
+                                    ),
                                 isAuthor: comment.authorId == widget.ownerId,
                                 likeCount:
                                     (int.tryParse(
@@ -346,6 +359,19 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
                                   _focusNode.requestFocus();
                                 },
                                 onDelete: () => _deleteComment(comment),
+                                onOpenCharacter: (character) {
+                                  if (character.id ==
+                                      widget.currentSpaceCharacterId) {
+                                    return;
+                                  }
+                                  Navigator.push<void>(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          PeiLinkEchoPage(character: character),
+                                    ),
+                                  );
+                                },
                               ),
                         ],
                       ),
@@ -574,6 +600,7 @@ class _CommentTile extends StatelessWidget {
     required this.userAvatarPath,
     required this.characterName,
     required this.characterAvatarPath,
+    required this.resolvedCharacter,
     required this.isAuthor,
     required this.likeCount,
     required this.isReplying,
@@ -582,6 +609,7 @@ class _CommentTile extends StatelessWidget {
     required this.onLike,
     required this.onReply,
     required this.onDelete,
+    required this.onOpenCharacter,
   });
 
   final EchoComment comment;
@@ -589,6 +617,7 @@ class _CommentTile extends StatelessWidget {
   final String userAvatarPath;
   final String characterName;
   final String characterAvatarPath;
+  final AiCharacter? resolvedCharacter;
   final bool isAuthor;
   final int likeCount;
   final bool isReplying;
@@ -597,6 +626,7 @@ class _CommentTile extends StatelessWidget {
   final VoidCallback onLike;
   final VoidCallback onReply;
   final VoidCallback onDelete;
+  final ValueChanged<AiCharacter> onOpenCharacter;
 
   @override
   Widget build(BuildContext context) {
@@ -629,10 +659,16 @@ class _CommentTile extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _CommentAvatar(
-            path: avatarPath,
-            fallbackName: name,
-            isCharacter: isCharacter,
+          InkWell(
+            onTap: resolvedCharacter == null
+                ? null
+                : () => onOpenCharacter(resolvedCharacter!),
+            customBorder: const CircleBorder(),
+            child: _CommentAvatar(
+              path: avatarPath,
+              fallbackName: name,
+              isCharacter: isCharacter,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -645,16 +681,22 @@ class _CommentTile extends StatelessWidget {
                       child: Row(
                         children: [
                           Flexible(
-                            child: Text(
-                              name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: isAuthor
-                                    ? const Color(0xFFC96F86)
-                                    : const Color(0xFF576B95),
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
+                            child: InkWell(
+                              onTap: resolvedCharacter == null
+                                  ? null
+                                  : () => onOpenCharacter(resolvedCharacter!),
+                              borderRadius: BorderRadius.circular(4),
+                              child: Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: isAuthor
+                                      ? const Color(0xFFC96F86)
+                                      : const Color(0xFF576B95),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ),

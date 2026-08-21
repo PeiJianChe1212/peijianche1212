@@ -5,6 +5,8 @@ import '../models/character_settings.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'context_builder.dart';
+import 'vision_router.dart';
+import 'vision_settings_storage_service.dart';
 
 class ImageUnderstandingResult {
   const ImageUnderstandingResult({required this.description});
@@ -15,12 +17,18 @@ class ImageUnderstandingResult {
 class MultimodalService {
   MultimodalService({
     ApiSettingsStorageService? storage,
+    VisionSettingsStorageService? visionStorage,
+    VisionRouter? visionRouter,
     http.Client? client,
   }) : _storage = storage ?? ApiSettingsStorageService(),
+       _visionStorage = visionStorage ?? VisionSettingsStorageService(),
+       _visionRouter = visionRouter ?? VisionRouter(client: client),
        _client = client ?? http.Client(),
        _ownsClient = client == null;
 
   final ApiSettingsStorageService _storage;
+  final VisionSettingsStorageService _visionStorage;
+  final VisionRouter _visionRouter;
   final http.Client _client;
   final bool _ownsClient;
 
@@ -30,14 +38,16 @@ class MultimodalService {
     CharacterSettings? characterSettings,
   }) async {
     final apiSettings = await _storage.loadSettings();
-    final settings = characterSettings ??
+    final visionSettings = await _visionStorage.loadSettings();
+    final settings =
+        characterSettings ??
         await CharacterSettingsStorageService().loadSettings();
-    final provider = VolcengineMultimodalProvider(
-      settings: apiSettings,
-      client: _client,
+    final provider = _visionRouter.resolve(
+      visionSettings: visionSettings,
+      chatSettings: apiSettings,
     );
 
-    final description = await provider.understandImage(
+    final description = await provider.understandImagePath(
       imagePath: imagePath,
       systemPrompt: ContextBuilder.build(
         task: ContextTask.multimodal,
@@ -63,7 +73,8 @@ class MultimodalService {
     CharacterSettings? characterSettings,
   }) async {
     final apiSettings = await _storage.loadSettings();
-    final settings = characterSettings ??
+    final settings =
+        characterSettings ??
         await CharacterSettingsStorageService().loadSettings();
     final provider = VolcengineMultimodalProvider(
       settings: apiSettings,
@@ -97,6 +108,9 @@ class MultimodalService {
     );
   }
 
+  @Deprecated(
+    'Use a scene Intent with PeiLinkImagePromptBuilder; image requests must use ImageGenerationService.',
+  )
   Future<String> buildImagePrompt({
     required String scene,
     required String visualStyle,
@@ -104,7 +118,8 @@ class MultimodalService {
     CharacterSettings? characterSettings,
   }) async {
     final apiSettings = await _storage.loadSettings();
-    final settings = characterSettings ??
+    final settings =
+        characterSettings ??
         await CharacterSettingsStorageService().loadSettings();
     final provider = VolcengineMultimodalProvider(
       settings: apiSettings,
@@ -121,7 +136,8 @@ class MultimodalService {
 图片应像角色用手机随手拍下的真实生活照片，不是海报、宣传图或艺术展作品。
 不要输出标题、解释、Markdown、参数表，不要擅自加入文字排版或水印。
 ''',
-        sourceFacts: '''
+        sourceFacts:
+            '''
 图片用途：$purpose
 生活场景：$scene
 ''',

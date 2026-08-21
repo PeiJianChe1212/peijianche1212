@@ -29,14 +29,18 @@ class _ChatMorePanelState extends State<ChatMorePanel> {
   static const _items = <_MoreItem>[
     _MoreItem('我的个人设定', Icons.badge_outlined, _MoreAction.userPersona),
     _MoreItem('相册', Icons.photo_outlined, _MoreAction.photo),
-    _MoreItem('红包', Icons.redeem_outlined, _MoreAction.redPacket),
-    _MoreItem('文件', Icons.insert_drive_file_outlined),
-    _MoreItem('礼物', Icons.card_giftcard_outlined),
+    _MoreItem(
+      '红包',
+      Icons.account_balance_wallet_outlined,
+      _MoreAction.redPacket,
+    ),
     _MoreItem(
       '让 Ta 换头像',
       Icons.switch_account_outlined,
       _MoreAction.changeAvatar,
     ),
+    _MoreItem('礼物', Icons.card_giftcard_outlined),
+    _MoreItem('文件', Icons.insert_drive_file_outlined),
     _MoreItem('虚拟定位', Icons.location_on_outlined),
     _MoreItem('音乐', Icons.music_note_outlined),
     _MoreItem('语音通话', Icons.call_outlined),

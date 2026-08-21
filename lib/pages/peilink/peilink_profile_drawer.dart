@@ -8,21 +8,19 @@ import '../../theme/app_dimensions.dart';
 import '../../theme/app_theme_background.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
-import '../memory_page.dart';
 import '../profile_page.dart';
 import '../settings_page.dart';
-import 'peilink_echo_page.dart';
 import 'theme_decoration_page.dart';
 
 /// PeiLink 中用户与 AI 世界的控制中心。
 class PeiLinkProfileDrawer extends StatefulWidget {
   const PeiLinkProfileDrawer({
     super.key,
-    required this.onOpenRelationships,
+    required this.onOpenCharacterManagement,
     this.onProfileChanged,
   });
 
-  final VoidCallback onOpenRelationships;
+  final VoidCallback onOpenCharacterManagement;
   final ValueChanged<UserProfile>? onProfileChanged;
 
   @override
@@ -51,23 +49,20 @@ class _PeiLinkProfileDrawerState extends State<PeiLinkProfileDrawer> {
     if (refreshProfile) await _loadProfile();
   }
 
-  void _showComingSoon(String title) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$title 将在后续版本开放')));
-  }
-
   @override
   Widget build(BuildContext context) {
     final avatarPath = _profile.avatarPath.trim();
     final avatarFile = avatarPath.isEmpty ? null : File(avatarPath);
     final hasAvatar = avatarFile?.existsSync() == true;
-    final signature = _profile.signature.trim().isEmpty
+    final nickname = _profile.nickname.trim().isEmpty
         ? '未设置'
+        : _profile.nickname.trim();
+    final signature = _profile.signature.trim().isEmpty
+        ? '写一句属于你的话'
         : _profile.signature.trim();
-    final relationship = _profile.identity.trim().isEmpty
-        ? '正在连接 AI 世界'
-        : _profile.identity.trim();
+    final peiLinkId = _profile.peiLinkId.trim().isEmpty
+        ? '未设置'
+        : _profile.peiLinkId.trim();
 
     return Drawer(
       width: MediaQuery.sizeOf(context).width.clamp(0, 380).toDouble(),
@@ -79,16 +74,26 @@ class _PeiLinkProfileDrawerState extends State<PeiLinkProfileDrawer> {
             padding: EdgeInsets.zero,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                padding: const EdgeInsets.fromLTRB(18, 20, 18, 10),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(
                     AppDimensions.radiusMedium,
                   ),
                   onTap: () =>
                       _openPage(const ProfilePage(), refreshProfile: true),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.xs,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.68),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: const Color(0xFFECE6F5)),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x0D67558C),
+                          blurRadius: 22,
+                          offset: Offset(0, 8),
+                        ),
+                      ],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,37 +102,22 @@ class _PeiLinkProfileDrawerState extends State<PeiLinkProfileDrawer> {
                           file: hasAvatar ? avatarFile : null,
                           size: AppDimensions.avatarLarge,
                         ),
-                        const SizedBox(height: AppSpacing.md),
-                        Text(_profile.nickname, style: AppTextStyles.pageTitle),
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(
-                          'PeiLink ID：${_profile.peiLinkId}',
-                          style: AppTextStyles.caption,
-                        ),
                         const SizedBox(height: AppSpacing.sm),
+                        Text(nickname, style: AppTextStyles.pageTitle),
+                        const SizedBox(height: 4),
                         Text(
                           signature,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.supporting,
+                          style: AppTextStyles.supporting.copyWith(
+                            color: const Color(0xFF827A90),
+                          ),
                         ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm,
-                            vertical: AppSpacing.xxs,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE5EFF4),
-                            borderRadius: BorderRadius.circular(
-                              AppDimensions.radiusPill,
-                            ),
-                          ),
-                          child: Text(
-                            relationship,
-                            style: AppTextStyles.caption.copyWith(
-                              color: const Color(0xFF52788A),
-                            ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'PeiLink ID：$peiLinkId',
+                          style: AppTextStyles.caption.copyWith(
+                            color: const Color(0xFF776B91),
                           ),
                         ),
                       ],
@@ -135,32 +125,11 @@ class _PeiLinkProfileDrawerState extends State<PeiLinkProfileDrawer> {
                   ),
                 ),
               ),
-              const _DrawerSectionLabel('快捷区域'),
-              _DrawerTile(
-                icon: Icons.notifications_none_rounded,
-                title: '消息设置',
-                onTap: () => _showComingSoon('消息设置'),
-              ),
-              _DrawerTile(
-                icon: Icons.manage_accounts_outlined,
-                title: '账号管理',
-                onTap: () => _showComingSoon('账号管理'),
-              ),
               const _DrawerSectionLabel('功能入口'),
               _DrawerTile(
                 icon: Icons.people_outline_rounded,
                 title: '角色管理',
-                onTap: widget.onOpenRelationships,
-              ),
-              _DrawerTile(
-                icon: Icons.bookmark_border_rounded,
-                title: '收藏',
-                onTap: () => _openPage(const MemoryPage()),
-              ),
-              _DrawerTile(
-                icon: Icons.photo_library_outlined,
-                title: '相册',
-                onTap: () => _openPage(const PeiLinkEchoPage()),
+                onTap: widget.onOpenCharacterManagement,
               ),
               _DrawerTile(
                 icon: Icons.palette_outlined,
@@ -215,7 +184,7 @@ class _DrawerSectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+      padding: const EdgeInsets.fromLTRB(22, 18, 20, 7),
       child: Text(label, style: AppTextStyles.caption),
     );
   }
@@ -235,9 +204,11 @@ class _DrawerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: Colors.white.withValues(alpha: 0.76),
       child: ListTile(
-        leading: Icon(icon, size: 22, color: const Color(0xFF52788A)),
+        minTileHeight: 52,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 22),
+        leading: Icon(icon, size: 21, color: const Color(0xFF6F79A8)),
         title: Text(title, style: AppTextStyles.bodyCompact),
         trailing: const Icon(
           Icons.chevron_right_rounded,

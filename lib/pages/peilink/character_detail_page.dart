@@ -13,7 +13,6 @@ import '../../services/pei_file_platform_service.dart';
 import '../../services/pei_file_service.dart';
 import '../../widgets/peilink/relationship_badge.dart';
 import '../chat_page.dart';
-import 'character_profile_edit_page.dart';
 import 'peilink_echo_page.dart';
 
 class CharacterDetailPage extends StatefulWidget {
@@ -106,14 +105,125 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
     await _load();
   }
 
-  Future<void> _openBasicProfile() async {
-    final changed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CharacterProfileEditPage(characterId: _character.id),
+  Future<void> _editTextValue(
+    String title,
+    String initial,
+    Future<void> Function(String) save,
+  ) async {
+    final controller = TextEditingController(
+      text: initial == '未设置' ? '' : initial,
+    );
+    final value = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          8,
+          20,
+          MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: '请输入$title',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () =>
+                    Navigator.pop(sheetContext, controller.text.trim()),
+                child: const Text('保存'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
-    if (changed == true) await _load();
+    controller.dispose();
+    if (value == null) return;
+    await save(value);
+    await _load();
+  }
+
+  Future<void> _editBirthday() async {
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2200),
+      initialDate: DateTime.now(),
+    );
+    if (picked == null) return;
+    final text = '${picked.year}年${picked.month}月${picked.day}日';
+    final next = _settings.copyWith(birthday: text);
+    await CharacterSettingsStorageService(
+      characterId: _character.id,
+    ).saveSettings(next);
+    await _registry.updateCharacter(_character.copyWith(birthday: picked));
+    await _load();
+  }
+
+  Future<void> _editRelation() async {
+    const choices = ['恋人', '朋友', '家人', '青梅竹马', '同事'];
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text(
+                '与我的关系',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            ...choices.map(
+              (value) => ListTile(
+                title: Text(value),
+                onTap: () => Navigator.pop(sheetContext, value),
+              ),
+            ),
+            ListTile(
+              title: const Text('自定义…'),
+              onTap: () => Navigator.pop(sheetContext, '__custom__'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null) return;
+    if (selected == '__custom__') {
+      await _editTextValue('与我的关系', _settings.relation, (value) async {
+        await CharacterSettingsStorageService(
+          characterId: _character.id,
+        ).saveSettings(_settings.copyWith(relation: value));
+        await _registry.updateCharacter(
+          _character.copyWith(relationship: value),
+        );
+      });
+      return;
+    }
+    await CharacterSettingsStorageService(
+      characterId: _character.id,
+    ).saveSettings(_settings.copyWith(relation: selected));
+    await _registry.updateCharacter(
+      _character.copyWith(relationship: selected),
+    );
+    await _load();
   }
 
   Future<void> _openEcho() async {
@@ -207,7 +317,17 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
                   const SizedBox(height: 10),
                   _FriendInfoCard(
                     settings: _settings,
-                    onTap: _openBasicProfile,
+                    onRemark: () =>
+                        _editTextValue('备注', _settings.remark, (value) async {
+                          await CharacterSettingsStorageService(
+                            characterId: _character.id,
+                          ).saveSettings(_settings.copyWith(remark: value));
+                          await _registry.updateCharacter(
+                            _character.copyWith(remark: value),
+                          );
+                        }),
+                    onBirthday: _editBirthday,
+                    onRelation: _editRelation,
                   ),
                   const SizedBox(height: 10),
                   _EchoTile(
@@ -232,11 +352,11 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _settings.introduction.trim().isEmpty
-                              ? '暂未填写'
-                              : _settings.introduction.trim(),
+                          _character.characterIntro.trim().isEmpty
+                              ? '未设置'
+                              : _character.characterIntro.trim(),
                           style: TextStyle(
-                            color: _settings.introduction.trim().isEmpty
+                            color: _character.characterIntro.trim().isEmpty
                                 ? const Color(0xFFAAAAAA)
                                 : const Color(0xFF666666),
                             fontSize: 14,
@@ -271,37 +391,47 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
 }
 
 class _FriendInfoCard extends StatelessWidget {
-  const _FriendInfoCard({required this.settings, required this.onTap});
+  const _FriendInfoCard({
+    required this.settings,
+    required this.onRemark,
+    required this.onBirthday,
+    required this.onRelation,
+  });
 
   final CharacterSettings settings;
-  final VoidCallback onTap;
+  final VoidCallback onRemark, onBirthday, onRelation;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 15, 14, 13),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '朋友资料',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 10),
-              _ProfileValueRow(label: '备注', value: settings.remark),
-              _ProfileValueRow(label: '生日', value: settings.birthday),
-              _ProfileValueRow(label: '纪念日', value: settings.anniversary),
-              _ProfileValueRow(
-                label: '关系',
-                value: settings.relation,
-                showChevron: true,
-              ),
-            ],
-          ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 15, 14, 13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '朋友资料',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 10),
+            _ProfileValueRow(
+              label: '备注',
+              value: settings.remark,
+              onTap: onRemark,
+            ),
+            _ProfileValueRow(
+              label: '生日',
+              value: settings.birthday,
+              onTap: onBirthday,
+            ),
+            _ProfileValueRow(
+              label: '关系',
+              value: settings.relation,
+              showChevron: true,
+              onTap: onRelation,
+            ),
+          ],
         ),
       ),
     );
@@ -313,31 +443,36 @@ class _ProfileValueRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.showChevron = false,
+    this.onTap,
   });
 
   final String label;
   final String value;
   final bool showChevron;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final displayValue = value.trim().isEmpty ? '未设置' : value.trim();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
-          Text(
-            displayValue,
-            style: const TextStyle(color: Color(0xFF888888), fontSize: 13),
-          ),
-          if (showChevron)
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 19,
-              color: Color(0xFFB7B7B7),
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
+            Text(
+              displayValue,
+              style: const TextStyle(color: Color(0xFF888888), fontSize: 13),
             ),
-        ],
+            if (showChevron || onTap != null)
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 19,
+                color: Color(0xFFB7B7B7),
+              ),
+          ],
+        ),
       ),
     );
   }
