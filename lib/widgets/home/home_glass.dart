@@ -135,6 +135,69 @@ class HomeGlassButton extends StatefulWidget {
   State<HomeGlassButton> createState() => _HomeGlassButtonState();
 }
 
+class HomeStatusChip extends StatelessWidget {
+  const HomeStatusChip({
+    super.key,
+    required this.label,
+    this.color = HomeVisualTokens.statusLive,
+    this.onDark = false,
+    this.leadingDot = true,
+  });
+
+  final String label;
+  final Color color;
+  final bool onDark;
+  final bool leadingDot;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = onDark ? Colors.white : HomeVisualTokens.inkSecondary;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: (onDark ? Colors.white : color).withValues(
+          alpha: onDark ? 0.12 : 0.10,
+        ),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: (onDark ? Colors.white : color).withValues(
+            alpha: onDark ? 0.16 : 0.20,
+          ),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (leadingDot) ...[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: color, blurRadius: 7)],
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: foreground,
+              fontSize: HomeVisualTokens.statusSize,
+              height: 1,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HomeGlassButtonState extends State<HomeGlassButton> {
   bool _pressed = false;
 

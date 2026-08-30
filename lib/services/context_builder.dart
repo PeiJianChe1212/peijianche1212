@@ -10,6 +10,7 @@ import '../context_builder/conversation_context.dart';
 import '../context_builder/memory_context.dart';
 import '../context_builder/relationship_context.dart';
 import '../context_builder/response_strategy_context.dart';
+import '../context_builder/temporal_context.dart';
 import '../models/chat_message.dart';
 
 enum ContextTask {
@@ -85,9 +86,11 @@ class ContextBuilder {
     CharacterArchive? characterArchive,
     bool includeBehaviorRules = true,
     bool includeBaseRelationshipRules = true,
+    DateTime? now,
   }) {
     final profile = profileFor(task);
     final sections = <String>[
+      TemporalContext(localTime: now ?? DateTime.now()).toPromptSection(),
       _stableContext(
         profile: profile,
         settings: settings,
@@ -130,6 +133,7 @@ class ContextBuilder {
     required String Function(ChatMessage message) messageContent,
     bool includeBehaviorRules = true,
     bool includeBaseRelationshipRules = true,
+    DateTime? now,
   }) {
     final stablePrompt = build(
       task: ContextTask.chat,
@@ -140,6 +144,7 @@ class ContextBuilder {
       characterArchive: character.archive,
       includeBehaviorRules: includeBehaviorRules,
       includeBaseRelationshipRules: includeBaseRelationshipRules,
+      now: now,
     );
     final latestUserMessage = conversation.recentMessages
         .where((message) => message.role == 'user')

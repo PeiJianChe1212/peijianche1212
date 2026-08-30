@@ -140,7 +140,7 @@
 
 - **状态：** 已完成 / 已展示
 - **入口：** 角色详情/聊天设置 → 角色管理
-- **主要文件：** `lib/pages/peilink/character_management_page.dart`、`lib/pages/character_settings_page.dart`、`lib/pages/peilink/chat_settings_page.dart`
+- **主要文件：** `lib/pages/peilink/character_management_page.dart`、`lib/pages/peilink/chat_settings_page.dart`
 - **作用：** 调整相处模式、主动联系、记忆等角色级配置；清理聊天或重新开始；非内置角色支持删除。
 - **用户是否可见：** 是；聊天设置中的搜索记录等条目仍为占位。
 
@@ -309,7 +309,6 @@ App 启动
       ├─ 角色桌面
       │  ├─ 角色卡 → CharacterDetailPage
       │  │  ├─ 聊天 → ChatPage
-      │  │  ├─ 编辑资料 → CharacterProfileEditPage
       │  │  └─ Echo 空间 → PeiLinkEchoPage(character)
       │  ├─ 聊天 → ChatPage
       │  ├─ Echo → PeiLinkEchoPage(character)

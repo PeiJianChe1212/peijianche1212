@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/peilink_runtime.dart';
-import 'peilink/prompt_test_mode_page.dart';
+import '../design_system/peilink_design_system.dart';
+import '../services/developer_environment_service.dart';
 import 'api_settings_page.dart';
+import 'core_bridge_settings_page.dart';
+import 'peilink/developer_environment_page.dart';
+import 'peilink/prompt_test_mode_page.dart';
+import 'peilink/physical_host_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -18,88 +23,98 @@ class SettingsPage extends StatelessWidget {
         _feedbackFormUrl,
       );
       if (opened != true && context.mounted) {
-        ScaffoldMessenger.of(
+        PeiLinkFeedback.show(
           context,
-        ).showSnackBar(const SnackBar(content: Text('无法打开反馈问卷')));
+          '无法打开反馈问卷',
+          type: PeiLinkFeedbackType.warning,
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        PeiLinkFeedback.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('打开失败：$e')));
+          '打开失败：$e',
+          type: PeiLinkFeedbackType.error,
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
-      appBar: AppBar(
-        title: const Text('设置'),
-        centerTitle: true,
-        backgroundColor: const Color(0xFFF5F5F7),
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
+    return PeiLinkPageScaffold(
+      appBar: const PeiLinkAppBar(
+        title: '设置',
+        subtitle: '管理 PeiLink 的连接与帮助选项',
+        mode: PeiLinkAppBarMode.glass,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      body: PeiLinkPageList(
         children: [
-          const _SectionTitle('应用设置'),
-          Card(
-            margin: EdgeInsets.zero,
-            elevation: 0,
-            color: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
+          const PeiLinkSectionHeader(title: 'AI 与模型'),
+          PeiLinkSurface(
             child: Column(
               children: [
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  leading: const _SettingsIcon(
-                    icon: Icons.hub_outlined,
-                    color: Color(0xFF4D7187),
-                    background: Color(0xFFE8F0F5),
-                  ),
-                  title: const Text(
-                    '模型与 API',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: const Text('配置聊天模型、接口地址和密钥'),
-                  trailing: const Icon(
-                    Icons.chevron_right_rounded,
-                    color: Colors.black38,
-                  ),
+                PeiLinkSettingsTile(
+                  icon: Icons.hub_outlined,
+                  title: '模型与 API',
+                  subtitle: '配置聊天模型、接口地址和密钥',
+                  iconColor: const Color(0xFF557C96),
+                  iconBackground: const Color(0xFFE8F0F5),
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const ApiSettingsPage()),
                   ),
                 ),
+                FutureBuilder<bool>(
+                  future: DeveloperEnvironmentService().isEnabled(),
+                  builder: (context, snapshot) {
+                    if (snapshot.data != true) return const SizedBox.shrink();
+                    return Column(
+                      children: [
+                        const PeiLinkSettingsDivider(),
+                        PeiLinkSettingsTile(
+                          icon: Icons.sensors_outlined,
+                          title: 'PeiLink Physical',
+                          subtitle: '手机直连实体麦克风与喇叭',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const PhysicalHostPage(),
+                            ),
+                          ),
+                        ),
+                        const PeiLinkSettingsDivider(),
+                        PeiLinkSettingsTile(
+                          icon: Icons.cable_outlined,
+                          title: 'Physical Core Bridge',
+                          subtitle: '管理仅限本机的 Physical Core 连接',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const CoreBridgeSettingsPage(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
                 if (PeiLinkRuntime.developerToolsEnabled) ...[
-                  const Divider(height: 1, indent: 68),
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
+                  const PeiLinkSettingsDivider(),
+                  PeiLinkSettingsTile(
+                    icon: Icons.construction_outlined,
+                    title: '开发者环境',
+                    subtitle: '开发者沙盒开关与测试数据初始化',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const DeveloperEnvironmentPage()),
                     ),
-                    leading: const _SettingsIcon(
-                      icon: Icons.science_outlined,
-                      color: Color(0xFF7459D9),
-                      background: Color(0xFFF0ECFF),
-                    ),
-                    title: const Text(
-                      'Prompt 测试模式',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: const Text('纯人设、极简规则与完整框架对比'),
-                    trailing: const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Colors.black38,
-                    ),
+                   ),
+                  const PeiLinkSettingsDivider(),
+                  PeiLinkSettingsTile(
+                    icon: Icons.science_outlined,
+                    title: 'Prompt 测试模式',
+                    subtitle: '纯人设、极简规则与完整框架对比',
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -108,85 +123,37 @@ class SettingsPage extends StatelessWidget {
                     ),
                   ),
                 ],
-                const Divider(height: 1, indent: 68),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  leading: const _SettingsIcon(
-                    icon: Icons.feedback_outlined,
-                    color: Color(0xFF4CAF50),
-                    background: Color(0xFFE8F5E9),
-                  ),
-                  title: const Text(
-                    '反馈与建议',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: const Text('前往腾讯问卷提交反馈'),
-                  trailing: const Icon(
-                    Icons.open_in_new_rounded,
-                    color: Colors.black38,
-                  ),
-                  onTap: () => _openFeedbackForm(context),
-                ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: PeiLinkSpacing.section),
+          const PeiLinkSectionHeader(title: '支持与建议'),
+          PeiLinkSurface(
+            child: PeiLinkSettingsTile(
+              icon: Icons.feedback_outlined,
+              title: '反馈与建议',
+              subtitle: '前往腾讯问卷提交反馈',
+              showArrow: false,
+              iconColor: PeiLinkColors.success,
+              iconBackground: const Color(0xFFE8F5E9),
+              trailing: const Icon(
+                Icons.open_in_new_rounded,
+                color: PeiLinkColors.textTertiary,
+                size: 20,
+              ),
+              onTap: () => _openFeedbackForm(context),
+            ),
+          ),
+          const SizedBox(height: PeiLinkSpacing.lg),
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
+            padding: EdgeInsets.symmetric(horizontal: PeiLinkSpacing.xs),
             child: Text(
               '角色资料和记忆已归入各自的角色页面，彼此独立保存。',
-              style: TextStyle(
-                color: Colors.black45,
-                fontSize: 13,
-                height: 1.45,
-              ),
+              style: PeiLinkTypography.secondary,
             ),
           ),
         ],
       ),
     );
   }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-    child: Text(
-      text,
-      style: const TextStyle(
-        color: Colors.black54,
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
-  );
-}
-
-class _SettingsIcon extends StatelessWidget {
-  const _SettingsIcon({
-    required this.icon,
-    required this.color,
-    required this.background,
-  });
-  final IconData icon;
-  final Color color;
-  final Color background;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 38,
-    height: 38,
-    decoration: BoxDecoration(
-      color: background,
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Icon(icon, color: color),
-  );
 }

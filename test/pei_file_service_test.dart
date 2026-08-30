@@ -54,6 +54,8 @@ void main() {
     expect(raw['version'], 1);
     expect(raw.containsKey('chatMessages'), isFalse);
     expect(raw.containsKey('apiKey'), isFalse);
+    expect(raw.containsKey('characterProfile'), isFalse);
+    expect(raw.containsKey('characterArchive'), isFalse);
     expect((raw['reserved'] as Map)['echo'], isNull);
     expect((raw['reserved'] as Map)['memory'], isNull);
     expect(parsed.character.characterName, '阿澄');

@@ -95,16 +95,6 @@ void main() {
     expect(restored.value('lifeExperience'), '长期旅行');
   });
 
-  test('archive completion counts old and new fields without mutation', () {
-    const archive = CharacterArchive(
-      characterId: 'completion',
-      values: {'likes': '咖啡', 'languageHabits': '简短'},
-    );
-
-    expect(archive.completion, 2 / CharacterArchive.fieldKeys.length);
-    expect(archive.values.length, 2);
-  });
-
   test('different characters use isolated archive files', () async {
     await storage('character_a').save(
       const CharacterArchive(

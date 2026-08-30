@@ -99,7 +99,7 @@ class CharacterSettings {
   }
 
   factory CharacterSettings.fromAiCharacter(AiCharacter character) {
-    final defaults = CharacterSettings.defaults();
+    final defaults = CharacterSettings.genericDefaults();
     final birthday = character.birthday;
     final birthdayText = birthday == null
         ? '未设置'
@@ -188,6 +188,33 @@ $persona
     maxProactivePerDay: 2,
   );
 
+  /// Neutral defaults for every player-created or imported character.
+  ///
+  /// Developer-private defaults above are reserved for the isolated built-in
+  /// character and must never be used as a public character fallback.
+  factory CharacterSettings.genericDefaults() => const CharacterSettings(
+    characterName: '未命名 AI',
+    remark: '',
+    relation: '',
+    birthday: '',
+    anniversary: '',
+    introduction: '',
+    userCallName: '',
+    coreProfile: '',
+    behaviorStyle: '',
+    forbiddenRules: '',
+    exampleDialogues: '',
+    conversationMode: 'basic',
+    temperature: 0.72,
+    replyLength: 'standard',
+    initiative: 0.58,
+    intimacy: 0.52,
+    tsundere: 0.62,
+    proactiveEnabled: false,
+    lateNightMessages: false,
+    maxProactivePerDay: 0,
+  );
+
   Map<String, dynamic> toJson() => {
     'characterName': characterName,
     'remark': remark,
@@ -211,8 +238,11 @@ $persona
     'maxProactivePerDay': maxProactivePerDay,
   };
 
-  factory CharacterSettings.fromJson(Map<dynamic, dynamic> json) {
-    final defaults = CharacterSettings.defaults();
+  factory CharacterSettings.fromJson(
+    Map<dynamic, dynamic> json, {
+    CharacterSettings? fallbackDefaults,
+  }) {
+    final defaults = fallbackDefaults ?? CharacterSettings.genericDefaults();
 
     String readString(String key, String fallback) {
       final value = json[key]?.toString().trim();

@@ -23,6 +23,7 @@ import '../context_builder/conversation_context.dart';
 import '../context_builder/existing_memory_context_provider.dart';
 import '../context_builder/relationship_context.dart';
 import '../context_builder/response_strategy_context.dart';
+import '../context_builder/temporal_context.dart';
 import '../chat_flow/chat_flow_engine.dart';
 import '../reply_strategy/reply_strategy_engine.dart';
 import '../personality_style/personality_style_engine.dart';
@@ -635,12 +636,7 @@ class DeepSeekService {
   }
 
   String _buildTimeFact() {
-    final now = DateTime.now();
-    const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
-    final minute = now.minute.toString().padLeft(2, '0');
-    return '【Character Facts｜当前时间】\n'
-        '${now.year}年${now.month}月${now.day}日，${weekDays[now.weekday - 1]}，'
-        '${now.hour}:$minute。';
+    return TemporalContext.now().toPromptSection();
   }
 
   ContextBuildResult _buildExperimentBaseContext({

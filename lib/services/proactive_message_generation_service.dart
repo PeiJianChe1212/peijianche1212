@@ -79,6 +79,7 @@ class ProactiveMessageGenerationService {
           lifeEventSummary: lifeEventSummary,
           recentProactiveMessages: recentProactiveMessages,
         ),
+        now: now,
       );
 
       for (var attempt = 0; attempt < 2; attempt++) {
@@ -164,10 +165,8 @@ class ProactiveMessageGenerationService {
     required String slot,
     required DateTime? lastUserAt,
   }) {
-    final minute = now.minute.toString().padLeft(2, '0');
     return '''
-当前时间：${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour}:$minute
-当前时间段：$slot
+主动消息触发时段：$slot
 当前活动：${activity.label}
 活动说明：${activity.detail}
 用户最后发言时间：${lastUserAt?.toIso8601String() ?? '暂无记录'}

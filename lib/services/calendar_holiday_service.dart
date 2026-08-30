@@ -1,7 +1,7 @@
-/// 纯本地的现实节日查询边界。
-///
-/// 当前不内置不可靠的节日数据；后续可以在这里接入经校验的
-/// 本地日历表，而不需要让 UI 访问网络或 AI。
+import 'special_day_service.dart';
+
+/// Backwards-compatible label boundary backed by deterministic local data.
 abstract final class CalendarHolidayService {
-  static String? labelFor(DateTime date) => null;
+  static String? labelFor(DateTime date) =>
+      SpecialDayService.systemDaysFor(date).firstOrNull?.name;
 }

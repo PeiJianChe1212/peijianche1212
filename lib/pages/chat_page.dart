@@ -95,7 +95,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _conversationTraceRecorded = false;
   UserProfile _profile = const UserProfile();
   AiCharacter _activeCharacter = AiCharacter.placeholder();
-  CharacterSettings _characterSettings = CharacterSettings.defaults();
+  CharacterSettings _characterSettings = CharacterSettings.genericDefaults();
   bool _isRedirectingBack = false;
   String _conversationMode = 'basic';
   double _temperature = 0.72;

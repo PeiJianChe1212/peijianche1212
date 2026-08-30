@@ -8,7 +8,6 @@ import '../../theme/app_theme_background.dart';
 import '../memory_page.dart';
 import 'character_detail_page.dart';
 import 'character_management_actions.dart';
-import 'character_profile_home_page.dart';
 
 class CharacterManagementPage extends StatefulWidget {
   const CharacterManagementPage({super.key, required this.characterId});
@@ -158,18 +157,6 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
                       ],
                     ),
                   ),
-                  _Tile(
-                    title: '角色资料',
-                    subtitle: '基础、外貌、性格、背景与关系资料',
-                    onTap: () => Navigator.push<void>(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            CharacterProfileHomePage(character: _character),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
                   _Tile(
                     title: 'Memory',
                     subtitle: '${_character.characterName}独立保存的长期记忆',

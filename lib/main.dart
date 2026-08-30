@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'config/peilink_runtime.dart';
-import 'pages/environment_bootstrap_page.dart';
 import 'pages/home_page.dart';
 import 'services/character_registry_service.dart';
+import 'services/core_bridge_runtime.dart';
 import 'services/peilink_appearance_service.dart';
 import 'theme/app_dimensions.dart';
 import 'theme/app_text_styles.dart';
@@ -13,6 +13,7 @@ Future<void> main() => runPeiLink(PeiLinkBuild.user);
 Future<void> runPeiLink(PeiLinkBuild build) async {
   WidgetsFlutterBinding.ensureInitialized();
   PeiLinkRuntime.configure(build);
+  await CoreBridgeRuntime.instance.initialize();
   bool? initialHasVisibleCharacter;
   if (build == PeiLinkBuild.user) {
     final results = await Future.wait<Object>([
@@ -23,6 +24,11 @@ Future<void> runPeiLink(PeiLinkBuild build) async {
       Future<Object>.delayed(const Duration(seconds: 3), () => true),
     ]);
     initialHasVisibleCharacter = results.first as bool;
+  } else {
+    initialHasVisibleCharacter = await CharacterRegistryService()
+        .loadCharacters()
+        .then((characters) => characters.isNotEmpty)
+        .catchError((_) => false);
   }
   runApp(
     PeiJianCheApp(initialHasVisibleCharacter: initialHasVisibleCharacter),
@@ -90,11 +96,9 @@ class _PeiJianCheAppState extends State<PeiJianCheApp> {
             ),
           ),
         ),
-        home: PeiLinkRuntime.developerToolsEnabled
-            ? const EnvironmentBootstrapPage()
-            : HomePage(
-                initialHasVisibleCharacter: widget.initialHasVisibleCharacter,
-              ),
+        home: HomePage(
+          initialHasVisibleCharacter: widget.initialHasVisibleCharacter,
+        ),
       ),
     );
   }

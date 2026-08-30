@@ -7,9 +7,13 @@ import '../../models/anniversary_item.dart';
 import '../../services/anniversary_storage_service.dart';
 import '../../services/character_registry_service.dart';
 import '../../theme/app_theme_background.dart';
+import '../../widgets/home/home_glass.dart';
+import '../../widgets/home/home_visual_tokens.dart';
 
 class AnniversaryPage extends StatefulWidget {
-  const AnniversaryPage({super.key});
+  const AnniversaryPage({super.key, this.initialItems});
+
+  final List<AnniversaryItem>? initialItems;
 
   @override
   State<AnniversaryPage> createState() => _AnniversaryPageState();
@@ -24,7 +28,12 @@ class _AnniversaryPageState extends State<AnniversaryPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.initialItems case final items?) {
+      _items = items;
+      _loading = false;
+    } else {
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -56,7 +65,19 @@ class _AnniversaryPageState extends State<AnniversaryPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('纪念日'),
+          title: const Column(
+            children: [
+              Text('纪念日'),
+              Text(
+                '收藏值得记住的日子',
+                style: TextStyle(
+                  color: HomeVisualTokens.inkTertiary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
           centerTitle: true,
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
@@ -75,28 +96,31 @@ class _AnniversaryPageState extends State<AnniversaryPage> {
                 children: [
                   const _SectionTitle('置顶纪念日'),
                   if (pinned == null)
-                    const _EmptyCard(text: '还没有置顶纪念日')
+                    const _EmptyCard()
                   else
                     _AnniversaryCard(
                       item: pinned,
                       character: _characters[pinned.relatedCharacterId],
                       onTap: () => _edit(pinned),
+                      hero: true,
                     ),
                   const SizedBox(height: 20),
                   const _SectionTitle('全部纪念日'),
                   if (_items.isEmpty)
-                    const _EmptyCard(text: '记录一个值得记住的日子')
+                    const SizedBox.shrink()
                   else
-                    ..._items.map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _AnniversaryCard(
-                          item: item,
-                          character: _characters[item.relatedCharacterId],
-                          onTap: () => _edit(item),
+                    ..._items
+                        .where((item) => !item.isPinned)
+                        .map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _AnniversaryCard(
+                              item: item,
+                              character: _characters[item.relatedCharacterId],
+                              onTap: () => _edit(item),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
                 ],
               ),
       ),
@@ -342,35 +366,128 @@ class _AnniversaryCard extends StatelessWidget {
     required this.item,
     required this.character,
     required this.onTap,
+    this.hero = false,
   });
   final AnniversaryItem item;
   final AiCharacter? character;
   final VoidCallback onTap;
+  final bool hero;
 
   @override
   Widget build(BuildContext context) {
     final status = AnniversaryDayStatus.calculate(item);
-    return Material(
-      color: Colors.white.withValues(alpha: 0.78),
-      borderRadius: BorderRadius.circular(18),
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        title: Text(
-          item.title,
-          style: const TextStyle(fontWeight: FontWeight.w700),
+    final month = const [
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
+    ][item.date.month - 1];
+    return HomeGlassButton(
+      onTap: onTap,
+      level: hero ? HomeGlassLevel.main : HomeGlassLevel.card,
+      tint: hero ? const Color(0xFFEAE5FF) : const Color(0xFFF5F2FC),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(14, hero ? 17 : 13, 14, hero ? 17 : 13),
+        child: Row(
+          children: [
+            Container(
+              width: hero ? 68 : 56,
+              height: hero ? 76 : 62,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.58),
+                borderRadius: BorderRadius.circular(17),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '${item.date.day}',
+                    style: TextStyle(
+                      color: HomeVisualTokens.brandViolet,
+                      fontSize: hero ? 28 : 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    month,
+                    style: const TextStyle(
+                      color: HomeVisualTokens.inkTertiary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: HomeVisualTokens.inkPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (item.isPinned)
+                        const Icon(
+                          Icons.push_pin_rounded,
+                          size: 14,
+                          color: HomeVisualTokens.brandViolet,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '${item.date.year}年${item.date.month}月${item.date.day}日${character == null ? '' : ' · ${character!.displayName}'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: HomeVisualTokens.inkSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        status.displayText,
+                        style: const TextStyle(
+                          color: HomeVisualTokens.brandViolet,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      HomeStatusChip(
+                        label: item.repeatType == AnniversaryRepeatType.yearly
+                            ? '每年重复'
+                            : '不重复',
+                        color: HomeVisualTokens.brandBlue,
+                        leadingDot: false,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        subtitle: Text(
-          '${_dateLabel(item.date)}${character == null ? '' : '  ·  ${character!.displayName}'}',
-        ),
-        trailing: Text(
-          status.displayText,
-          style: const TextStyle(
-            color: Color(0xFF756A91),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        onTap: onTap,
       ),
     );
   }
@@ -393,16 +510,43 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _EmptyCard extends StatelessWidget {
-  const _EmptyCard({required this.text});
-  final String text;
+  const _EmptyCard();
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => HomeGlass(
     padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.68),
-      borderRadius: BorderRadius.circular(18),
+    child: const Row(
+      children: [
+        Icon(
+          Icons.nights_stay_rounded,
+          color: HomeVisualTokens.brandViolet,
+          size: 30,
+        ),
+        SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '还没有纪念日',
+                style: TextStyle(
+                  color: HomeVisualTokens.inkPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '把值得记住的日子留在这里',
+                style: TextStyle(
+                  color: HomeVisualTokens.inkSecondary,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Icon(Icons.add_rounded, color: HomeVisualTokens.brandBlue),
+      ],
     ),
-    child: Text(text, style: const TextStyle(color: Color(0xFF9993A1))),
   );
 }
 

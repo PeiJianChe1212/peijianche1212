@@ -81,7 +81,7 @@ class GroupConversationCoordinator {
           ? '无明确@对象'
           : mentioned
                 .map((id) {
-                  if (id == 'user') return '林念念';
+                  if (id == 'user') return '用户';
                   for (final item in members) {
                     if (item.id == id) return '${item.displayName}(${item.id})';
                   }
@@ -188,7 +188,7 @@ replyCount只能是1到3。steps最多4项，总replyCount最多6。
           : '本轮用户正在引用回复${_senderName(quoted, registry)}的消息：${quoted.content}';
       final mentionContext = latest?.mentionedMemberIds.isEmpty ?? true
           ? '本轮没有明确@对象。'
-          : '本轮明确@了：${latest!.mentionedMemberIds.map((id) => id == 'user' ? '林念念' : registry.where((item) => item.id == id).map((item) => item.displayName).join()).where((name) => name.isNotEmpty).join('、')}。';
+          : '本轮明确@了：${latest!.mentionedMemberIds.map((id) => id == 'user' ? '用户' : registry.where((item) => item.id == id).map((item) => item.displayName).join()).where((name) => name.isNotEmpty).join('、')}。';
       final groupMembers = registry
           .where((item) => group.memberCharacterIds.contains(item.id))
           .toList(growable: false);
@@ -389,13 +389,13 @@ $esportsRules
     return selected
         .map((message) {
           final sender = switch (message.senderType) {
-            GroupSenderType.user => '林念念',
+            GroupSenderType.user => '用户',
             GroupSenderType.character => names[message.senderId] ?? '未知成员',
             GroupSenderType.system => '系统',
           };
           final mention = message.mentionedMemberIds.isEmpty
               ? ''
-              : ' [@${message.mentionedMemberIds.map((id) => id == 'user' ? '林念念' : names[id] ?? id).join('、')}]';
+              : ' [@${message.mentionedMemberIds.map((id) => id == 'user' ? '用户' : names[id] ?? id).join('、')}]';
           final reply = message.replyToMessageId == null
               ? ''
               : ' [引用:${message.replyToMessageId}]';
@@ -413,7 +413,7 @@ $esportsRules
   }
 
   String _senderName(GroupMessage message, List<AiCharacter> registry) {
-    if (message.senderType == GroupSenderType.user) return '林念念';
+    if (message.senderType == GroupSenderType.user) return '用户';
     if (message.senderType == GroupSenderType.system) return '系统';
     for (final character in registry) {
       if (character.id == message.senderId) return character.displayName;

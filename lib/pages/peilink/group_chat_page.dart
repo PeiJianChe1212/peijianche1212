@@ -189,7 +189,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     if (content.contains('@全体成员') || content.contains('@所有人')) {
       result.addAll(group.memberCharacterIds);
     }
-    if (content.contains('@林念念') || content.contains('@用户')) {
+    if (content.contains('@用户')) {
       result.add('user');
     }
     for (final id in group.memberCharacterIds) {
@@ -312,7 +312,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   String _senderName(GroupMessage message) {
     return switch (message.senderType) {
-      GroupSenderType.user => '林念念',
+      GroupSenderType.user => '用户',
       GroupSenderType.character =>
         _characters[message.senderId]?.displayName ?? '群成员',
       GroupSenderType.system => '系统',
@@ -417,7 +417,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                                   ? null
                                   : _senderName(quoted),
                               mentionNames: [
-                                '林念念',
+                                '用户',
                                 '全体成员',
                                 ..._characters.values.expand(
                                   (character) => [

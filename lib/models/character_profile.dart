@@ -53,29 +53,6 @@ class CharacterProfile {
   final String backgroundStory, characterRelationships, interests, dislikes;
   final String possessions, specialAbilities, speakingStyle;
 
-  double get basicCompletion => _completion([
-    name,
-    petName,
-    socialId,
-    age,
-    gender,
-    height,
-    birthday,
-    identity,
-    occupation,
-    location,
-  ]);
-
-  double get appearanceCompletion => _completion([
-    overallAppearance,
-    hairColor,
-    eyes,
-    bodyType,
-    clothingStyle,
-    specialMarks,
-    aura,
-  ]);
-
   Map<String, dynamic> toJson() => {
     'characterId': characterId,
     'name': name,
@@ -179,11 +156,4 @@ class CharacterProfile {
     personalityDescription: settings.coreProfile,
     worldview: character.persona,
   );
-}
-
-double _completion(Iterable<String> values) {
-  final fields = values.toList();
-  if (fields.isEmpty) return 0;
-  final completed = fields.where((value) => value.trim().isNotEmpty).length;
-  return completed / fields.length;
 }

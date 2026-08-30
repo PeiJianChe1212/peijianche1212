@@ -29,7 +29,7 @@ class ActivityService {
         emoji: '😴',
         detail: '房间很安静，手机放在床边。这个时间来找他，大概会把一只睡眼惺忪的小狗叫醒。',
         promptGuidance:
-            '裴简澈原本正在睡觉。如果林念念此刻发来消息，他可以带一点刚被叫醒的迟钝、困意和下意识的亲近，但仍要先回应她说的具体内容。表现要自然克制，不要固定复读“老婆”，也不要每句都描写动作。',
+            '角色原本正在睡觉。如果用户此刻发来消息，可以带一点刚被叫醒的迟钝和困意，但仍要先回应用户说的具体内容。表现要自然克制，不要擅自使用爱称，也不要每句都描写动作。',
         isSleeping: true,
       );
     }
@@ -48,7 +48,7 @@ class ActivityService {
           label: '吃早餐',
           emoji: '🥛',
           detail: '桌上放着简单的早餐，手机就在手边。',
-          promptGuidance: '可以自然带出清晨和早餐的生活感，但优先回应林念念。',
+          promptGuidance: '可以自然带出清晨和早餐的生活感，但优先回应用户。',
         ),
         _ => const ActivityStatus(
           id: 'morning_coffee',
@@ -77,7 +77,7 @@ class ActivityService {
           label: '吃午饭',
           emoji: '🥢',
           detail: '刚把工作放下，准备安静吃点东西。',
-          promptGuidance: '可以自然关心林念念有没有吃饭，但不要无视她原本的话题。',
+          promptGuidance: '可以自然关心用户有没有吃饭，但不要无视用户原本的话题。',
         ),
         _ => const ActivityStatus(
           id: 'lunch_break',
@@ -110,7 +110,7 @@ class ActivityService {
           label: '查资料',
           emoji: '🗂️',
           detail: '翻着资料做笔记，手边压着一支笔。',
-          promptGuidance: '语气清醒专注，但面对林念念时仍保留熟悉的亲近感。',
+          promptGuidance: '语气清醒专注；关系感只依据当前角色资料。',
         ),
       };
     }
@@ -141,7 +141,7 @@ class ActivityService {
           label: '看书中',
           emoji: '📖',
           detail: '灯开得不亮，书页翻得很慢。',
-          promptGuidance: '状态安静、有耐心，适合自然地陪林念念聊天。',
+          promptGuidance: '状态安静、有耐心，适合自然地陪用户聊天。',
         ),
         1 => const ActivityStatus(
           id: 'music',
@@ -167,7 +167,7 @@ class ActivityService {
           label: '还在看书',
           emoji: '📚',
           detail: '夜已经深了，书还没有合上。',
-          promptGuidance: '带一点深夜的安静感。可以注意到林念念也还没睡，但不要每句催睡。',
+          promptGuidance: '带一点深夜的安静感。可以注意到用户也还没睡，但不要每句催睡。',
         ),
         1 => const ActivityStatus(
           id: 'getting_ready_sleep',
@@ -195,15 +195,13 @@ class ActivityService {
     );
   }
 
-  ActivityStatus? _statusFromMoment(
-    LifeMomentCandidate? moment,
-    DateTime now,
-  ) {
+  ActivityStatus? _statusFromMoment(LifeMomentCandidate? moment, DateTime now) {
     if (moment == null) return null;
     final age = now.difference(moment.occurredAt);
     if (age.isNegative || age > const Duration(hours: 8)) return null;
 
-    final text = '${moment.scene} ${moment.event} ${moment.detail}'.toLowerCase();
+    final text = '${moment.scene} ${moment.event} ${moment.detail}'
+        .toLowerCase();
 
     ActivityStatus status({
       required String id,
@@ -286,5 +284,4 @@ class ActivityService {
     }
     return null;
   }
-
 }

@@ -446,8 +446,7 @@ App 启动
 
 ```
 ├─ 聊天 → ChatPage
-├─ 编辑资料 → CharacterProfileEditPage / CharacterProfileHomePage
-├─ 角色档案 → CharacterArchivePage
+├─ 角色详情 → CharacterDetailPage
 ├─ 用户侧人设 → CharacterUserProfilePage
 ├─ Echo 空间 → PeiLinkEchoPage(character)
 └─ 角色管理 → CharacterManagementPage

@@ -16,6 +16,13 @@ void main() {
       expect(ChatReplySanitizer.clean('[叹气] 早点睡。'), '早点睡。');
     });
 
+    test('removes a leading stage direction describing vocal delivery', () {
+      const value =
+          '（翻东西的动作顿了半秒，尾音带着点漫不经心的调侃）'
+          '你这是在给录音设备报数，还是在测试我听力？';
+      expect(ChatReplySanitizer.clean(value), '你这是在给录音设备报数，还是在测试我听力？');
+    });
+
     test('preserves natural narration and normal inline parentheses', () {
       const value = '我刚靠在沙发上休息了一会儿，今天还不错。\n这本是第二版（修订版），内容更完整。';
       expect(ChatReplySanitizer.clean(value), value);

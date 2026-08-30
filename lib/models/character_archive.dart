@@ -48,8 +48,6 @@ class CharacterArchive {
 
   String value(String key) => values[key] ?? '';
 
-  double get completion => _completion(fieldKeys.map(value));
-
   CharacterArchive merge(Map<String, String> updates) => CharacterArchive(
     characterId: characterId,
     values: {...values, ...updates},
@@ -70,11 +68,4 @@ class CharacterArchive {
     }
     return CharacterArchive(characterId: id, values: values);
   }
-}
-
-double _completion(Iterable<String> values) {
-  final fields = values.toList();
-  if (fields.isEmpty) return 0;
-  final completed = fields.where((value) => value.trim().isNotEmpty).length;
-  return completed / fields.length;
 }

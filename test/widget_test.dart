@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:peijianche_app/config/peilink_runtime.dart';
 import 'package:peijianche_app/main.dart' show PeiJianCheApp;
 import 'package:peijianche_app/models/user_profile.dart';
+import 'package:peijianche_app/models/anniversary_item.dart';
 import 'package:peijianche_app/pages/home_page.dart';
+import 'package:peijianche_app/pages/peilink/anniversary_page.dart';
 import 'package:peijianche_app/pages/peilink/calendar_page.dart';
 import 'package:peijianche_app/pages/peilink/peilink_echo_page.dart';
 import 'package:peijianche_app/pages/peilink/peilink_home_page.dart';
@@ -50,7 +52,9 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('暂无角色'), findsOneWidget);
-    expect(find.textContaining('等待连接'), findsWidgets);
+    expect(find.textContaining('等待连接'), findsNothing);
+    expect(find.text('暂无动态'), findsWidgets);
+    expect(find.text('已连接'), findsNothing);
     expect(find.byKey(const ValueKey('ai-world-create-entry')), findsOneWidget);
 
     await tester.fling(find.byType(PageView), const Offset(-800, 0), 1200);
@@ -74,10 +78,77 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(CalendarDatePicker), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('calendar-day-2026-8-22')),
+      findsOneWidget,
+    );
     expect(find.text('日历'), findsOneWidget);
     expect(find.text('2026年8月22日'), findsOneWidget);
     expect(find.text('星期六'), findsOneWidget);
+  });
+
+  testWidgets('日历显示节日并在单日详情合并用户纪念日', (tester) async {
+    final anniversary = AnniversaryItem(
+      id: 'qixi-memory',
+      title: '我们的纪念日',
+      date: DateTime(2020, 8, 19),
+      repeatType: AnniversaryRepeatType.yearly,
+      isPinned: true,
+      createdAt: DateTime(2020, 8, 19),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PeiLinkCalendarPage(
+          initialDate: DateTime(2026, 8, 18),
+          initialAnniversaries: [anniversary],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('七夕'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('calendar-day-2026-8-19')));
+    await tester.pump();
+
+    expect(find.text('七夕'), findsOneWidget);
+    expect(find.text('我们的纪念日'), findsOneWidget);
+    expect(find.text('这是你亲自收藏的重要日子。'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('纪念日页面覆盖空状态与置顶每年重复卡片', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AnniversaryPage(
+          key: ValueKey('empty-anniversaries'),
+          initialItems: [],
+        ),
+      ),
+    );
+    expect(find.text('还没有纪念日'), findsOneWidget);
+    expect(find.text('把值得记住的日子留在这里'), findsOneWidget);
+
+    final pinned = AnniversaryItem(
+      id: 'pinned',
+      title: '值得记住的一天',
+      date: DateTime(2020, 8, 27),
+      repeatType: AnniversaryRepeatType.yearly,
+      isPinned: true,
+      createdAt: DateTime(2020, 8, 27),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AnniversaryPage(
+          key: const ValueKey('pinned-anniversary'),
+          initialItems: [pinned],
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('值得记住的一天'), findsOneWidget);
+    expect(find.text('每年重复'), findsOneWidget);
+    expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('User 无角色时 Echo 正常打开', (tester) async {

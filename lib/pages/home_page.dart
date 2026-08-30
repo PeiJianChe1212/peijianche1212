@@ -10,17 +10,20 @@ import '../models/ai_character.dart';
 import '../models/anniversary_item.dart';
 import '../models/life_feed_entry.dart';
 import '../models/life_trace.dart';
+import '../models/special_day.dart';
 import '../services/activity_context_service.dart';
 import '../services/activity_service.dart';
 import '../services/auto_echo_comment_service.dart';
 import '../services/auto_echo_service.dart';
 import '../services/anniversary_storage_service.dart';
 import '../services/character_registry_service.dart';
+import '../services/developer_environment_service.dart';
 import '../services/home_character_storage_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
 import '../services/life_feed_service.dart';
 import '../services/presence_service.dart';
+import '../services/special_day_service.dart';
 import '../services/today_service.dart';
 import '../services/world_tick_service.dart';
 import '../widgets/home/home_glass.dart';
@@ -67,9 +70,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   List<LifeTrace> _recentTraces = const [];
   List<LifeFeedEntry> _lifeFeed = const [];
   AnniversaryItem? _pinnedAnniversary;
+  List<AnniversaryItem> _anniversaries = const [];
   AiCharacter _homeCharacter = AiCharacter.placeholder();
   bool _homeCharacterLoading = true;
   bool _hasVisibleCharacter = false;
+  bool _physicalUiEnabled = false;
 
   static final AiCharacter _emptyCharacter = AiCharacter(
     id: 'empty',
@@ -80,7 +85,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   );
   static const ActivityStatus _emptyActivity = ActivityStatus(
     id: 'waiting',
-    label: '等待连接',
+    label: '暂无动态',
     emoji: '',
     detail: '',
     promptGuidance: '',
@@ -90,6 +95,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadPhysicalUiAccess();
     if (widget.initialHasVisibleCharacter == false) {
       _homeCharacterLoading = false;
     } else {
@@ -97,9 +103,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (!mounted) return;
-      if (!_hasVisibleCharacter) return;
       final now = DateTime.now();
       setState(() => _now = now);
+      if (!_hasVisibleCharacter) return;
       await _recordCurrentActivity(now: now);
       await _refreshInitiative(now: now);
       await _loadRecentTraces();
@@ -113,6 +119,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         debugPrint('检查 Echo 评论任务失败：$error');
       }
     });
+  }
+
+  Future<void> _loadPhysicalUiAccess() async {
+    final enabled = await DeveloperEnvironmentService().isEnabled();
+    if (mounted) setState(() => _physicalUiEnabled = enabled);
   }
 
   @override
@@ -302,12 +313,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final available = characters ?? await _characterRegistry.loadCharacters();
       final results = await Future.wait<Object?>([
         _lifeFeedService.load(available),
-        AnniversaryStorageService().loadPinned(),
+        AnniversaryStorageService().loadAll(),
       ]);
       if (!mounted) return;
       setState(() {
         _lifeFeed = results[0] as List<LifeFeedEntry>;
-        _pinnedAnniversary = results[1] as AnniversaryItem?;
+        _anniversaries = results[1] as List<AnniversaryItem>;
+        _pinnedAnniversary = _anniversaries
+            .where((item) => item.isPinned)
+            .firstOrNull;
       });
     } catch (error) {
       debugPrint('加载 Life 世界概览失败：$error');
@@ -439,6 +453,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onCall: () => _showPlaceholder('电话'),
         onEcho: _openEcho,
         onOpenLife: _openLifeDesktop,
+        showPhysicalStatus: _physicalUiEnabled,
       ),
       _LifeDesktopPage(
         now: _now,
@@ -446,6 +461,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         hasCharacter: hasCharacter,
         feed: _lifeFeed,
         pinnedAnniversary: _pinnedAnniversary,
+        anniversaries: _anniversaries,
         onCalendarTap: _openCalendar,
         onWorldStatusTap: () => _showPlaceholder('世界状态'),
         onAnniversaryTap: _openAnniversaries,
@@ -519,155 +535,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 }
 
-// Retained only as a rollback-safe fallback; the live no-role path now uses
-// the original character desktop with placeholder data.
-// ignore: unused_element
-class _EmptyCharacterDesktopPage extends StatelessWidget {
-  const _EmptyCharacterDesktopPage({required this.onCreate});
-
-  final VoidCallback onCreate;
-
-  @override
-  Widget build(BuildContext context) {
-    return KeyedSubtree(
-      key: const ValueKey('ai-world-empty-desktop'),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF526573),
-                  Color(0xFF1A2730),
-                  Color(0xFF080D12),
-                ],
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 12, 22, 28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Image.asset(
-                          'assets/images/brand/peilink_logo_lockup.png',
-                          height: 42,
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
-                      IconButton.filledTonal(
-                        key: const ValueKey('ai-world-create-plus'),
-                        onPressed: onCreate,
-                        tooltip: '创建 AI',
-                        icon: const Icon(Icons.add_rounded),
-                      ),
-                    ],
-                  ),
-                  const Text(
-                    'AI WORLD  ·  等待连接',
-                    style: TextStyle(color: Colors.white60, fontSize: 11.5),
-                  ),
-                  const Spacer(),
-                  _EmptyDesktopCard(height: 116),
-                  const SizedBox(height: 9),
-                  _EmptyDesktopCard(height: 72),
-                  const SizedBox(height: 9),
-                  Container(
-                    height: 76,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: Colors.white24),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        TextButton.icon(
-                          key: const ValueKey('ai-world-create-entry'),
-                          onPressed: onCreate,
-                          icon: const Icon(Icons.auto_awesome_rounded),
-                          label: const Text('创建 AI'),
-                        ),
-                        const Icon(Icons.waves_rounded, color: Colors.white30),
-                        const Icon(Icons.call_rounded, color: Colors.white30),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyDesktopCard extends StatelessWidget {
-  const _EmptyDesktopCard({required this.height});
-
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white24),
-      ),
-    );
-  }
-}
-
-// Retained only as a rollback-safe fallback; the live no-role path now uses
-// the complete PeiLink Life page.
-// ignore: unused_element
-class _EmptyLifeDesktopPage extends StatelessWidget {
-  const _EmptyLifeDesktopPage();
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      key: const ValueKey('ai-world-empty-life'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 24, 22, 42),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'PeiLink Life',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 28),
-            for (final title in const ['纪念日', '世界状态', '最近动态']) ...[
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Container(
-                height: 86,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.42),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-              const SizedBox(height: 18),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _CharacterDesktopPage extends StatelessWidget {
   const _CharacterDesktopPage({
     required this.character,
@@ -684,6 +551,7 @@ class _CharacterDesktopPage extends StatelessWidget {
     required this.onCall,
     required this.onEcho,
     required this.onOpenLife,
+    required this.showPhysicalStatus,
   });
 
   final AiCharacter character;
@@ -700,6 +568,7 @@ class _CharacterDesktopPage extends StatelessWidget {
   final VoidCallback onCall;
   final VoidCallback onEcho;
   final VoidCallback onOpenLife;
+  final bool showPhysicalStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -733,6 +602,20 @@ class _CharacterDesktopPage extends StatelessWidget {
             ),
           ),
           Positioned(
+            top: MediaQuery.paddingOf(context).top + 108,
+            left: 22,
+            right: 22,
+            child: _CharacterStageSummary(
+              character: character,
+              hasCharacter: hasCharacter,
+              loading: loading,
+              greeting: greeting,
+              activity: activity,
+              onTap: onOpenCharacter,
+              onCreate: onChooseCharacter,
+            ),
+          ),
+          Positioned(
             left: 18,
             right: 18,
             bottom: MediaQuery.paddingOf(context).bottom + 30,
@@ -747,6 +630,7 @@ class _CharacterDesktopPage extends StatelessWidget {
                   onTap: onOpenCharacter,
                   onActivityTap: onActivityTap,
                   traces: traces,
+                  showPhysicalStatus: showPhysicalStatus,
                 ),
                 const SizedBox(height: 9),
                 _TodayWorldSummary(
@@ -784,6 +668,165 @@ class _CharacterDesktopPage extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CharacterStageSummary extends StatelessWidget {
+  const _CharacterStageSummary({
+    required this.character,
+    required this.hasCharacter,
+    required this.loading,
+    required this.greeting,
+    required this.activity,
+    required this.onTap,
+    required this.onCreate,
+  });
+
+  final AiCharacter character;
+  final bool hasCharacter;
+  final bool loading;
+  final String greeting;
+  final ActivityStatus activity;
+  final VoidCallback onTap;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Align(
+        alignment: Alignment.centerRight,
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.5,
+            color: Colors.white70,
+          ),
+        ),
+      );
+    }
+
+    if (!hasCharacter) {
+      return Align(
+        alignment: Alignment.center,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 310),
+          child: HomeGlassButton(
+            onTap: onCreate,
+            borderRadius: 26,
+            tint: const Color(0xFFB7B8F5),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 17, 18, 16),
+              child: Row(
+                children: [
+                  Image.asset(
+                    'assets/images/brand/peilink_butterfly.png',
+                    width: 42,
+                    height: 42,
+                  ),
+                  const SizedBox(width: 13),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '还没有角色',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '从这里创造第一位与你连接的 AI',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.add_rounded, color: Colors.white),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Align(
+      alignment: Alignment.centerRight,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 220),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      character.characterName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        shadows: [
+                          Shadow(color: Color(0x99000000), blurRadius: 14),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  HomeStatusChip(
+                    label: activity.isSleeping ? '休息中' : '在线',
+                    color: activity.isSleeping
+                        ? HomeVisualTokens.statusQuiet
+                        : HomeVisualTokens.statusLive,
+                    onDark: true,
+                    leadingDot: false,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                activity.displayText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  shadows: [Shadow(color: Color(0x99000000), blurRadius: 12)],
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                greeting,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontSize: 10.5,
+                  shadows: const [
+                    Shadow(color: Color(0x99000000), blurRadius: 12),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -921,6 +964,7 @@ class _LifeDesktopPage extends StatelessWidget {
     required this.hasCharacter,
     required this.feed,
     required this.pinnedAnniversary,
+    required this.anniversaries,
     required this.onCalendarTap,
     required this.onWorldStatusTap,
     required this.onAnniversaryTap,
@@ -935,6 +979,7 @@ class _LifeDesktopPage extends StatelessWidget {
   final bool hasCharacter;
   final List<LifeFeedEntry> feed;
   final AnniversaryItem? pinnedAnniversary;
+  final List<AnniversaryItem> anniversaries;
   final VoidCallback onCalendarTap;
   final VoidCallback onWorldStatusTap;
   final VoidCallback onAnniversaryTap;
@@ -978,7 +1023,7 @@ class _LifeDesktopPage extends StatelessWidget {
                         'PEILINK LIFE',
                         style: TextStyle(
                           color: HomeVisualTokens.inkPrimary,
-                          fontSize: 27,
+                          fontSize: HomeVisualTokens.pageTitleSize,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.7,
                         ),
@@ -1022,7 +1067,9 @@ class _LifeDesktopPage extends StatelessWidget {
                   const SizedBox(width: 11),
                   Expanded(
                     child: _WorldStatusWidget(
+                      now: now,
                       activity: activity,
+                      anniversaries: anniversaries,
                       onTap: onWorldStatusTap,
                     ),
                   ),
@@ -1098,12 +1145,19 @@ class _LifeClockWidget extends StatelessWidget {
                               size: 19,
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              '${now.month}月${now.day}日',
-                              style: const TextStyle(
-                                color: HomeVisualTokens.inkPrimary,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w700,
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${now.month}月${now.day}日',
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    color: HomeVisualTokens.inkPrimary,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -1247,16 +1301,32 @@ class _AnniversaryWidget extends StatelessWidget {
 }
 
 class _WorldStatusWidget extends StatelessWidget {
-  const _WorldStatusWidget({required this.activity, required this.onTap});
+  const _WorldStatusWidget({
+    required this.now,
+    required this.activity,
+    required this.anniversaries,
+    required this.onTap,
+  });
 
+  final DateTime now;
   final ActivityStatus activity;
+  final List<AnniversaryItem> anniversaries;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final WorldStatusContent status = SpecialDayService.worldStatusFor(
+      now,
+      anniversaries: anniversaries,
+    );
+    final detail = status.isMemorial
+        ? status.detail
+        : '${status.detail} · ${activity.isSleeping ? '安静运行' : '活跃'}';
     return _LifeWidgetShell(
       onTap: onTap,
-      tint: const Color(0xFFEEF4FA),
+      tint: status.isMemorial
+          ? const Color(0xFFF0F0F2)
+          : const Color(0xFFEEF4FA),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(15, 14, 13, 13),
         child: Column(
@@ -1264,8 +1334,8 @@ class _WorldStatusWidget extends StatelessWidget {
           children: [
             const _LifeWidgetTitle(icon: Icons.public_rounded, title: '世界状态'),
             const SizedBox(height: 13),
-            const Text(
-              'PeiLink World',
+            Text(
+              status.headline,
               style: TextStyle(
                 color: HomeVisualTokens.inkSecondary,
                 fontSize: 10.5,
@@ -1273,7 +1343,7 @@ class _WorldStatusWidget extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              activity.isSleeping ? '夜间安静运行中' : '世界稳定运行中',
+              status.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -1283,17 +1353,14 @@ class _WorldStatusWidget extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            Row(
-              children: [
-                _WorldMetric(icon: Icons.cloud_outlined, label: '柔和'),
-                const SizedBox(width: 9),
-                _WorldMetric(
-                  icon: activity.isSleeping
-                      ? Icons.dark_mode_outlined
-                      : Icons.bolt_rounded,
-                  label: activity.isSleeping ? '静谧' : '活跃',
-                ),
-              ],
+            Text(
+              detail,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: HomeVisualTokens.inkSecondary,
+                fontSize: 9.5,
+              ),
             ),
           ],
         ),
@@ -1568,35 +1635,6 @@ class _LifeWidgetHint extends StatelessWidget {
   }
 }
 
-class _WorldMetric extends StatelessWidget {
-  const _WorldMetric({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Row(
-        children: [
-          Icon(icon, color: HomeVisualTokens.brandBlue, size: 13),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: HomeVisualTokens.inkSecondary,
-                fontSize: 9.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _RecentLifeRow extends StatelessWidget {
   const _RecentLifeRow({
     required this.entry,
@@ -1821,7 +1859,7 @@ class _AppsDesktopPage extends StatelessWidget {
                         '应用空间',
                         style: TextStyle(
                           color: HomeVisualTokens.inkPrimary,
-                          fontSize: 28,
+                          fontSize: HomeVisualTokens.pageTitleSize,
                           fontWeight: FontWeight.w600,
                           letterSpacing: -0.5,
                         ),
@@ -1876,7 +1914,7 @@ class _DesktopIconGroup extends StatelessWidget {
             title,
             style: const TextStyle(
               color: HomeVisualTokens.inkSecondary,
-              fontSize: 12,
+              fontSize: HomeVisualTokens.sectionTitleSize,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.5,
             ),
@@ -2043,7 +2081,11 @@ class _CharacterHeroCard extends StatelessWidget {
   final VoidCallback onTap;
 
   Widget _sourceImage({required BoxFit fit, required Alignment alignment}) {
-    final path = character.backgroundImage.trim();
+    final backgroundPath = character.backgroundImage.trim();
+    final avatarPath = character.avatarPath.trim();
+    final path = backgroundPath.isNotEmpty && File(backgroundPath).existsSync()
+        ? backgroundPath
+        : avatarPath;
 
     if (path.isNotEmpty && File(path).existsSync()) {
       return Image.file(
@@ -2177,6 +2219,7 @@ class _CharacterLifePanel extends StatelessWidget {
     required this.onTap,
     required this.onActivityTap,
     required this.traces,
+    required this.showPhysicalStatus,
   });
 
   final AiCharacter character;
@@ -2186,6 +2229,7 @@ class _CharacterLifePanel extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onActivityTap;
   final List<LifeTrace> traces;
+  final bool showPhysicalStatus;
 
   String? get _relationshipLabel {
     final relationship = character.relationship.trim();
@@ -2247,32 +2291,16 @@ class _CharacterLifePanel extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 7),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 3,
+                              if (showPhysicalStatus) ...[
+                                const SizedBox(width: 7),
+                                HomeStatusChip(
+                                  label: hasCharacter ? '已连接' : '等待连接',
+                                  color: hasCharacter
+                                      ? HomeVisualTokens.statusLive
+                                      : HomeVisualTokens.statusQuiet,
+                                  onDark: true,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFFB58BD3,
-                                  ).withValues(alpha: 0.24),
-                                  borderRadius: BorderRadius.circular(9),
-                                  border: Border.all(
-                                    color: const Color(
-                                      0xFFD9B7EF,
-                                    ).withValues(alpha: 0.26),
-                                  ),
-                                ),
-                                child: Text(
-                                  hasCharacter ? '在线' : '等待连接',
-                                  style: const TextStyle(
-                                    color: Color(0xFFF2DFFF),
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 3),
@@ -2730,31 +2758,9 @@ class _LifeLiveIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = isSleeping
-        ? const Color(0xFFB8AFE0)
-        : const Color(0xFF9ED5B4);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 7,
-          height: 7,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: color, blurRadius: 8)],
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          isSleeping ? '安静运行中' : '世界运行中',
-          style: TextStyle(
-            color: HomeVisualTokens.inkSecondary,
-            fontSize: 10.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
+        ? HomeVisualTokens.statusQuiet
+        : HomeVisualTokens.statusLive;
+    return HomeStatusChip(label: isSleeping ? '安静运行中' : '世界运行中', color: color);
   }
 }
 
@@ -2801,8 +2807,8 @@ class _DesktopAppIcon extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  width: 53,
-                  height: 53,
+                  width: 56,
+                  height: 56,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.56),
@@ -2815,7 +2821,7 @@ class _DesktopAppIcon extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: _AppIconSurface(entry: entry, size: 43, iconSize: 21),
+                  child: _AppIconSurface(entry: entry, size: 46, iconSize: 22),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -2825,7 +2831,7 @@ class _DesktopAppIcon extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: HomeVisualTokens.inkPrimary,
-                    fontSize: 10.5,
+                    fontSize: HomeVisualTokens.captionSize,
                     height: 1.15,
                     fontWeight: FontWeight.w600,
                   ),

@@ -24,12 +24,13 @@ class UserProfileStorageService {
       if (raw.trim().isEmpty) return const UserProfile();
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return const UserProfile();
-      final profile = UserProfile.fromJson(decoded);
-      if (PeiLinkRuntime.build == PeiLinkBuild.user &&
-          _isLegacyDeveloperSeed(profile)) {
-        const defaults = UserProfile();
-        await saveProfile(defaults);
-        return defaults;
+      var profile = UserProfile.fromJson(decoded);
+      if (PeiLinkRuntime.build == PeiLinkBuild.user) {
+        final sanitized = _removeLegacyDeveloperValues(profile);
+        if (sanitized.toJson().toString() != profile.toJson().toString()) {
+          await saveProfile(sanitized);
+          profile = sanitized;
+        }
       }
       return profile;
     } catch (_) {
@@ -37,12 +38,13 @@ class UserProfileStorageService {
     }
   }
 
-  bool _isLegacyDeveloperSeed(UserProfile profile) {
-    return profile.nickname == '念念' &&
-        profile.peiLinkId == '一只小狐念' &&
-        profile.peiCallName == '念念' &&
-        profile.identity == '裴简澈的恋人';
-  }
+  UserProfile _removeLegacyDeveloperValues(UserProfile profile) =>
+      profile.copyWith(
+        nickname: profile.nickname == '念念' ? '未设置' : profile.nickname,
+        peiLinkId: profile.peiLinkId == '一只小狐念' ? '未设置' : profile.peiLinkId,
+        peiCallName: profile.peiCallName == '念念' ? '未填写' : profile.peiCallName,
+        identity: profile.identity == '裴简澈的恋人' ? '未填写' : profile.identity,
+      );
 
   Future<void> saveProfile(UserProfile profile) async {
     final file = await _profileFile();

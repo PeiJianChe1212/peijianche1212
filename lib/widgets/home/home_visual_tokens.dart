@@ -17,6 +17,13 @@ abstract final class HomeVisualTokens {
   static const double spacing22 = 22;
   static const double spacing24 = 24;
 
+  static const double pageTitleSize = 28;
+  static const double sectionTitleSize = 12;
+  static const double cardTitleSize = 16;
+  static const double bodySize = 12;
+  static const double captionSize = 10;
+  static const double statusSize = 9.5;
+
   static const EdgeInsets pagePadding = EdgeInsets.fromLTRB(18, 14, 18, 4);
   static const EdgeInsets statusBarPadding = EdgeInsets.fromLTRB(22, 5, 22, 0);
 
@@ -49,6 +56,8 @@ abstract final class HomeVisualTokens {
   static const Color inkTertiary = Color(0xFF9299AF);
   static const Color brandBlue = Color(0xFF7487E8);
   static const Color brandViolet = Color(0xFF9B8BDF);
+  static const Color statusLive = Color(0xFF87D5AC);
+  static const Color statusQuiet = Color(0xFFB8AFE0);
 
   static const List<BoxShadow> heroShadow = [
     BoxShadow(color: Color(0x242E3558), blurRadius: 38, offset: Offset(0, 20)),

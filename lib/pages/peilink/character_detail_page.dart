@@ -27,7 +27,7 @@ class CharacterDetailPage extends StatefulWidget {
 class _CharacterDetailPageState extends State<CharacterDetailPage> {
   final CharacterRegistryService _registry = CharacterRegistryService();
 
-  CharacterSettings _settings = CharacterSettings.defaults();
+  CharacterSettings _settings = CharacterSettings.genericDefaults();
   AiCharacter _character = AiCharacter.placeholder();
   List<EchoItem> _recentEcho = const [];
   bool _loading = true;

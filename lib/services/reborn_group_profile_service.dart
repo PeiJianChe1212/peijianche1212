@@ -6,13 +6,7 @@ import '../models/ai_character.dart';
 class RebornGroupProfileService {
   const RebornGroupProfileService._();
 
-  static const Set<String> _rebornNames = {
-    '江逾白',
-    '林屿',
-    '谢长明',
-    '叶云驰',
-    '陆翊辰',
-  };
+  static const Set<String> _rebornNames = {'江逾白', '林屿', '谢长明', '叶云驰', '陆翊辰'};
 
   static bool isRebornCharacter(AiCharacter character) =>
       _rebornNames.contains(character.characterName.trim());
@@ -59,8 +53,8 @@ class RebornGroupProfileService {
     if (!isRebornGroup(members)) return '';
     return '''
 【Reborn 多角色共存规则】
-1. 当前群定位优先是队友群、朋友群和战队生活群，林念念是被大家接纳的熟人和朋友。
-2. 江逾白可以与林念念更亲近，但不能把这条关系复制给其他四人。
+1. 当前群定位优先是队友群、朋友群和战队生活群，用户是被大家接纳的熟人和朋友。
+2. 个别角色可以依据各自资料与用户更亲近，但不能把这条关系复制给其他成员。
 3. 禁止五人同时表白、围着用户争宠、因为用户互相打架或公开修罗场。
 4. 禁止“你只能选我”“离他远点”、威胁用户或控制用户社交。
 5. 不要把每个话题最后都绕回恋爱关系。

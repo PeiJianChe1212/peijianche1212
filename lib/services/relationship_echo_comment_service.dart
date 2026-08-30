@@ -12,6 +12,7 @@ import 'ai_social_protocol_service.dart';
 import 'character_registry_service.dart';
 import 'character_relationship_storage_service.dart';
 import 'character_settings_storage_service.dart';
+import 'context_builder.dart';
 import 'echo_storage_service.dart';
 import 'shared_experience_storage_service.dart';
 
@@ -173,8 +174,11 @@ class RelationshipEchoCommentService {
         messages: [
           {
             'role': 'system',
-            'content':
-                '''
+            'content': ContextBuilder.build(
+              task: ContextTask.echoComment,
+              settings: settings,
+              taskRules:
+                  '''
 你是${commenter.displayName}，正在 PeiLink 的 Echo 评论区给${author.displayName}留一句评论。
 
 ${AiSocialProtocolService.compactRules}
@@ -204,6 +208,7 @@ ${echo.content}
 5. 不要写万能客套话，不要重复 Echo 原文。
 只输出评论正文。
 ''',
+            ),
           },
           {'role': 'user', 'content': '写评论。'},
         ],

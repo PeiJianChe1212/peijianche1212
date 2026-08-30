@@ -129,7 +129,10 @@ class PeiFileService {
       return PeiCharacterPackage(
         version: version,
         character: character,
-        settings: CharacterSettings.fromJson(rawSettings),
+        settings: CharacterSettings.fromJson(
+          rawSettings,
+          fallbackDefaults: CharacterSettings.genericDefaults(),
+        ),
         avatarBytes: media is Map ? _decodeImage(media['avatar']) : null,
         portraitBytes: media is Map ? _decodeImage(media['portrait']) : null,
       );

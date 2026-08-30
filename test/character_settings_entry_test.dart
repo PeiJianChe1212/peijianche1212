@@ -17,7 +17,7 @@ void main() {
         ),
       );
 
-      expect(find.text('角色资料'), findsOneWidget);
+      expect(find.text('角色资料'), findsNothing);
       expect(find.text('Memory'), findsOneWidget);
       expect(find.text('心声'), findsNothing);
       expect(find.text('导出角色'), findsOneWidget);

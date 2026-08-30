@@ -123,9 +123,9 @@ class GuideKnowledge {
 
     GuideKnowledgeEntry(
       category: '角色',
-      topic: '角色资料在哪里？',
-      keywords: ['角色资料', '人物资料'],
-      answer: '可以从聊天设置或角色管理进入“角色资料”。',
+      topic: '角色设置在哪里？',
+      keywords: ['角色设置', '人物设置'],
+      answer: '可以从聊天设置进入当前角色详情；角色创建时填写的人设会继续保存在当前角色中。',
     ),
     GuideKnowledgeEntry(
       category: '角色',

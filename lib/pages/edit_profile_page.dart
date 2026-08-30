@@ -120,7 +120,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       _ProfileField(
                         controller: _nicknameController,
                         label: '角色对你的称呼',
-                        hint: '例如：念念',
+                        hint: '例如：小林',
                         maxLength: 20,
                         requiredField: true,
                       ),
@@ -133,7 +133,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       _ProfileField(
                         controller: _identityController,
                         label: '身份与关系',
-                        hint: '例如：裴简澈的恋人',
+                        hint: '例如：角色的朋友',
                         maxLength: 60,
                         requiredField: true,
                       ),

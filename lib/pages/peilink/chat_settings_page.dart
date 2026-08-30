@@ -8,7 +8,6 @@ import '../../widgets/peilink/relationship_badge.dart';
 import '../memory_page.dart';
 import 'character_detail_page.dart';
 import 'character_management_actions.dart';
-import 'character_profile_home_page.dart';
 import 'theme_decoration_page.dart';
 
 class ChatSettingsPage extends StatefulWidget {
@@ -104,13 +103,6 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
             const _SectionLabel('角色管理'),
             _GlassSection(
               children: [
-                _tile(
-                  '角色资料',
-                  Icons.edit_note_rounded,
-                  () => _open(
-                    CharacterProfileHomePage(character: widget.character),
-                  ),
-                ),
                 _tile(
                   'Memory',
                   Icons.inbox_outlined,

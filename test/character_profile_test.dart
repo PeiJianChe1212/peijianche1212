@@ -64,16 +64,4 @@ void main() {
     expect(profile.petName, '阿澈');
     expect(profile.socialId, 'peijianche1212');
   });
-
-  test('profile completion is calculated from non-empty fields', () {
-    const profile = CharacterProfile(
-      characterId: 'completion',
-      name: '裴简澈',
-      age: '28',
-      overallAppearance: '银发',
-    );
-
-    expect(profile.basicCompletion, 2 / 10);
-    expect(profile.appearanceCompletion, 1 / 7);
-  });
 }

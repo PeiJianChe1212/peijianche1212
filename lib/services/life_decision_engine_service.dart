@@ -125,6 +125,7 @@ class LifeDecisionEngineService {
               currentCharacter: character,
               allCharacters: [character, ...otherCharacters],
             ),
+            now: time,
           ),
         },
         {
@@ -331,9 +332,6 @@ class LifeDecisionEngineService {
 你是 PeiLink 的 Life Decision Engine。
 你不负责写故事，不负责写 Echo，也不负责补充气氛和画面。
 你的唯一任务是：根据真实世界状态、角色自身规律和已经发生过的生活，判断接下来“应该发生什么”。
-
-【当前时间】
-${now.toIso8601String()}
 
 【当前及未来 24 小时内已确认的世界状态】
 $worldText

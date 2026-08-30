@@ -50,8 +50,20 @@ class CharacterSettingsStorageService {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return _fallbackSettings();
 
-      final saved = CharacterSettings.fromJson(decoded);
-      return _reconcileIdentityWithRegistry(saved);
+      final id = await _resolvedId();
+      final fallback = id == AiCharacter.defaultCharacterId
+          ? CharacterSettings.defaults()
+          : CharacterSettings.genericDefaults();
+      final saved = CharacterSettings.fromJson(
+        decoded,
+        fallbackDefaults: fallback,
+      );
+      final sanitized = _removeLegacyDeveloperDefaults(saved, characterId: id);
+      final reconciled = await _reconcileIdentityWithRegistry(sanitized);
+      if (sanitized.toJson().toString() != saved.toJson().toString()) {
+        await saveSettings(reconciled);
+      }
+      return reconciled;
     } catch (_) {
       return _fallbackSettings();
     }
@@ -115,6 +127,48 @@ class CharacterSettingsStorageService {
       ),
     );
     return CharacterSettings.fromAiCharacter(character);
+  }
+
+  CharacterSettings _removeLegacyDeveloperDefaults(
+    CharacterSettings settings, {
+    required String characterId,
+  }) {
+    if (characterId == AiCharacter.defaultCharacterId) return settings;
+    final developerDefaults = CharacterSettings.defaults();
+    return settings.copyWith(
+      userCallName: settings.userCallName == developerDefaults.userCallName
+          ? ''
+          : settings.userCallName,
+      remark: settings.remark == developerDefaults.remark
+          ? ''
+          : settings.remark,
+      relation: settings.relation == developerDefaults.relation
+          ? ''
+          : settings.relation,
+      birthday: settings.birthday == developerDefaults.birthday
+          ? ''
+          : settings.birthday,
+      anniversary: settings.anniversary == developerDefaults.anniversary
+          ? ''
+          : settings.anniversary,
+      introduction: settings.introduction == developerDefaults.introduction
+          ? ''
+          : settings.introduction,
+      coreProfile: settings.coreProfile == developerDefaults.coreProfile
+          ? ''
+          : settings.coreProfile,
+      behaviorStyle: settings.behaviorStyle == developerDefaults.behaviorStyle
+          ? ''
+          : settings.behaviorStyle,
+      forbiddenRules:
+          settings.forbiddenRules == developerDefaults.forbiddenRules
+          ? ''
+          : settings.forbiddenRules,
+      exampleDialogues:
+          settings.exampleDialogues == developerDefaults.exampleDialogues
+          ? ''
+          : settings.exampleDialogues,
+    );
   }
 
   Future<CharacterSettings> _migrateLegacyChatSettings() async {

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../models/user_profile.dart';
 import '../../services/character_registry_service.dart';
+import '../../services/developer_environment_service.dart';
 import '../../services/user_profile_storage_service.dart';
 import '../../theme/app_theme_background.dart';
 import '../../theme/app_dimensions.dart';
@@ -33,6 +34,7 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   int _contactsRevision = 0;
   int _chatsRevision = 0;
   UserProfile _profile = const UserProfile();
+  bool _physicalUiEnabled = false;
 
   static const _titles = ['PeiLink', '羁绊', 'Echo'];
 
@@ -46,6 +48,12 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   void initState() {
     super.initState();
     _loadProfile();
+    _loadPhysicalUiAccess();
+  }
+
+  Future<void> _loadPhysicalUiAccess() async {
+    final enabled = await DeveloperEnvironmentService().isEnabled();
+    if (mounted) setState(() => _physicalUiEnabled = enabled);
   }
 
   Future<void> _loadProfile() async {
@@ -160,22 +168,24 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(_titles[_currentIndex], style: AppTextStyles.pageTitle),
-                const SizedBox(height: 1),
-                const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.auto_awesome_rounded, size: 10),
-                    SizedBox(width: 4),
-                    Text(
-                      'AI World · 已连接',
-                      style: TextStyle(
-                        color: Color(0xFF71828B),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w400,
+                if (_physicalUiEnabled) ...[
+                  const SizedBox(height: 1),
+                  const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome_rounded, size: 10),
+                      SizedBox(width: 4),
+                      Text(
+                        'AI World · 已连接',
+                        style: TextStyle(
+                          color: Color(0xFF71828B),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ],
             ),
             actions: [

@@ -112,10 +112,7 @@ class _CharacterUserProfilePageState extends State<CharacterUserProfilePage> {
                   _ProfileCard(
                     title: '设定名称',
                     caption: '角色如何称呼或认识你',
-                    child: _SoftTextField(
-                      controller: _name,
-                      hintText: '例如：林念念',
-                    ),
+                    child: _SoftTextField(controller: _name, hintText: '例如：小林'),
                   ),
                   const SizedBox(height: 14),
                   _ProfileCard(
