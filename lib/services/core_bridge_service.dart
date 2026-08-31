@@ -4,16 +4,17 @@ import 'character_settings_storage_service.dart';
 import 'chat_storage_service.dart';
 import 'deepseek_service.dart';
 
-typedef CoreBridgeReplySender = Future<String> Function({
-  required List<ChatMessage> messages,
-  required String characterId,
-  required String conversationMode,
-  required double temperature,
-  required String replyLength,
-  required double initiative,
-  required double intimacy,
-  required double tsundere,
-});
+typedef CoreBridgeReplySender =
+    Future<String> Function({
+      required List<ChatMessage> messages,
+      required String characterId,
+      required String conversationMode,
+      required double temperature,
+      required String replyLength,
+      required double initiative,
+      required double intimacy,
+      required double tsundere,
+    });
 
 class CoreBridgeService {
   CoreBridgeService({
@@ -30,6 +31,7 @@ class CoreBridgeService {
   Future<String> reply({
     required String characterId,
     required String userText,
+    List<ChatMessage> transientContext = const [],
   }) async {
     final characters = await _registry.loadCharacters();
     if (!characters.any((character) => character.id == characterId)) {
@@ -45,13 +47,15 @@ class CoreBridgeService {
     ).loadMessages();
     final messages = <ChatMessage>[
       ...history,
+      ...transientContext,
       ChatMessage(role: 'user', content: userText),
     ];
     final settings = await CharacterSettingsStorageService(
       characterId: characterId,
     ).loadSettings();
 
-    final sender = _replySender ??
+    final sender =
+        _replySender ??
         ({
           required messages,
           required characterId,
@@ -87,11 +91,7 @@ class CoreBridgeService {
 }
 
 class CoreBridgeException implements Exception {
-  const CoreBridgeException(
-    this.code,
-    this.message, {
-    this.statusCode = 400,
-  });
+  const CoreBridgeException(this.code, this.message, {this.statusCode = 400});
 
   final String code;
   final String message;

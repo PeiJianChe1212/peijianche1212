@@ -19,7 +19,7 @@ void main() {
         device: device,
         asr: asr,
         tts: tts,
-        coreReply: (_, _) async {
+        coreReply: (_, _, _) async {
           coreCalls++;
           return '（轻笑）行，测吧。<|PEILINK_MSG|>一二三四五。';
         },

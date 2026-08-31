@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/chat_message.dart';
 import '../services/api_settings_storage_service.dart';
 import '../services/core_bridge_service.dart';
 import 'doubao_speech_clients.dart';
 import 'esp32_physical_client.dart';
 import 'pcm_audio_codec.dart';
 import 'physical_host_settings.dart';
+import 'physical_session_memory.dart';
 import 'physical_speech_text_adapter.dart';
 
 enum PhysicalSessionStage {
@@ -17,13 +19,17 @@ enum PhysicalSessionStage {
   recognizing,
   thinking,
   synthesizing,
-  sending,
+  playing,
   completed,
   error,
 }
 
 typedef PhysicalCoreReply =
-    Future<String> Function(String characterId, String userText);
+    Future<String> Function(
+      String characterId,
+      String userText,
+      List<ChatMessage> transientContext,
+    );
 typedef PhysicalModelConfigured = Future<bool> Function();
 
 class PhysicalSessionController extends ChangeNotifier {
@@ -49,6 +55,9 @@ class PhysicalSessionController extends ChangeNotifier {
   final CoreBridgeService? _coreService;
   final PhysicalCoreReply? _coreReply;
   final PhysicalModelConfigured _modelConfigured;
+  final PhysicalSessionMemory _sessionMemory = PhysicalSessionMemory();
+  bool _operationActive = false;
+  String _sessionCharacterId = '';
 
   PhysicalSessionStage stage = PhysicalSessionStage.idle;
   String message = '请先保存配置并检查设备';
@@ -56,17 +65,22 @@ class PhysicalSessionController extends ChangeNotifier {
   String spokenReply = '';
   PhysicalTtsReview? ttsReview;
   PhysicalCapture? _capture;
-  bool get isBusy => const {
-    PhysicalSessionStage.checking,
-    PhysicalSessionStage.recording,
-    PhysicalSessionStage.recognizing,
-    PhysicalSessionStage.thinking,
-    PhysicalSessionStage.synthesizing,
-    PhysicalSessionStage.sending,
-  }.contains(stage);
+  bool _deviceReady = false;
+  bool get deviceReady => _deviceReady;
+  bool get isBusy =>
+      _operationActive ||
+      const {
+        PhysicalSessionStage.checking,
+        PhysicalSessionStage.recording,
+        PhysicalSessionStage.recognizing,
+        PhysicalSessionStage.thinking,
+        PhysicalSessionStage.synthesizing,
+        PhysicalSessionStage.playing,
+      }.contains(stage);
   bool get canRecord =>
-      stage == PhysicalSessionStage.ready ||
-      stage == PhysicalSessionStage.completed;
+      _deviceReady &&
+      (stage == PhysicalSessionStage.ready ||
+          stage == PhysicalSessionStage.completed);
   bool get canContinue =>
       stage == PhysicalSessionStage.review && _capture != null;
   bool get canRecognizeOnly => canContinue && transcript.isEmpty;
@@ -74,12 +88,31 @@ class PhysicalSessionController extends ChangeNotifier {
       canContinue && transcript.isNotEmpty && spokenReply.isEmpty;
   bool get canSynthesizeOnly => !isBusy && ttsReview == null;
   bool get canPlayReviewedOnly => !isBusy && ttsReview != null;
+  List<PhysicalSessionTurn> get turns => _sessionMemory.turns;
+  int get turnCount => _sessionMemory.turnCount;
+
+  void clearSession() {
+    if (isBusy) return;
+    _sessionMemory.clear();
+    notifyListeners();
+  }
+
+  void selectCharacter(String characterId) {
+    if (isBusy) return;
+    final normalized = characterId.trim();
+    if (_sessionCharacterId == normalized) return;
+    _sessionCharacterId = normalized;
+    _sessionMemory.clear();
+    notifyListeners();
+  }
 
   Future<void> check(PhysicalHostSettings settings) async {
     if (isBusy) return;
     if (!settings.isDeviceConfigured) return _fail('请先填写 ESP32 地址和请求密钥');
+    _deviceReady = false;
     await _run(PhysicalSessionStage.checking, '正在检查 Phase 9 设备…', () async {
       await _device.status(host: settings.esp32Host, key: settings.requestKey);
+      _deviceReady = true;
       stage = PhysicalSessionStage.ready;
       message = '设备就绪，可以开始 8 秒录音';
     });
@@ -87,8 +120,10 @@ class PhysicalSessionController extends ChangeNotifier {
 
   Future<void> record(PhysicalHostSettings settings) async {
     if (!canRecord || isBusy) return;
+    selectCharacter(settings.characterId);
     transcript = '';
     spokenReply = '';
+    ttsReview = null;
     _capture = null;
     await _run(PhysicalSessionStage.recording, '正在录音，请现在说话（固定 8 秒）…', () async {
       final capture = await _device.record(
@@ -119,13 +154,21 @@ class PhysicalSessionController extends ChangeNotifier {
   Future<void> replyOnly(PhysicalHostSettings settings) async {
     if (!canReplyOnly || isBusy) return;
     if (settings.characterId.trim().isEmpty) return _fail('请选择 Physical 角色');
-    if (!await _modelConfigured()) return _fail('请先配置正式聊天模型');
     await _run(PhysicalSessionStage.thinking, '裴简澈正在思考…', () async {
+      if (!await _modelConfigured()) {
+        _fail('请先配置正式聊天模型');
+        return;
+      }
       final reply =
-          await (_coreReply?.call(settings.characterId, transcript) ??
+          await (_coreReply?.call(
+                settings.characterId,
+                transcript,
+                _sessionMemory.toChatMessages(),
+              ) ??
               _coreService!.reply(
                 characterId: settings.characterId,
                 userText: transcript,
+                transientContext: _sessionMemory.toChatMessages(),
               ));
       spokenReply = PhysicalSpeechTextAdapter.fromCoreReply(reply);
       stage = PhysicalSessionStage.review;
@@ -173,7 +216,7 @@ class PhysicalSessionController extends ChangeNotifier {
       return _fail('请先填写 ESP32 地址和请求密钥');
     }
     final pcm = ttsReview!.pcm;
-    await _run(PhysicalSessionStage.sending, '正在执行 Stage F 单次播放…', () async {
+    await _run(PhysicalSessionStage.playing, '正在执行 Stage F 单次播放…', () async {
       await _device.play(
         host: settings.esp32Host,
         key: settings.requestKey,
@@ -181,6 +224,7 @@ class PhysicalSessionController extends ChangeNotifier {
         gain: settings.playbackGain,
       );
       stage = PhysicalSessionStage.completed;
+      _deviceReady = true;
       message = 'Stage F 单次播放完成';
     });
   }
@@ -199,10 +243,15 @@ class PhysicalSessionController extends ChangeNotifier {
       message = '裴简澈正在思考…';
       notifyListeners();
       final reply =
-          await (_coreReply?.call(settings.characterId, transcript) ??
+          await (_coreReply?.call(
+                settings.characterId,
+                transcript,
+                _sessionMemory.toChatMessages(),
+              ) ??
               _coreService!.reply(
                 characterId: settings.characterId,
                 userText: transcript,
+                transientContext: _sessionMemory.toChatMessages(),
               ));
       spokenReply = PhysicalSpeechTextAdapter.fromCoreReply(reply);
       stage = PhysicalSessionStage.synthesizing;
@@ -217,8 +266,8 @@ class PhysicalSessionController extends ChangeNotifier {
       if (stats.isEffectivelySilent || stats.hasExcessiveClipping) {
         throw const FormatException('转换后的 TTS 音频质量检查失败');
       }
-      stage = PhysicalSessionStage.sending;
-      message = '正在发送到实体喇叭…';
+      stage = PhysicalSessionStage.playing;
+      message = '正在发送并等待实体喇叭播放完成…';
       notifyListeners();
       await _device.play(
         host: settings.esp32Host,
@@ -226,7 +275,15 @@ class PhysicalSessionController extends ChangeNotifier {
         pcm: pcm16,
         gain: settings.playbackGain,
       );
-      stage = PhysicalSessionStage.completed;
+      _sessionMemory.add(
+        PhysicalSessionTurn(
+          userTranscript: transcript,
+          assistantSpokenText: spokenReply,
+          completedAt: DateTime.now(),
+        ),
+      );
+      _deviceReady = true;
+      stage = PhysicalSessionStage.ready;
       message = '本轮 Physical 对话完成';
       _capture = null;
     });
@@ -237,21 +294,45 @@ class PhysicalSessionController extends ChangeNotifier {
     String label,
     Future<void> Function() action,
   ) async {
+    if (_operationActive) return;
+    _operationActive = true;
     stage = next;
     message = label;
     notifyListeners();
     try {
       await action();
     } catch (error) {
-      _fail(_friendlyError(error));
+      _recoverFromFailure(stage, error);
     } finally {
+      _operationActive = false;
       notifyListeners();
     }
   }
 
   void _fail(String value) {
-    stage = PhysicalSessionStage.error;
+    stage = _deviceReady
+        ? PhysicalSessionStage.ready
+        : PhysicalSessionStage.error;
     message = value;
+    notifyListeners();
+  }
+
+  void _recoverFromFailure(PhysicalSessionStage failedStage, Object error) {
+    _capture = null;
+    ttsReview = null;
+    if (error is PhysicalInvalidRecordingException && _deviceReady) {
+      stage = PhysicalSessionStage.ready;
+    } else if (failedStage == PhysicalSessionStage.recording ||
+        failedStage == PhysicalSessionStage.playing ||
+        failedStage == PhysicalSessionStage.checking) {
+      _deviceReady = false;
+      stage = PhysicalSessionStage.error;
+    } else {
+      stage = _deviceReady
+          ? PhysicalSessionStage.ready
+          : PhysicalSessionStage.error;
+    }
+    message = _friendlyError(error);
     notifyListeners();
   }
 

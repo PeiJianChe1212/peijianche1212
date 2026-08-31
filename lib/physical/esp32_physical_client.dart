@@ -107,13 +107,13 @@ class Esp32PhysicalClient {
         header('x-audio-sample-rate') != PcmAudioCodec.sampleRate ||
         header('x-audio-bits') != PcmAudioCodec.bits ||
         header('x-audio-channels') != PcmAudioCodec.channels) {
-      throw const PhysicalProtocolException('录音长度、CRC 或格式校验失败');
+      throw const PhysicalInvalidRecordingException('录音长度、CRC 或格式校验失败');
     }
     final stats = PcmAudioCodec.stats(pcm);
     if (stats.peak != header('x-audio-peak') ||
         stats.isEffectivelySilent ||
         stats.hasExcessiveClipping) {
-      throw const PhysicalProtocolException('录音音量质量检查失败');
+      throw const PhysicalInvalidRecordingException('录音音量质量检查失败');
     }
     return PhysicalCapture(pcm: pcm, stats: stats, crc32: actualCrc);
   }
@@ -244,4 +244,8 @@ class PhysicalProtocolException implements Exception {
   final String message;
   @override
   String toString() => message;
+}
+
+class PhysicalInvalidRecordingException extends PhysicalProtocolException {
+  const PhysicalInvalidRecordingException(super.message);
 }

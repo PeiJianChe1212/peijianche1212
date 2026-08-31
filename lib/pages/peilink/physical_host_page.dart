@@ -60,6 +60,7 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
     _characterId = characters.any((item) => item.id == settings.characterId)
         ? settings.characterId
         : (characters.isEmpty ? '' : characters.first.id);
+    _controller.selectCharacter(_characterId);
     _gain = settings.playbackGain.clamp(0.01, 0.25);
     setState(() => _loading = false);
   }
@@ -179,8 +180,12 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
                               .toList(),
                           onChanged: _controller.isBusy
                               ? null
-                              : (value) =>
-                                    setState(() => _characterId = value ?? ''),
+                              : (value) {
+                                  final next = value ?? '';
+                                  if (next == _characterId) return;
+                                  _controller.selectCharacter(next);
+                                  setState(() => _characterId = next);
+                                },
                         ),
                         const SizedBox(height: 14),
                         Row(
@@ -216,13 +221,19 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
                   ),
                 ),
                 const SizedBox(height: PeiLinkSpacing.section),
-                const PeiLinkSectionHeader(title: '单轮实体对话'),
+                const PeiLinkSectionHeader(title: '实体对话'),
                 PeiLinkSurface(
                   child: Padding(
                     padding: const EdgeInsets.all(PeiLinkSpacing.md),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        PhysicalSessionSummary(
+                          turnCount: _controller.turnCount,
+                          isBusy: _controller.isBusy,
+                          onClear: _controller.clearSession,
+                        ),
+                        const SizedBox(height: 8),
                         Text(
                           _controller.message,
                           style: Theme.of(context).textTheme.titleMedium,
@@ -311,4 +322,34 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
             ),
     );
   }
+}
+
+class PhysicalSessionSummary extends StatelessWidget {
+  const PhysicalSessionSummary({
+    required this.turnCount,
+    required this.isBusy,
+    required this.onClear,
+    super.key,
+  });
+
+  final int turnCount;
+  final bool isBusy;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          '本次实体会话：$turnCount 轮',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+      ),
+      TextButton.icon(
+        onPressed: isBusy ? null : onClear,
+        icon: const Icon(Icons.delete_sweep_outlined),
+        label: const Text('清空实体会话'),
+      ),
+    ],
+  );
 }
