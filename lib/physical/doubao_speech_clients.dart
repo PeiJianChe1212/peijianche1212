@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'pcm_audio_codec.dart';
+import 'pcm_audio_gain.dart';
 
 class DoubaoAsrClient {
   DoubaoAsrClient({http.Client? client})
@@ -27,10 +28,13 @@ class DoubaoAsrClient {
     String boostingTableId = '',
   }) async {
     final requestId = _uuid();
+    // ASR 上传前应用自适应增益：仅生成处理副本，原始 PCM 不变
+    final gainResult = PcmAudioGain.applyAdaptiveGain(pcm);
+    final asrPcm = gainResult.output;
     final request = {
       'user': {'uid': 'peilink-physical'},
       'audio': {
-        'data': base64Encode(PcmAudioCodec.wavFromPcm(pcm)),
+        'data': base64Encode(PcmAudioCodec.wavFromPcm(asrPcm)),
         'format': 'wav',
         'codec': 'raw',
         'rate': 16000,
