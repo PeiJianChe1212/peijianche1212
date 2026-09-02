@@ -35,18 +35,7 @@ class _MemoryReviewPageState extends State<MemoryReviewPage> {
   }
 
   Future<void> _load() async {
-    final loadedItems = await _service.loadItems();
-    final items = <PendingMemory>[];
-
-    for (final item in loadedItems) {
-      if (item.category == '关于念念') {
-        final migrated = item.copyWith(category: '关于我');
-        items.add(migrated);
-        await _service.update(migrated);
-      } else {
-        items.add(item);
-      }
-    }
+    final items = await _service.loadItems();
 
     if (!mounted) return;
     setState(() {
@@ -56,7 +45,12 @@ class _MemoryReviewPageState extends State<MemoryReviewPage> {
   }
 
   Future<void> _approve(PendingMemory item) async {
-    await _service.approve(item);
+    try {
+      await _service.approve(item);
+    } catch (_) {
+      if (mounted) _showSnack('未能保存。请检查分类后重试，旧候选仍保留。');
+      return;
+    }
     if (!mounted) return;
     setState(() => _items.removeWhere((candidate) => candidate.id == item.id));
     _showSnack('已写入长期记忆');
@@ -97,7 +91,7 @@ class _MemoryReviewPageState extends State<MemoryReviewPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F1EC),
       appBar: AppBar(
-        title: const Text('待审核记忆'),
+        title: const Text('旧版待审核兼容'),
         backgroundColor: const Color(0xFFF4F1EC),
         surfaceTintColor: Colors.transparent,
       ),
@@ -235,7 +229,7 @@ class _EmptyReview extends StatelessWidget {
             ),
             SizedBox(height: 8),
             Text(
-              '在聊天菜单里点“分析记忆”，候选内容会先来这里，不会偷偷写入。',
+              '这里只保留旧版候选。确认后写入新的记忆系统，新聊天不再产生旧版待审核记录。',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.black54, height: 1.5),
             ),

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../design_system/peilink_design_system.dart';
 import '../../models/ai_character.dart';
+import '../../physical/doubao_speech_clients.dart';
 import '../../physical/physical_host_settings.dart';
 import '../../physical/physical_host_settings_storage.dart';
+import '../../physical/pcm_audio_gain.dart';
 import '../../physical/physical_session_controller.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/developer_environment_service.dart';
@@ -238,6 +240,10 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
                           _controller.message,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
+                        if (_controller.lastAsrStats case final stats?) ...[
+                          const SizedBox(height: 12),
+                          PhysicalAsrStatsCard(stats: stats),
+                        ],
                         if (_controller.transcript.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Text('识别文本：${_controller.transcript}'),
@@ -322,6 +328,80 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
             ),
     );
   }
+}
+
+class PhysicalAsrStatsCard extends StatelessWidget {
+  const PhysicalAsrStatsCard({required this.stats, super.key});
+
+  final AsrTranscribeStats stats;
+
+  String get _gainReason => switch (stats.gainReason) {
+    GainReason.silenceNoGain => 'silenceNoGain',
+    GainReason.lowLevelBoosted => 'lowLevelBoosted',
+    GainReason.mediumLevelAdjusted => 'mediumLevelAdjusted',
+    GainReason.alreadyLoudEnough => 'alreadyLoudEnough',
+  };
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('ASR 脱敏统计', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 6),
+          Text(
+            'inputBytes=${stats.inputBytes}  inputPeak=${stats.inputPeak}  '
+            'inputRMS=${stats.inputRms.toStringAsFixed(1)}\n'
+            'selectedGain=${stats.selectedGain.toStringAsFixed(2)}  '
+            'gainReason=$_gainReason\n'
+            'outputPeak=${stats.outputPeak}  '
+            'outputRMS=${stats.outputRms.toStringAsFixed(1)}  '
+            'outputClippingRatio='
+            '${(stats.outputClippingRatio * 100).toStringAsFixed(3)}%\n'
+            'asrStatusCode=${stats.asrStatusCode ?? '-'}  '
+            'success=${stats.success}\n'
+            'asrMessage=${stats.asrMessage ?? '-'}\n'
+            'asrLogId=${stats.asrLogId ?? '-'}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (stats.segments.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              stats.segments
+                  .map(
+                    (segment) =>
+                        '${segment.startSecond.toStringAsFixed(1)}-'
+                        '${segment.endSecond.toStringAsFixed(1)}s '
+                        'in ${segment.inputPeak}/${segment.inputRms.toStringAsFixed(1)} '
+                        'out ${segment.outputPeak}/${segment.outputRms.toStringAsFixed(1)}',
+                  )
+                  .join('\n'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          if (stats.resultStructure case final structure?) ...[
+            const SizedBox(height: 6),
+            Text(
+              'resultTextLength=${structure.resultTextLength}  '
+              'utteranceCount=${structure.utteranceCount}\n'
+              '${structure.utterances.indexed.map((entry) {
+                final (index, utterance) = entry;
+                final time = utterance.startTime == null && utterance.endTime == null ? '' : ' ${utterance.startTime ?? '-'}-${utterance.endTime ?? '-'}';
+                return 'utterance[$index] textLength=${utterance.textLength}$time';
+              }).join('\n')}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
 }
 
 class PhysicalSessionSummary extends StatelessWidget {

@@ -59,11 +59,39 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
 
   Future<void> _exportCharacter() async {
     if (_exporting) return;
+    var includeMemories = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('导出角色'),
+          content: CheckboxListTile(
+            value: includeMemories,
+            title: const Text('包含记忆'),
+            subtitle: const Text('默认仅分享角色。勾选后会包含私人旧记忆、经历、用户认识及记忆汇总，请谨慎分享。'),
+            onChanged: (value) =>
+                update(() => includeMemories = value ?? false),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialog, true),
+              child: const Text('导出'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     setState(() => _exporting = true);
     try {
       final bytes = await PeiFileService().exportCharacter(
         _character,
         _settings,
+        includeMemories: includeMemories,
       );
       final safeName = _character.characterName.replaceAll(
         RegExp(r'[\\/:*?"<>|]'),

@@ -17,6 +17,7 @@ import '../services/activity_context_service.dart';
 import '../services/activity_service.dart';
 import '../services/ai_red_packet_event_service.dart';
 import '../services/ai_red_packet_opportunity_service.dart';
+import '../services/auto_memory_extraction_service.dart';
 import '../services/character_registry_service.dart';
 import '../services/character_avatar_storage_service.dart';
 import '../services/avatar_change_request_service.dart';
@@ -27,7 +28,6 @@ import '../services/chat_storage_service.dart';
 import '../services/deepseek_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
-import '../services/memory_storage_service.dart';
 import '../services/multimodal_service.dart';
 import '../services/session_reset_service.dart';
 import '../services/character_settings_storage_service.dart';
@@ -72,7 +72,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final CharacterSettingsStorageService _characterStorage =
       CharacterSettingsStorageService();
   final UserProfileStorageService _profileStorage = UserProfileStorageService();
-  final MemoryStorageService _memoryStorage = MemoryStorageService();
   final DeepSeekService _deepSeekService = DeepSeekService();
   final TodayService _todayService = TodayService();
   final InitiativeService _initiativeService = InitiativeService();
@@ -244,11 +243,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return message.copyWith(content: '你已与$_activeDisplayName建立羁绊，开始聊天吧。');
   }
 
-  Future<void> _saveMessages() async {
+  Future<bool> _saveMessages() async {
     try {
       await _chatStorage.saveMessages(_messages);
+      return true;
     } catch (error) {
       debugPrint('保存聊天记录失败：$error');
+      return false;
+    }
+  }
+
+  Future<void> _extractMemoryInBackground(String characterId) async {
+    final service = AutoMemoryExtractionService(characterId: characterId);
+    try {
+      await service.maybeExtract();
+    } finally {
+      service.dispose();
     }
   }
 
@@ -559,6 +569,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         return;
       }
       final streamId = DateTime.now().microsecondsSinceEpoch.toString();
+      var replyPersisted = true;
       for (var index = 0; index < segments.length; index++) {
         final segment = segments[index];
         final delay = index == 0
@@ -585,8 +596,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             _isRegenerating = false;
           }
         });
-        await _saveMessages();
+        final saved = await _saveMessages();
+        replyPersisted = replyPersisted && saved;
         _scrollToBottom();
+      }
+      if (replyPersisted) {
+        unawaited(_extractMemoryInBackground(_activeCharacter.id));
       }
       if (!_conversationTraceRecorded) {
         _conversationTraceRecorded = true;
@@ -1035,15 +1050,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final message = _messages[index];
     final nextValue = !message.isFavorite;
     setState(() => _messages[index] = message.copyWith(isFavorite: nextValue));
-    await Future.wait([
-      _saveMessages(),
-      _memoryStorage.addOrUpdateFavorite(
-        messageId: message.id,
-        content: message.content,
-        isFavorite: nextValue,
-      ),
-    ]);
-    _showSnack(nextValue ? '已收藏到记忆页' : '已取消收藏');
+    await _saveMessages();
+    _showSnack(nextValue ? '已收藏这条聊天消息' : '已取消收藏');
   }
 
   void _showSnack(String text) {

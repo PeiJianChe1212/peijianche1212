@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import '../models/prompt_test_mode.dart';
 import '../models/prompt_experiment_mode.dart';
 import '../models/api_settings.dart';
+import '../config/peilink_runtime.dart';
 
 class PromptTestSnapshot {
   const PromptTestSnapshot({
@@ -130,7 +131,8 @@ class PromptTestSnapshotService {
 
   static PromptTestSnapshot? _latest;
 
-  static PromptTestSnapshot? get latest => _latest;
+  static PromptTestSnapshot? get latest =>
+      PeiLinkRuntime.developerToolsEnabled ? _latest : null;
 
   static void capture({
     required PromptTestMode mode,
@@ -144,6 +146,10 @@ class PromptTestSnapshotService {
     String architecture = '',
     String providerAdapter = '',
   }) {
+    if (!PeiLinkRuntime.developerToolsEnabled) {
+      _latest = null;
+      return;
+    }
     _latest = PromptTestSnapshot(
       mode: mode,
       messages: messages

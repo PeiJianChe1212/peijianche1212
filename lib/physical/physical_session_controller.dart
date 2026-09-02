@@ -65,6 +65,7 @@ class PhysicalSessionController extends ChangeNotifier {
   String spokenReply = '';
   PhysicalTtsReview? ttsReview;
   PhysicalCapture? _capture;
+  AsrTranscribeStats? lastAsrStats;
   bool _deviceReady = false;
   bool get deviceReady => _deviceReady;
   bool get isBusy =>
@@ -124,6 +125,7 @@ class PhysicalSessionController extends ChangeNotifier {
     transcript = '';
     spokenReply = '';
     ttsReview = null;
+    lastAsrStats = null;
     _capture = null;
     await _run(PhysicalSessionStage.recording, '正在录音，请现在说话（固定 8 秒）…', () async {
       final capture = await _device.record(
@@ -145,6 +147,7 @@ class PhysicalSessionController extends ChangeNotifier {
         pcm: pcm,
         apiKey: settings.volcengineApiKey,
         boostingTableId: settings.boostingTableId,
+        onStats: (stats) => lastAsrStats = stats,
       );
       stage = PhysicalSessionStage.review;
       message = 'ASR 识别完成，已停止在 Stage C';
@@ -238,6 +241,7 @@ class PhysicalSessionController extends ChangeNotifier {
         pcm: pcm,
         apiKey: settings.volcengineApiKey,
         boostingTableId: settings.boostingTableId,
+        onStats: (stats) => lastAsrStats = stats,
       );
       stage = PhysicalSessionStage.thinking;
       message = '裴简澈正在思考…';

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:peijianche_app/config/peilink_runtime.dart';
 import 'package:peijianche_app/context_builder/context_build_result.dart';
 import 'package:peijianche_app/conversation/peilink_v2_prompt.dart';
 import 'package:peijianche_app/conversation/reply_quality_guard.dart';
@@ -9,6 +10,9 @@ import 'package:peijianche_app/prompt_composer/prompt_context.dart';
 import 'package:peijianche_app/services/prompt_test_snapshot_service.dart';
 
 void main() {
+  setUp(() => PeiLinkRuntime.configure(PeiLinkBuild.dev));
+  tearDown(() => PeiLinkRuntime.configure(PeiLinkBuild.unspecified));
+
   String compose(AIProvider provider) {
     const facts = '【Character Facts】\n角色：裴简澈\n用户：林念念\n关系：夫妻';
     final composer = PromptComposer(

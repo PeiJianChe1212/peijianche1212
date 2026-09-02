@@ -382,6 +382,7 @@ class _Asr extends DoubaoAsrClient {
     required Uint8List pcm,
     required String apiKey,
     String boostingTableId = '',
+    void Function(AsrTranscribeStats stats)? onStats,
   }) async {
     calls++;
     if (fail) throw const SpeechCloudException('asr failure');

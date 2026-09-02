@@ -104,9 +104,56 @@ class SharedExperienceStorageService {
   }
 
   Future<void> removeForCharacter(String characterId) async {
-    final items = List<SharedExperience>.from(await loadAll());
-    final before = items.length;
-    items.removeWhere((item) => item.containsParticipant(characterId));
-    if (before != items.length) await saveAll(items);
+    final file = await _file();
+    if (!await file.exists()) return;
+    final rows = await _readRowsForRemoval(file);
+    final target = characterId.trim();
+    if (target.isEmpty) return;
+    final remaining = rows.where((row) {
+      final participants = (row['participantIds'] as List)
+          .map((item) => item as String)
+          .toList();
+      return !participants.contains(target);
+    }).toList();
+    if (remaining.length == rows.length) return;
+    await _replaceRawRows(file, remaining);
+  }
+
+  /// Validates the raw file before a destructive character cleanup.
+  ///
+  /// Unlike [loadAll], malformed data is surfaced instead of being treated as
+  /// an empty collection, so cleanup cannot silently overwrite unknown rows.
+  Future<void> validateForRemoval() async {
+    final file = await _file();
+    if (!await file.exists()) return;
+    await _readRowsForRemoval(file);
+  }
+
+  Future<List<Map<String, dynamic>>> _readRowsForRemoval(File file) async {
+    final decoded = jsonDecode(await file.readAsString());
+    if (decoded is! List) {
+      throw const FormatException('Invalid shared experiences file');
+    }
+    final rows = <Map<String, dynamic>>[];
+    for (final row in decoded) {
+      if (row is! Map || row['participantIds'] is! List) {
+        throw const FormatException('Invalid shared experience row');
+      }
+      final participants = row['participantIds'] as List;
+      if (participants.any((item) => item is! String)) {
+        throw const FormatException('Invalid shared experience participants');
+      }
+      rows.add(Map<String, dynamic>.from(row));
+    }
+    return rows;
+  }
+
+  Future<void> _replaceRawRows(
+    File file,
+    List<Map<String, dynamic>> rows,
+  ) async {
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsString(jsonEncode(rows), flush: true);
+    await temporary.rename(file.path);
   }
 }

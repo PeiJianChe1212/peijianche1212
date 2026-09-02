@@ -163,6 +163,7 @@ class ContextBuilder {
     final relationshipPrompt = relationship.buildPromptSection();
     final dynamicSections = <String>[
       responseStrategy.dynamicPrompt,
+      memory.confirmedMemory,
       relevantProfilePrompt,
       archivePrompt,
       relationshipPrompt,

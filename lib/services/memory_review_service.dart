@@ -1,15 +1,21 @@
 import 'dart:convert';
 import 'dart:io';
 
-import '../models/memory_item.dart';
+import '../models/event_memory.dart';
+import '../models/user_memory.dart';
+import '../models/legacy_memory_view.dart';
+import '../models/memory_source_type.dart';
+import 'legacy_memory_migration_service.dart';
+import 'memory2_storage_service.dart';
+import 'memory2_mutation_coordinator.dart';
 import '../models/pending_memory.dart';
 import 'character_scope_service.dart';
 import 'memory_storage_service.dart';
 
 class MemoryReviewService {
   MemoryReviewService({String? characterId})
-      : _characterId = characterId,
-        _memoryStorage = MemoryStorageService(characterId: characterId);
+    : _characterId = characterId,
+      _memoryStorage = MemoryStorageService(characterId: characterId);
 
   final String? _characterId;
   final MemoryStorageService _memoryStorage;
@@ -79,17 +85,66 @@ class MemoryReviewService {
   }
 
   Future<void> approve(PendingMemory item) async {
-    final memories = await _memoryStorage.loadItems();
-    final exists = memories.any(
-      (memory) => _normalize(memory.content) == _normalize(item.content),
-    );
-    if (!exists) {
-      memories.add(
-        MemoryItem(content: item.content.trim(), category: item.category),
-      );
-      await _memoryStorage.saveItems(memories);
+    final kind = LegacyMemoryMigrationService.classify(item.category);
+    if (kind == LegacyMemoryKind.legacyUnclassified ||
+        item.content.trim().isEmpty) {
+      throw StateError('请先编辑并选择明确的经历或用户资料分类。');
     }
-    await reject(item.id);
+    final characterId = await CharacterScopeService(
+      _characterId,
+    ).resolveCharacterId();
+    await Memory2MutationCoordinator.runExclusive(characterId, () async {
+      final storage = Memory2StorageService(characterId: characterId);
+      final source = 'pending:${item.id}';
+      final id = 'legacy_pending_${base64Url.encode(utf8.encode(item.id))}';
+      final now = DateTime.now();
+      if (kind == LegacyMemoryKind.event) {
+        final items = await storage.loadEventMemoriesStrict();
+        if (!items.any(
+          (e) =>
+              e.id == id ||
+              normalizeLegacyMemory(e.content) ==
+                  normalizeLegacyMemory(item.content),
+        )) {
+          items.add(
+            EventMemory(
+              id: id,
+              characterId: characterId,
+              content: item.content,
+              createdAt: item.createdAt,
+              updatedAt: now,
+              sourceType: MemorySourceType.legacy,
+              legacySourceId: source,
+            ),
+          );
+          await storage.saveEventMemories(items);
+        }
+      } else {
+        final items = await storage.loadUserMemoriesStrict();
+        if (!items.any(
+          (u) =>
+              u.id == id ||
+              normalizeLegacyMemory(u.displayText) ==
+                  normalizeLegacyMemory(item.content),
+        )) {
+          items.add(
+            UserMemory(
+              id: id,
+              characterId: characterId,
+              key: '',
+              value: item.content,
+              createdAt: item.createdAt,
+              updatedAt: now,
+              userConfirmed: true,
+              sourceType: MemorySourceType.legacy,
+              legacySourceId: source,
+            ),
+          );
+          await storage.saveUserMemories(items);
+        }
+      }
+      await reject(item.id);
+    });
   }
 
   String _normalize(String value) =>

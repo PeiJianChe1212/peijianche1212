@@ -21,7 +21,9 @@ class PromptExperimentContextBuilder {
   }) {
     String line(String label, String value) {
       final clean = value.trim();
-      return clean.isEmpty ? '' : '$label：$clean';
+      return clean.isEmpty || clean == '未填写' || clean == '未设置'
+          ? ''
+          : '$label：$clean';
     }
 
     String section(String title, Iterable<String> values) {

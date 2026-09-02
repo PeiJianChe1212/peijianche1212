@@ -137,6 +137,7 @@ class _FakeAsr extends DoubaoAsrClient {
     required Uint8List pcm,
     required String apiKey,
     String boostingTableId = '',
+    void Function(AsrTranscribeStats stats)? onStats,
   }) async {
     calls++;
     expect(pcm.length, PcmAudioCodec.recordBytes);

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:peijianche_app/config/peilink_runtime.dart';
 import 'package:peijianche_app/context_builder/character_context.dart';
 import 'package:peijianche_app/context_builder/conversation_context.dart';
 import 'package:peijianche_app/context_builder/memory_context.dart';
@@ -14,6 +15,9 @@ import 'package:peijianche_app/services/prompt_test_context_builder.dart';
 import 'package:peijianche_app/services/prompt_test_snapshot_service.dart';
 
 void main() {
+  setUp(() => PeiLinkRuntime.configure(PeiLinkBuild.dev));
+  tearDown(() => PeiLinkRuntime.configure(PeiLinkBuild.unspecified));
+
   test(
     'pure persona test context keeps facts and memory without extra rules',
     () {
@@ -110,5 +114,24 @@ void main() {
       snapshot.displayText.indexOf('USER'),
       lessThan(snapshot.displayText.indexOf('ASSISTANT')),
     );
+  });
+
+  test('snapshot does not retain prompts outside developer builds', () {
+    PromptTestSnapshotService.capture(
+      mode: PromptTestMode.minimalRules,
+      messages: const [
+        {'role': 'system', 'content': 'developer prompt'},
+      ],
+    );
+    expect(PromptTestSnapshotService.latest, isNotNull);
+
+    PeiLinkRuntime.configure(PeiLinkBuild.user);
+    PromptTestSnapshotService.capture(
+      mode: PromptTestMode.minimalRules,
+      messages: const [
+        {'role': 'system', 'content': 'private user prompt'},
+      ],
+    );
+    expect(PromptTestSnapshotService.latest, isNull);
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -13,6 +14,9 @@ import '../models/api_settings.dart';
 import '../models/ai_red_packet_opportunity.dart';
 import '../models/chat_message.dart';
 import '../models/character_settings.dart';
+import '../models/character_user_profile.dart';
+import '../models/memory_retrieval_result.dart';
+import '../models/memory_summary.dart';
 import '../models/pending_memory.dart';
 import '../models/prompt_test_mode.dart';
 import '../models/prompt_experiment_mode.dart';
@@ -21,6 +25,7 @@ import '../context_builder/character_context.dart';
 import '../context_builder/context_build_result.dart';
 import '../context_builder/conversation_context.dart';
 import '../context_builder/existing_memory_context_provider.dart';
+import '../context_builder/memory_context.dart';
 import '../context_builder/relationship_context.dart';
 import '../context_builder/response_strategy_context.dart';
 import '../context_builder/temporal_context.dart';
@@ -32,6 +37,7 @@ import '../prompt_composer/prompt_context.dart';
 import 'activity_context_service.dart';
 import 'api_settings_storage_service.dart';
 import 'character_settings_storage_service.dart';
+import 'character_user_profile_storage_service.dart';
 import 'character_archive_storage_service.dart';
 import 'character_profile_storage_service.dart';
 import 'echo_chat_context_service.dart';
@@ -46,6 +52,9 @@ import 'prompt_experiment_mode_service.dart';
 import 'prompt_experiment_context_builder.dart';
 import 'relationship_cooldown_service.dart';
 import 'shared_world_event_service.dart';
+import 'memory2_chat_context_builder.dart';
+import 'memory2_retriever.dart';
+import 'memory_diagnostics_service.dart';
 import 'transient_event_reply_guard.dart';
 import 'user_profile_storage_service.dart';
 
@@ -67,8 +76,24 @@ class MemoryExtractionScope {
   final String transcript;
 }
 
+typedef Memory2RetrieverFactory =
+    Memory2RetrieverGateway Function(String characterId);
+typedef CharacterUserProfileLoader =
+    Future<CharacterUserProfile> Function(String characterId);
+
 class DeepSeekService {
-  DeepSeekService({http.Client? client}) : _client = client ?? http.Client() {
+  DeepSeekService({
+    http.Client? client,
+    Memory2RetrieverFactory? memory2RetrieverFactory,
+    CharacterUserProfileLoader? characterUserProfileLoader,
+  }) : _client = client ?? http.Client(),
+       _memory2RetrieverFactory =
+           memory2RetrieverFactory ??
+           ((id) => Memory2Retriever(characterId: id)),
+       _characterUserProfileLoader =
+           characterUserProfileLoader ??
+           ((id) =>
+               CharacterUserProfileStorageService(characterId: id).load()) {
     _modelHub = ModelHub(client: _client);
   }
 
@@ -76,6 +101,8 @@ class DeepSeekService {
   late final ModelHub _modelHub;
   final UserProfileStorageService _profileStorage = UserProfileStorageService();
   final ApiSettingsStorageService _apiStorage = ApiSettingsStorageService();
+  final Memory2RetrieverFactory _memory2RetrieverFactory;
+  final CharacterUserProfileLoader _characterUserProfileLoader;
   final CharacterSettingsStorageService _characterStorage =
       CharacterSettingsStorageService();
 
@@ -117,9 +144,6 @@ class DeepSeekService {
     final validConversation = conversationContext.messages;
 
     final userProfile = await _profileStorage.loadProfile();
-    final memoryContext = await ExistingMemoryContextProvider(
-      characterId: characterId,
-    ).load();
     final characterSettings = await CharacterSettingsStorageService(
       characterId: characterId,
     ).loadSettings();
@@ -133,6 +157,56 @@ class DeepSeekService {
       }
     }
     currentCharacter ??= await CharacterRegistryService().loadActiveCharacter();
+    final resolvedCharacterId = currentCharacter.id;
+    final legacyMemoryContext = promptExperiment == null
+        ? const MemoryContext()
+        : await ExistingMemoryContextProvider(
+            characterId: resolvedCharacterId,
+          ).load();
+    Memory2RetrieverGateway? memory2Retriever;
+    var memory2Retrieval = MemoryRetrievalResult(
+      memorySummary: MemorySummary(characterId: resolvedCharacterId),
+      diagnostics: const MemoryRetrievalDiagnostics(
+        eventCandidates: 0,
+        userCandidates: 0,
+        legacyCandidates: 0,
+        recallIntent: false,
+        lifecycleRefreshSucceeded: false,
+      ),
+    );
+    var characterUserProfile = CharacterUserProfile(
+      characterId: resolvedCharacterId,
+    );
+    if (promptExperiment == null) {
+      try {
+        memory2Retriever = _memory2RetrieverFactory(resolvedCharacterId);
+        final latestUser = validConversation
+            .where((message) => message.role == 'user')
+            .lastOrNull;
+        memory2Retrieval = await memory2Retriever.retrieve(
+          currentMessage: latestUser?.content ?? '',
+          recentMessages: validConversation.length > 1
+              ? validConversation.sublist(0, validConversation.length - 1)
+              : const [],
+          now: DateTime.now(),
+        );
+        characterUserProfile = await _characterUserProfileLoader(
+          resolvedCharacterId,
+        );
+      } catch (error) {
+        // Memory is optional context and must never block the chat request.
+        // ignore: avoid_print
+        print(
+          '[Memory2Chat] characterId=$resolvedCharacterId '
+          'degraded errorType=${error.runtimeType}',
+        );
+      }
+    }
+    final memory2Prompt = Memory2ChatContextBuilder.build(
+      retrieval: memory2Retrieval,
+      characterUserProfile: characterUserProfile,
+    );
+    final memoryContext = MemoryContext(confirmedMemory: memory2Prompt);
     final characterProfile = await CharacterProfileStorageService(
       characterId: currentCharacter.id,
     ).load(character: currentCharacter, legacySettings: characterSettings);
@@ -169,7 +243,7 @@ class DeepSeekService {
         profile: characterProfile,
         archive: characterArchive,
         user: userProfile,
-        memory: memoryContext.confirmedMemory,
+        memory: legacyMemoryContext.confirmedMemory,
         currentTime: _buildTimeFact(),
         recentLifeFacts: recentLifeFacts,
         sharedWorldFacts: sharedWorldFacts,
@@ -185,7 +259,7 @@ class DeepSeekService {
     } else {
       dynamicSystemPrompt = PromptTestContextBuilder.build(
         mode: promptTestMode,
-        memoryPrompt: memoryContext.confirmedMemory,
+        memoryPrompt: '',
         transientEventContext: transientEventContext,
         profile: characterProfile,
         settings: characterSettings,
@@ -295,6 +369,13 @@ class DeepSeekService {
       composer
           .addContext(
             PromptContext.extension(
+              id: 'memory2_context',
+              content: memory2Prompt,
+              priority: PromptContextPriority.memory,
+            ),
+          )
+          .addContext(
+            PromptContext.extension(
               id: 'peilink_v2_core',
               content: PeiLinkV2Prompt.core,
               priority: PromptContextPriority.character,
@@ -309,6 +390,28 @@ class DeepSeekService {
     final modelContext = composer.compose();
 
     final provider = await _modelHub.chatProvider(settings: apiSettings);
+    MemoryDiagnosticsService.recordPromptInjection(
+      characterId: resolvedCharacterId,
+      eventIds: memory2Prompt.isEmpty
+          ? const []
+          : memory2Retrieval.injectedEventIds,
+      characterUserProfileInjected:
+          memory2Prompt.isNotEmpty &&
+          (characterUserProfile.userName.trim().isNotEmpty ||
+              characterUserProfile.gender.trim().isNotEmpty ||
+              characterUserProfile.effectiveDescription.trim().isNotEmpty),
+    );
+    if (memory2Retriever != null &&
+        memory2Retrieval.injectedEventIds.isNotEmpty &&
+        memory2Prompt.isNotEmpty) {
+      unawaited(
+        _recordMemory2RecallSafely(
+          memory2Retriever,
+          memory2Retrieval.injectedEventIds,
+          now: DateTime.now(),
+        ),
+      );
+    }
     Future<String> complete(List<Map<String, dynamic>> messages) {
       PromptTestSnapshotService.capture(
         mode: promptTestMode,
@@ -407,6 +510,23 @@ class DeepSeekService {
             },
           );
     return _cleanReply(guarded);
+  }
+
+  Future<void> _recordMemory2RecallSafely(
+    Memory2RetrieverGateway retriever,
+    Iterable<String> eventIds, {
+    required DateTime now,
+  }) async {
+    try {
+      await retriever.recordInjectedEvents(eventIds, now: now);
+    } catch (error) {
+      // Recall persistence is an optional side effect and never blocks chat.
+      // ignore: avoid_print
+      print(
+        '[Memory2Chat] recallPersistenceFailed '
+        'errorType=${error.runtimeType}',
+      );
+    }
   }
 
   Future<AiRedPacketOpportunity> evaluateRedPacketOpportunity({

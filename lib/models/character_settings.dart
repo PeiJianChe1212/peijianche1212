@@ -24,6 +24,7 @@ class CharacterSettings {
     required this.proactiveEnabled,
     required this.lateNightMessages,
     required this.maxProactivePerDay,
+    this.autoMemoryEnabled = true,
   });
 
   final String characterName;
@@ -48,6 +49,7 @@ class CharacterSettings {
   final bool proactiveEnabled;
   final bool lateNightMessages;
   final int maxProactivePerDay;
+  final bool autoMemoryEnabled;
 
   String get displayName =>
       remark.trim().isEmpty ? characterName : remark.trim();
@@ -73,6 +75,7 @@ class CharacterSettings {
     bool? proactiveEnabled,
     bool? lateNightMessages,
     int? maxProactivePerDay,
+    bool? autoMemoryEnabled,
   }) {
     return CharacterSettings(
       characterName: characterName ?? this.characterName,
@@ -95,6 +98,7 @@ class CharacterSettings {
       proactiveEnabled: proactiveEnabled ?? this.proactiveEnabled,
       lateNightMessages: lateNightMessages ?? this.lateNightMessages,
       maxProactivePerDay: maxProactivePerDay ?? this.maxProactivePerDay,
+      autoMemoryEnabled: autoMemoryEnabled ?? this.autoMemoryEnabled,
     );
   }
 
@@ -236,6 +240,7 @@ $persona
     'proactiveEnabled': proactiveEnabled,
     'lateNightMessages': lateNightMessages,
     'maxProactivePerDay': maxProactivePerDay,
+    'autoMemoryEnabled': autoMemoryEnabled,
   };
 
   factory CharacterSettings.fromJson(
@@ -309,6 +314,9 @@ $persona
         0,
         4,
       ),
+      autoMemoryEnabled: json['autoMemoryEnabled'] is bool
+          ? json['autoMemoryEnabled'] as bool
+          : defaults.autoMemoryEnabled,
     );
   }
 

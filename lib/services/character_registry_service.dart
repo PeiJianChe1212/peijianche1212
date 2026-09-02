@@ -35,6 +35,23 @@ class CharacterRegistryService {
     }
   }
 
+  /// Import must not treat a damaged registry as an empty installation.
+  Future<List<AiCharacter>> loadAllCharactersStrict() async {
+    final file = await _registryFile();
+    if (!await file.exists()) return [];
+    final raw = jsonDecode(await file.readAsString());
+    if (raw is! List ||
+        raw.any(
+          (e) =>
+              e is! Map ||
+              e['id'] is! String ||
+              (e['id'] as String).trim().isEmpty,
+        )) {
+      throw const FormatException('Invalid character registry');
+    }
+    return raw.map((e) => AiCharacter.fromJson(e as Map)).toList();
+  }
+
   Future<List<AiCharacter>> loadCharacters() async {
     final characters = await loadAllCharacters();
     if (await DeveloperEnvironmentService().isEnabled()) return characters;
@@ -45,10 +62,12 @@ class CharacterRegistryService {
 
   Future<void> saveAllCharacters(List<AiCharacter> characters) async {
     final file = await _registryFile();
-    await file.writeAsString(
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsString(
       jsonEncode(characters.map((item) => item.toJson()).toList()),
       flush: true,
     );
+    await temporary.rename(file.path);
   }
 
   Future<void> saveCharacters(List<AiCharacter> characters) async {
@@ -63,7 +82,7 @@ class CharacterRegistryService {
   }
 
   Future<void> addCharacter(AiCharacter character) async {
-    final characters = await loadAllCharacters();
+    final characters = await loadAllCharactersStrict();
     final index = characters.indexWhere((item) => item.id == character.id);
     if (index >= 0) {
       characters[index] = character;
@@ -80,7 +99,7 @@ class CharacterRegistryService {
     if (characterId == AiCharacter.defaultCharacterId) {
       throw StateError('开发者私有角色不能删除，只能通过环境隔离隐藏。');
     }
-    final characters = await loadAllCharacters();
+    final characters = await loadAllCharactersStrict();
     characters.removeWhere((item) => item.id == characterId);
     await saveAllCharacters(characters);
     final activeId = await loadActiveCharacterId();

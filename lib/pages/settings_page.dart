@@ -8,6 +8,7 @@ import 'api_settings_page.dart';
 import 'core_bridge_settings_page.dart';
 import 'peilink/developer_environment_page.dart';
 import 'peilink/prompt_test_mode_page.dart';
+import 'peilink/memory_diagnostics_page.dart';
 import 'peilink/physical_host_page.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -107,9 +108,11 @@ class SettingsPage extends StatelessWidget {
                     subtitle: '开发者沙盒开关与测试数据初始化',
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const DeveloperEnvironmentPage()),
+                      MaterialPageRoute(
+                        builder: (_) => const DeveloperEnvironmentPage(),
+                      ),
                     ),
-                   ),
+                  ),
                   const PeiLinkSettingsDivider(),
                   PeiLinkSettingsTile(
                     icon: Icons.science_outlined,
@@ -119,6 +122,18 @@ class SettingsPage extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => const PromptTestModePage(),
+                      ),
+                    ),
+                  ),
+                  const PeiLinkSettingsDivider(),
+                  PeiLinkSettingsTile(
+                    icon: Icons.memory_rounded,
+                    title: 'Memory 诊断',
+                    subtitle: '查看提取、检索、召回与生命周期报告',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MemoryDiagnosticsPage(),
                       ),
                     ),
                   ),

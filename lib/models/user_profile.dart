@@ -118,18 +118,25 @@ class UserProfile {
   }
 
   String toPromptSection() {
-    String display(String value) => value.trim().isEmpty ? '未填写' : value.trim();
+    String line(String label, String value) {
+      final clean = value.trim();
+      if (clean.isEmpty || clean == '未填写' || clean == '未设置') return '';
+      return '$label：$clean';
+    }
+
+    final facts = <String>[
+      line('角色对用户的称呼', peiCallName),
+      line('生日', birthday),
+      line('身份与关系', identity),
+      line('工作与作息', workAndSchedule),
+      line('喜欢的事物', likes),
+      line('不喜欢的事物', dislikes),
+      line('相处偏好', interactionPreference),
+    ].where((item) => item.isNotEmpty).join('\n');
 
     return '''
 【当前用户希望角色知道的资料】
-
-角色对用户的称呼：${display(peiCallName)}
-生日：${display(birthday)}
-身份与关系：${display(identity)}
-工作与作息：${display(workAndSchedule)}
-喜欢的事物：${display(likes)}
-不喜欢的事物：${display(dislikes)}
-相处偏好：${display(interactionPreference)}
+$facts
 
 注意：昵称、头像、性别、地区、PeiLink ID 和个性签名属于用户个人资料，不应从这里推断或主动提及。
 回应她分享的日常时，先回应事情本身。

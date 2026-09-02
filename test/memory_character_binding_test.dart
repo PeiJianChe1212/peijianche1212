@@ -15,6 +15,7 @@ import 'package:peijianche_app/services/character_settings_storage_service.dart'
 import 'package:peijianche_app/services/deepseek_service.dart';
 import 'package:peijianche_app/services/memory_review_service.dart';
 import 'package:peijianche_app/services/memory_storage_service.dart';
+import 'package:peijianche_app/services/memory2_storage_service.dart';
 import 'package:peijianche_app/services/user_profile_storage_service.dart';
 
 void main() {
@@ -122,11 +123,15 @@ void main() {
     final memoryA = await MemoryStorageService(
       characterId: 'character-a',
     ).loadItems();
-    final memoryB = await MemoryStorageService(
+    final memoryB = await Memory2StorageService(
       characterId: 'character-b',
-    ).loadItems();
+    ).loadUserMemories();
     expect(memoryA, isEmpty);
-    expect(memoryB.map((item) => item.content), ['用户长期喜欢爵士乐']);
+    expect(memoryB.map((item) => item.value), ['用户长期喜欢爵士乐']);
+    expect(
+      await MemoryStorageService(characterId: 'character-b').loadItems(),
+      isEmpty,
+    );
   });
 
   test('单角色显式作用域流程保持正常', () async {

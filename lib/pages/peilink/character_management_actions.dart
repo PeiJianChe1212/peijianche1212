@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/ai_character.dart';
-import '../../services/character_registry_service.dart';
-import '../../services/character_scope_service.dart';
+import '../../services/character_deletion_service.dart';
 import '../../services/session_reset_service.dart';
 
 class CharacterManagementActions {
@@ -124,8 +123,16 @@ class CharacterManagementActions {
       ),
     );
     if (secondConfirmed != true) return false;
-    await CharacterScopeService(character.id).deleteAllData();
-    await CharacterRegistryService().deleteCharacter(character.id);
+    try {
+      await CharacterDeletionService().delete(character.id);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('删除未完成。请等待记忆整理结束，并检查存储后重试。')),
+        );
+      }
+      return false;
+    }
     return true;
   }
 }

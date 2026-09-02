@@ -202,6 +202,12 @@ class _CharacterImportPageState extends State<CharacterImportPage> {
             ],
           ),
           const SizedBox(height: 18),
+          Text(
+            package.memory == null
+                ? '纯角色文件：不包含记忆。'
+                : '此文件包含私人记忆：经历 ${package.memory!.events.length} 条、用户记忆 ${package.memory!.users.length} 条、旧记忆 ${package.memory!.legacy.length} 条及记忆汇总。确认后仅写入新角色。',
+          ),
+          const SizedBox(height: 12),
           const Text('角色简介', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text(
