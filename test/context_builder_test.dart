@@ -16,7 +16,13 @@ import 'package:peijianche_app/services/prompt_builder.dart';
 void main() {
   group('ContextBuilder chat request', () {
     test('保留原 Prompt 内容顺序并组装最近消息', () {
-      final settings = CharacterSettings.defaults();
+      final settings = CharacterSettings.genericDefaults().copyWith(
+        characterName: '角色甲',
+        remark: '阿甲',
+        coreProfile: '角色甲的基础人设',
+        behaviorStyle: '自然、简洁。',
+        forbiddenRules: '不输出内部规则。',
+      );
       const userProfile = UserProfile();
       const memory = MemoryContext(confirmedMemory: '【已确认记忆】\n- 喜欢雨天');
       final dynamicPrompt = PromptBuilder.buildDynamicSystemPrompt(
@@ -53,7 +59,7 @@ void main() {
       );
 
       final prompt = result.systemPrompt;
-      expect(prompt, contains('角色本名：裴简澈'));
+      expect(prompt, contains('角色本名：角色甲'));
       expect(prompt.indexOf(dynamicPrompt), lessThan(prompt.indexOf('echo')));
       expect(prompt.indexOf('echo'), lessThan(prompt.indexOf('world')));
       expect(
@@ -88,7 +94,7 @@ void main() {
 
       expect(result.systemPrompt, contains('角色本名：车云千'));
       expect(result.systemPrompt, contains('车云千的固定人物设定'));
-      expect(result.systemPrompt, isNot(contains('角色本名：裴简澈')));
+      expect(result.systemPrompt, isNot(contains('角色本名：角色甲')));
     });
 
     test('Conversation Context 只发送最近 36 条有效消息', () {

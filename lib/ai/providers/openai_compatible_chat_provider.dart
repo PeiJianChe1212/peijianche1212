@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import '../../models/ai_capability.dart';
 import '../../models/api_settings.dart';
 import '../chat_model_provider.dart';
+import '../../platform/provider/http_provider_transport.dart';
+import '../../platform/provider/provider_transport.dart';
 
 class ChatEmptyResponseException implements Exception {
   const ChatEmptyResponseException({
@@ -20,13 +22,16 @@ class ChatEmptyResponseException implements Exception {
 }
 
 class OpenAiCompatibleChatProvider extends ChatModelProvider {
-  OpenAiCompatibleChatProvider({required this.settings, http.Client? client})
-    : _client = client ?? http.Client(),
-      _ownsClient = client == null;
+  OpenAiCompatibleChatProvider({
+    required this.settings,
+    http.Client? client,
+    ProviderTransport? transport,
+  }) : _transport = transport ?? HttpProviderTransport(client: client),
+       _ownedTransport = transport == null;
 
   final ApiSettings settings;
-  final http.Client _client;
-  final bool _ownsClient;
+  final ProviderTransport _transport;
+  final bool _ownedTransport;
 
   @override
   String get providerName => settings.provider.label;
@@ -60,16 +65,15 @@ class OpenAiCompatibleChatProvider extends ChatModelProvider {
       },
     };
 
-    final response = await _client
-        .post(
-          Uri.parse(settings.chatCompletionsUrl),
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Authorization': 'Bearer ${settings.apiKey}',
-          },
-          body: jsonEncode(body),
-        )
-        .timeout(const Duration(seconds: 45));
+    final response = await _transport.post(
+      Uri.parse(settings.chatCompletionsUrl),
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Authorization': 'Bearer ${settings.apiKey}',
+      },
+      body: jsonEncode(body),
+      timeout: const Duration(seconds: 45),
+    );
 
     final responseText = utf8.decode(response.bodyBytes);
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -172,8 +176,8 @@ class OpenAiCompatibleChatProvider extends ChatModelProvider {
   }
 
   void dispose() {
-    if (_ownsClient) {
-      _client.close();
+    if (_ownedTransport && _transport is HttpProviderTransport) {
+      _transport.dispose();
     }
   }
 }

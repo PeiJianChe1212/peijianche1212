@@ -265,7 +265,7 @@ void main() {
   );
 
   test(
-    'engine updates same active user key and keeps different keys',
+    'engine versions explicitly changed user key and keeps different keys',
     () async {
       final service = storage('role-a');
       await service.upsertUserMemory(
@@ -285,6 +285,8 @@ void main() {
               key: '喜欢的饮品',
               value: '咖啡',
               sourceMessageIds: ['new-source'],
+              supersedesId: 'existing',
+              changeEvidence: '以前喜欢茶，现在更喜欢咖啡',
             ),
             ExtractedUserMemory(
               key: '休息日',
@@ -295,16 +297,23 @@ void main() {
         ),
         legacyViews: const [],
         now: DateTime.utc(2026, 8, 6),
+        sourceMessages: [
+          ChatMessage(id: 'new-source', role: 'user', content: '以前喜欢茶，现在更喜欢咖啡'),
+        ],
       );
 
       final users = await service.loadUserMemories();
       expect(result.addedUsers, 1);
       expect(result.updatedUsers, 1);
-      expect(users, hasLength(2));
-      final drink = users.firstWhere((item) => item.key == '喜欢的饮品');
-      expect(drink.id, 'existing');
+      expect(users, hasLength(3));
+      final drink = users.firstWhere(
+        (item) => item.key == '喜欢的饮品' && item.status == UserMemoryStatus.active,
+      );
+      expect(drink.id, isNot('existing'));
       expect(drink.value, '咖啡');
-      expect(drink.sourceMessageIds, ['old-source', 'new-source']);
+      expect(drink.sourceMessageIds, ['new-source']);
+      expect(users.first.sourceMessageIds, ['old-source']);
+      expect(users.first.supersededById, drink.id);
       expect(users.any((item) => item.key == '休息日'), isTrue);
     },
   );

@@ -14,6 +14,7 @@ import 'package:peijianche_app/services/character_scope_service.dart';
 import 'package:peijianche_app/services/memory2_storage_service.dart';
 import 'package:peijianche_app/services/pei_file_service.dart';
 import 'package:peijianche_app/services/legacy_memory_migration_service.dart';
+import 'package:peijianche_app/services/memory_source_resolver.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -71,6 +72,70 @@ void main() {
     expect(package.memory, isNull);
     expect(package.character.characterName, '旧角色');
   });
+
+  test(
+    'v2 round trip preserves protected user history links and sources',
+    () async {
+      final character = _character('history');
+      final storage = Memory2StorageService(characterId: character.id);
+      final old = UserMemory(
+        id: 'old',
+        characterId: character.id,
+        key: '饮品',
+        value: '咖啡',
+        status: UserMemoryStatus.superseded,
+        supersededById: 'new',
+        sourceMessageIds: const ['m1'],
+        isPinned: true,
+        userConfirmed: true,
+      );
+      final current = UserMemory(
+        id: 'new',
+        characterId: character.id,
+        key: '饮品',
+        value: '茶',
+        mergedFromIds: const ['old'],
+        sourceMessageIds: const ['m2'],
+        userConfirmed: true,
+      );
+      await storage.saveUserMemories([old, current]);
+      await storage.saveEventMemories([
+        EventMemory(
+          id: 'e',
+          characterId: character.id,
+          content: '纪念日',
+          isPinned: true,
+          sourceMessageIds: const ['m3'],
+        ),
+      ]);
+      final service = PeiFileService();
+      final bytes = await service.exportCharacter(
+        character,
+        CharacterSettings.genericDefaults(),
+        includeMemories: true,
+      );
+      final imported = await service.importCharacter(service.parse(bytes));
+      final target = Memory2StorageService(characterId: imported.character.id);
+      final users = await target.loadUserMemories();
+      expect(users.first.status, UserMemoryStatus.superseded);
+      expect(users.first.supersededById, users.last.id);
+      expect(users.last.mergedFromIds, [users.first.id]);
+      expect(users.first.sourceMessageIds, ['m1']);
+      expect(users.last.sourceMessageIds, ['m2']);
+      expect(users.first.createdAt, old.createdAt);
+      expect(users.first.userConfirmed && users.first.isPinned, isTrue);
+      expect(users.last.userConfirmed, isTrue);
+      expect((await target.loadEventMemories()).single.isPinned, isTrue);
+      final sources = await MemorySourceResolver(
+        characterId: imported.character.id,
+      ).resolve(users.first.sourceMessageIds);
+      expect(sources.single.available, isFalse);
+      expect((await target.loadUserMemories()).length, 2);
+      final payload = jsonDecode(utf8.decode(bytes)) as Map;
+      expect(payload.containsKey('chatMessages'), isFalse);
+      expect(payload.containsKey('images'), isFalse);
+    },
+  );
 
   test('new installation imports without an existing registry', () async {
     final character = _character('empty-install');

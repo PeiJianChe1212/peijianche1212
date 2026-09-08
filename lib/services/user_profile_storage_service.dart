@@ -24,27 +24,13 @@ class UserProfileStorageService {
       if (raw.trim().isEmpty) return const UserProfile();
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return const UserProfile();
-      var profile = UserProfile.fromJson(decoded);
-      if (PeiLinkRuntime.build == PeiLinkBuild.user) {
-        final sanitized = _removeLegacyDeveloperValues(profile);
-        if (sanitized.toJson().toString() != profile.toJson().toString()) {
-          await saveProfile(sanitized);
-          profile = sanitized;
-        }
-      }
-      return profile;
+      // A value matching an old default is not proof of its origin.
+      // Keep explicitly persisted data; missing fields use neutral defaults.
+      return UserProfile.fromJson(decoded);
     } catch (_) {
       return const UserProfile();
     }
   }
-
-  UserProfile _removeLegacyDeveloperValues(UserProfile profile) =>
-      profile.copyWith(
-        nickname: profile.nickname == '念念' ? '未设置' : profile.nickname,
-        peiLinkId: profile.peiLinkId == '一只小狐念' ? '未设置' : profile.peiLinkId,
-        peiCallName: profile.peiCallName == '念念' ? '未填写' : profile.peiCallName,
-        identity: profile.identity == '裴简澈的恋人' ? '未填写' : profile.identity,
-      );
 
   Future<void> saveProfile(UserProfile profile) async {
     final file = await _profileFile();

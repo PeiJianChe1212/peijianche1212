@@ -1,10 +1,15 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../platform/media/media_store.dart';
+import '../platform/media/media_store_factory.dart';
 import 'character_scope_service.dart';
 
 class CharacterAvatarStorageService {
-  const CharacterAvatarStorageService();
+  const CharacterAvatarStorageService({this.mediaStore});
+
+  final MediaStore? mediaStore;
+  MediaStore get _media => mediaStore ?? createDefaultMediaStore();
 
   Future<String> saveAvatar({
     required String characterId,
@@ -34,8 +39,7 @@ class CharacterAvatarStorageService {
     ).avatarDirectory();
     final target = File('${directory.path}/avatar.png');
     await _removeFilesWithPrefix(directory, 'avatar.', exceptPath: target.path);
-    await target.writeAsBytes(bytes, flush: true);
-    return target.path;
+    return _media.saveBytes(target.path, bytes);
   }
 
   Future<String> savePendingAvatarBytes({
@@ -46,8 +50,7 @@ class CharacterAvatarStorageService {
       characterId,
     ).avatarDirectory();
     final target = File('${directory.path}/pending_avatar.png');
-    await target.writeAsBytes(bytes, flush: true);
-    return target.path;
+    return _media.saveBytes(target.path, bytes);
   }
 
   Future<String> acceptPendingAvatar({required String characterId}) async {
@@ -56,9 +59,9 @@ class CharacterAvatarStorageService {
     ).avatarDirectory();
     final pending = File('${directory.path}/pending_avatar.png');
     if (!await pending.exists()) throw StateError('待确认头像不存在。');
-    final bytes = await pending.readAsBytes();
+    final bytes = await _media.readBytes(pending.path);
     final path = await saveAvatarBytes(characterId: characterId, bytes: bytes);
-    await pending.delete();
+    await _media.delete(pending.path);
     return path;
   }
 
@@ -67,7 +70,7 @@ class CharacterAvatarStorageService {
       characterId,
     ).avatarDirectory();
     final pending = File('${directory.path}/pending_avatar.png');
-    if (await pending.exists()) await pending.delete();
+    if (await _media.exists(pending.path)) await _media.delete(pending.path);
   }
 
   Future<String> savePortrait({
@@ -106,8 +109,7 @@ class CharacterAvatarStorageService {
       'portrait.',
       exceptPath: target.path,
     );
-    await target.writeAsBytes(bytes, flush: true);
-    return target.path;
+    return _media.saveBytes(target.path, bytes);
   }
 
   Future<void> removeAvatar(String characterId) async {

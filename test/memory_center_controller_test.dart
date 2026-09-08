@@ -109,10 +109,15 @@ void main() {
     expect(users.single.userConfirmed, isTrue);
     await controller.updateUserMemory(users.single, key: '偏好饮品', value: '茶');
     users = await storage.loadUserMemories();
-    expect(users.single.displayText, '偏好饮品：茶');
-    expect(users.single.userConfirmed, isTrue);
-    await controller.deleteUserMemory(users.single);
-    expect(await storage.loadUserMemories(), isEmpty);
+    expect(users.last.displayText, '偏好饮品：茶');
+    expect(users.last.userConfirmed, isTrue);
+    expect(users.first.status, UserMemoryStatus.superseded);
+    expect(users.first.supersededById, users.last.id);
+    await controller.deleteUserMemory(users.last);
+    expect(
+      (await storage.loadUserMemories()).single.status,
+      UserMemoryStatus.superseded,
+    );
   });
 
   test(

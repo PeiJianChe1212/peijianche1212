@@ -12,6 +12,12 @@ import 'legacy_memory_adapter.dart';
 import 'memory2_storage_service.dart';
 import 'legacy_memory_migration_service.dart';
 import 'memory2_mutation_coordinator.dart';
+import 'auto_memory_extraction_service.dart';
+import 'chat_storage_service.dart';
+import 'memory_extraction_state_service.dart';
+import 'memory_source_resolver.dart';
+import '../models/chat_message.dart';
+import 'memory_review_service.dart';
 
 class MemoryCenterSnapshot {
   const MemoryCenterSnapshot({
@@ -23,6 +29,7 @@ class MemoryCenterSnapshot {
     required this.legacy,
     this.lifecycleRefreshSucceeded = true,
     this.migratedLegacyIds = const {},
+    this.legacyPendingCount = 0,
   });
 
   final List<EventMemory> events;
@@ -33,6 +40,7 @@ class MemoryCenterSnapshot {
   final List<LegacyMemoryView> legacy;
   final bool lifecycleRefreshSucceeded;
   final Set<String> migratedLegacyIds;
+  final int legacyPendingCount;
 }
 
 class MemoryCenterController {
@@ -43,6 +51,9 @@ class MemoryCenterController {
     CharacterUserProfileStorageService? profileStorage,
     CharacterSettingsStorageService? settingsStorage,
     LegacyMemoryAdapter? legacyAdapter,
+    this.explicitServiceFactory,
+    this.extractionState,
+    this.messagesLoader,
   }) : storage = storage ?? Memory2StorageService(characterId: characterId),
        lifecycle =
            lifecycle ?? EventMemoryLifecycleService(characterId: characterId),
@@ -61,6 +72,83 @@ class MemoryCenterController {
   final CharacterUserProfileStorageService profileStorage;
   final CharacterSettingsStorageService settingsStorage;
   final LegacyMemoryAdapter legacyAdapter;
+  final AutoMemoryExtractionService Function()? explicitServiceFactory;
+  final MemoryExtractionStateService? extractionState;
+  final AutoMemoryMessagesLoader? messagesLoader;
+
+  Future<List<ResolvedMemorySource>> resolveSources(List<String> ids) =>
+      MemorySourceResolver(
+        characterId: characterId,
+        messagesLoader: messagesLoader,
+      ).resolve(ids);
+
+  Future<List<ChatMessage>> loadReprocessingMessages() async {
+    final messages =
+        await (messagesLoader ??
+            ChatStorageService(characterId: characterId).loadMessages)();
+    return messages
+        .where(
+          (m) =>
+              m.isVisibleInConversationContext &&
+              (m.role == 'user' || m.role == 'assistant') &&
+              (m.content.trim().isNotEmpty || m.type == MessageType.image),
+        )
+        .toList()
+        .reversed
+        .take(AutoMemoryExtractionService.reprocessingSelectionLimit)
+        .toList()
+        .reversed
+        .toList();
+  }
+
+  Future<MemoryReprocessingOutcome> reprocessMessages(List<String> ids) async {
+    final service =
+        explicitServiceFactory?.call() ??
+        AutoMemoryExtractionService(characterId: characterId);
+    try {
+      return await service.reprocess(ids);
+    } finally {
+      service.dispose();
+    }
+  }
+
+  Future<List<({String messageId, String content, String outcome})>>
+  loadExplicitFailures() async {
+    final state =
+        await (extractionState ??
+                MemoryExtractionStateService(characterId: characterId))
+            .loadStrict();
+    final messages =
+        await (messagesLoader ??
+            ChatStorageService(characterId: characterId).loadMessages)();
+    return state.explicitAttempts.entries
+        .where((e) => e.value != 'success')
+        .map((e) {
+          final source = messages
+              .where((m) => m.id == e.key && m.isVisibleInConversationContext)
+              .firstOrNull;
+          return (
+            messageId: e.key,
+            content: source?.content ?? '',
+            outcome: e.value,
+          );
+        })
+        .toList();
+  }
+
+  Future<AutoMemoryExtractionOutcome> retryExplicit(String messageId) async {
+    final service =
+        explicitServiceFactory?.call() ??
+        AutoMemoryExtractionService(characterId: characterId);
+    try {
+      return await service.maybeExtract(
+        explicitMessageId: messageId,
+        retryExplicit: true,
+      );
+    } finally {
+      service.dispose();
+    }
+  }
 
   Future<MemoryCenterSnapshot> load({DateTime? now}) async {
     var refreshSucceeded = true;
@@ -76,6 +164,7 @@ class MemoryCenterController {
       profileStorage.load(),
       settingsStorage.loadSettings(),
       legacyAdapter.loadReadOnlyViews(),
+      _loadLegacyPendingCount(),
     ]);
     return MemoryCenterSnapshot(
       events: results[0] as List<EventMemory>,
@@ -84,6 +173,7 @@ class MemoryCenterController {
       characterUserProfile: results[3] as CharacterUserProfile,
       settings: results[4] as CharacterSettings,
       legacy: results[5] as List<LegacyMemoryView>,
+      legacyPendingCount: results[6] as int,
       lifecycleRefreshSucceeded: refreshSucceeded,
       migratedLegacyIds:
           await LegacyMemoryMigrationService(
@@ -95,6 +185,16 @@ class MemoryCenterController {
             results[1] as List<UserMemory>,
           ),
     );
+  }
+
+  Future<int> _loadLegacyPendingCount() async {
+    try {
+      return (await MemoryReviewService(
+        characterId: characterId,
+      ).loadItems()).length;
+    } catch (_) {
+      return 0;
+    }
   }
 
   Future<void> addEvent(String content, {bool isPinned = false}) async {
@@ -141,25 +241,42 @@ class MemoryCenterController {
     UserMemory item, {
     required String key,
     required String value,
-  }) => _mutateUser(
-    item.id,
-    (item) => UserMemory(
-      id: item.id,
-      characterId: characterId,
-      key: key.trim(),
-      value: value.trim(),
-      createdAt: item.createdAt,
-      updatedAt: DateTime.now(),
-      sourceMessageIds: item.sourceMessageIds,
-      status: item.status,
-      supersededById: item.supersededById,
-      mergedFromIds: item.mergedFromIds,
-      isPinned: item.isPinned,
-      userConfirmed: true,
-      sourceType: item.sourceType,
-      legacySourceId: item.legacySourceId,
-    ),
-  );
+  }) => Memory2MutationCoordinator.runExclusive(characterId, () async {
+    final items = await storage.loadUserMemoriesStrict();
+    final index = items.indexWhere((m) => m.id == item.id);
+    if (index < 0 || items[index].status != UserMemoryStatus.active) return;
+    final latest = items[index];
+    final now = DateTime.now();
+    if (latest.key == key.trim() && latest.value == value.trim()) {
+      items[index] = UserMemory.fromJson({
+        ...latest.toJson(),
+        'userConfirmed': true,
+      });
+    } else {
+      final newId = _id('user', now);
+      items[index] = UserMemory.fromJson({
+        ...latest.toJson(),
+        'status': 'superseded',
+        'supersededById': newId,
+        'updatedAt': now.toIso8601String(),
+      });
+      items.add(
+        UserMemory(
+          id: newId,
+          characterId: characterId,
+          key: key.trim(),
+          value: value.trim(),
+          createdAt: now,
+          updatedAt: now,
+          mergedFromIds: [latest.id],
+          isPinned: latest.isPinned,
+          userConfirmed: true,
+          sourceType: MemorySourceType.manual,
+        ),
+      );
+    }
+    await storage.saveUserMemories(items);
+  });
 
   Future<void> setUserMemoryPinned(UserMemory item, bool pinned) => _mutateUser(
     item.id,
@@ -187,8 +304,16 @@ class MemoryCenterController {
   Future<void> _mutateUser(String id, UserMemory Function(UserMemory) update) =>
       Memory2MutationCoordinator.runExclusive(characterId, () async {
         final items = await storage.loadUserMemoriesStrict();
-        final index = items.indexWhere((item) => item.id == id);
+        var index = items.indexWhere((item) => item.id == id);
+        final visited = <String>{};
+        while (index >= 0 &&
+            items[index].status == UserMemoryStatus.superseded) {
+          if (!visited.add(items[index].id)) return;
+          final next = items[index].supersededById;
+          index = items.indexWhere((item) => item.id == next);
+        }
         if (index < 0) return;
+        if (items[index].status != UserMemoryStatus.active) return;
         items[index] = update(items[index]);
         await storage.saveUserMemories(items);
       });

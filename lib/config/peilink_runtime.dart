@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart' as path_provider;
 
+import '../platform/storage/platform_storage.dart';
+import '../platform/storage/storage_factory.dart';
+
 enum PeiLinkBuild { dev, user, unspecified }
 
 /// Runtime-only build configuration. Feature services stay unaware of flavors;
@@ -19,7 +22,11 @@ abstract final class PeiLinkRuntime {
     PeiLinkBuild.unspecified => '',
   };
 
-  static void configure(PeiLinkBuild build) => _build = build;
+  static void configure(PeiLinkBuild build) {
+    _build = build;
+  }
+
+  static Future<PlatformStorage> storage() => createPlatformStorage(dataNamespace);
 
   static Future<Directory> documentsDirectory() async {
     final base = await path_provider.getApplicationDocumentsDirectory();

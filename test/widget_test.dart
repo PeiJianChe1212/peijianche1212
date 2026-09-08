@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peijianche_app/config/peilink_runtime.dart';
-import 'package:peijianche_app/main.dart' show PeiJianCheApp;
+import 'package:peijianche_app/main.dart' show PeiLinkApp;
 import 'package:peijianche_app/models/user_profile.dart';
 import 'package:peijianche_app/models/anniversary_item.dart';
 import 'package:peijianche_app/pages/home_page.dart';
@@ -34,7 +34,7 @@ void main() {
   testWidgets('User 空白环境停留启动页后进入 PeiLink 首页', (WidgetTester tester) async {
     PeiLinkRuntime.configure(PeiLinkBuild.user);
     await tester.pumpWidget(
-      const PeiJianCheApp(initialHasVisibleCharacter: false),
+      const PeiLinkApp(initialHasVisibleCharacter: false),
     );
     await tester.pump();
     expect(find.text('欢迎来到 PeiLink'), findsNothing);
@@ -170,7 +170,7 @@ void main() {
   testWidgets('User 无角色时首页聊天进入消息列表', (tester) async {
     PeiLinkRuntime.configure(PeiLinkBuild.user);
     await tester.pumpWidget(
-      const PeiJianCheApp(initialHasVisibleCharacter: false),
+      const PeiLinkApp(initialHasVisibleCharacter: false),
     );
     await tester.pump();
 
@@ -194,7 +194,7 @@ void main() {
     expect(profile.avatarPath, isEmpty);
   });
 
-  test('User 旧版开发测试默认资料会被清理', () async {
+  test('User 明确保存的同值资料不会被按内容清理', () async {
     PeiLinkRuntime.configure(PeiLinkBuild.user);
     final storage = UserProfileStorageService();
     await storage.saveProfile(
@@ -207,8 +207,9 @@ void main() {
     );
 
     final profile = await storage.loadProfile();
-    expect(profile.nickname, '未设置');
-    expect(profile.peiLinkId, '未设置');
-    expect(profile.identity, '未填写');
+    expect(profile.nickname, '念念');
+    expect(profile.peiLinkId, '一只小狐念');
+    expect(profile.peiCallName, '念念');
+    expect(profile.identity, '裴简澈的恋人');
   });
 }

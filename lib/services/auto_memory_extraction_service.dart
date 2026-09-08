@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/character_settings.dart';
@@ -14,6 +16,8 @@ import 'memory2_storage_service.dart';
 import 'memory_extraction_state_service.dart';
 import 'memory_diagnostics_service.dart';
 import 'user_profile_storage_service.dart';
+import 'explicit_remember_intent.dart';
+import 'memory_content_boundary.dart';
 
 typedef AutoMemoryMessagesLoader = Future<List<ChatMessage>> Function();
 typedef AutoMemorySettingsLoader = Future<CharacterSettings> Function();
@@ -28,9 +32,47 @@ enum AutoMemoryExtractionOutcome {
   coolingDown,
   success,
   failed,
+  explicitEmpty,
+}
+
+enum MemoryReprocessingOutcome {
+  success,
+  empty,
+  invalidRange,
+  sourceUnavailable,
+  failed,
+  alreadyRunning,
 }
 
 class AutoMemoryExtractionService {
+  /// Dispatch only after every reply segment was saved; never await extraction
+  /// on the chat path. The factory keeps this boundary testable offline.
+  static void afterReplySaved({
+    required String characterId,
+    required bool replyPersisted,
+    required String? userMessageId,
+    AutoMemoryExtractionService Function()? factory,
+  }) {
+    if (!replyPersisted) return;
+    unawaited(() async {
+      AutoMemoryExtractionService? service;
+      try {
+        service =
+            factory?.call() ??
+            AutoMemoryExtractionService(characterId: characterId);
+        await service.maybeExtract(explicitMessageId: userMessageId);
+      } catch (_) {
+        // Includes setup/disposal failures, which must not escape into chat.
+      } finally {
+        try {
+          service?.dispose();
+        } catch (_) {
+          // Background cleanup is also isolated from the saved reply.
+        }
+      }
+    }());
+  }
+
   AutoMemoryExtractionService({
     required this.characterId,
     Memory2ExtractionGateway? gateway,
@@ -65,7 +107,13 @@ class AutoMemoryExtractionService {
   static const int minimumUserMessages = 3;
   static const Duration failureCooldown = Duration(minutes: 10);
   static const int hintLimit = 5;
+  // Two ordinary minimum batches; the existing extractor still emits <=6 events
+  // and <=10 user facts in one 900-token response. Reject, never silently truncate.
+  static const int reprocessingMessageLimit = minimumMessages * 2;
+  static const int reprocessingCharacterLimit = 12000;
+  static const int reprocessingSelectionLimit = 100;
   static final Set<String> _runningCharacters = <String>{};
+  static final Map<String, Completer<void>> _runningCompletion = {};
   static final Set<String> _deletingCharacters = <String>{};
   static bool isRunning(String characterId) =>
       _runningCharacters.contains(characterId);
@@ -96,35 +144,74 @@ class AutoMemoryExtractionService {
   final AutoMemoryLegacyLoader _legacyLoader;
   final AutoMemoryLogger _logger;
 
-  Future<AutoMemoryExtractionOutcome> maybeExtract({DateTime? now}) async {
+  Future<AutoMemoryExtractionOutcome> maybeExtract({
+    DateTime? now,
+    String? explicitMessageId,
+    bool retryExplicit = false,
+  }) async {
     final time = now ?? DateTime.now();
+    // A reply-bound request must not disappear behind an in-flight batch.
+    // Waiting shares the existing role lock; it does not retry a model call.
+    while (explicitMessageId != null &&
+        _runningCharacters.contains(characterId)) {
+      final running = _runningCompletion[characterId];
+      if (running == null) return AutoMemoryExtractionOutcome.alreadyRunning;
+      await running.future;
+    }
     if (_deletingCharacters.contains(characterId) ||
         !_runningCharacters.add(characterId)) {
       _log('skip=alreadyRunning');
       _report(time, 'skipped');
       return AutoMemoryExtractionOutcome.alreadyRunning;
     }
+    final completion = Completer<void>();
+    _runningCompletion[characterId] = completion;
 
     MemoryExtractionState? state;
     String? terminalMessageId;
     List<ChatMessage> unprocessed = const [];
+    ExplicitRememberIntent? explicit;
     try {
       final settings = await _settingsLoader();
-      if (!settings.autoMemoryEnabled) {
-        _log('skip=disabled');
-        _report(time, 'skipped');
-        return AutoMemoryExtractionOutcome.disabled;
-      }
-
       state = await _stateService.loadStrict();
       final allMessages = (await _messagesLoader())
           .where(_isEligible)
           .toList(growable: false);
-      unprocessed = _afterCursor(allMessages, state);
-      if (unprocessed.isEmpty ||
-          unprocessed.length < minimumMessages ||
-          unprocessed.where((item) => item.role == 'user').length <
-              minimumUserMessages) {
+      final userMessages = allMessages.where((m) => m.role == 'user').toList();
+      final explicitSource = explicitMessageId == null
+          ? (userMessages.isEmpty ? null : userMessages.last)
+          : userMessages.where((m) => m.id == explicitMessageId).firstOrNull;
+      explicit = explicitSource == null
+          ? null
+          : ExplicitRememberIntent.detect(explicitSource);
+      if (explicit != null) {
+        final previous = state.explicitAttempts[explicit.messageId];
+        if (previous != null && (!retryExplicit || previous == 'success')) {
+          return AutoMemoryExtractionOutcome.insufficientMessages;
+        }
+        unprocessed = explicit.window(allMessages);
+        // Persist attempt before dispatch: crashes/failures never loop automatically.
+        state = state.copyWith(
+          explicitAttempts: {
+            ...state.explicitAttempts,
+            explicit.messageId: 'attempted',
+          },
+        );
+        await _stateService.save(state);
+      } else {
+        if (retryExplicit) {
+          return AutoMemoryExtractionOutcome.insufficientMessages;
+        }
+        if (!settings.autoMemoryEnabled) {
+          return AutoMemoryExtractionOutcome.disabled;
+        }
+        unprocessed = _afterCursor(allMessages, state);
+      }
+      if (explicit == null &&
+          (unprocessed.isEmpty ||
+              unprocessed.length < minimumMessages ||
+              unprocessed.where((item) => item.role == 'user').length <
+                  minimumUserMessages)) {
         _log('skip=threshold batchCount=${unprocessed.length}');
         _report(time, 'skipped', messages: unprocessed);
         return AutoMemoryExtractionOutcome.insufficientMessages;
@@ -132,7 +219,8 @@ class AutoMemoryExtractionService {
 
       terminalMessageId = unprocessed.last.id;
       final failedAt = state.lastFailureAt;
-      if (state.lastFailedMessageId == terminalMessageId &&
+      if (explicit == null &&
+          state.lastFailedMessageId == terminalMessageId &&
           failedAt != null &&
           time.difference(failedAt) < failureCooldown) {
         _log('skip=cooldown batchCount=${unprocessed.length}');
@@ -140,33 +228,66 @@ class AutoMemoryExtractionService {
         return AutoMemoryExtractionOutcome.coolingDown;
       }
 
-      final events = await _storage.loadEventMemoriesStrict();
-      final users = await _storage.loadUserMemoriesStrict();
-      final legacy = await _legacyLoader();
-      final result = await _gateway.extract(
-        Memory2ExtractionRequest(
-          characterName: settings.characterName,
-          userName: await _userNameLoader(),
-          messages: unprocessed,
-          existingEventHints: events.reversed
-              .take(hintLimit)
-              .map((item) => item.content)
-              .toList(growable: false),
-          existingUserHints: users.reversed
-              .where((item) => item.status.name == 'active')
-              .take(hintLimit)
-              .map((item) => '${item.key}：${item.value}')
-              .toList(growable: false),
-          legacyHints: legacy.reversed
-              .where((item) => !item.legacyArchived)
-              .take(hintLimit)
-              .map((item) => item.content)
-              .toList(growable: false),
-        ),
+      final extraction = await _extractMessages(
+        unprocessed,
+        settings,
+        explicitTarget: explicit?.target,
       );
-      final applied = await Memory2Engine(
-        storage: _storage,
-      ).apply(result, legacyViews: legacy, now: time);
+      final result = extraction.result;
+      final legacy = extraction.legacy;
+      final allowedIds = unprocessed.map((m) => m.id).toSet();
+      final explicitUsers = result.userMemories
+          .where(
+            (m) =>
+                m.sourceMessageIds.isNotEmpty &&
+                m.sourceMessageIds.every(allowedIds.contains),
+          )
+          .take(1)
+          .toList();
+      final explicitEvents = result.eventMemories
+          .where(
+            (m) =>
+                m.sourceMessageIds.isNotEmpty &&
+                m.sourceMessageIds.every(allowedIds.contains),
+          )
+          .take(1)
+          .toList();
+      final toApply = explicit == null
+          ? result
+          : MemoryExtractionResult(
+              userMemories: explicitUsers,
+              eventMemories: explicitUsers.isEmpty ? explicitEvents : const [],
+            );
+      final applied = await Memory2Engine(storage: _storage).apply(
+        toApply,
+        legacyViews: legacy,
+        now: time,
+        explicitRemember: explicit != null,
+        sourceMessages: unprocessed,
+      );
+      if (explicit != null) {
+        final formed =
+            applied.addedEvents + applied.addedUsers + applied.updatedUsers > 0;
+        await _stateService.save(
+          state.copyWith(
+            explicitAttempts: {
+              ...state.explicitAttempts,
+              explicit.messageId: formed ? 'success' : 'empty',
+            },
+          ),
+        );
+        _report(
+          time,
+          formed ? 'explicitSuccess' : 'explicitEmpty',
+          messages: unprocessed,
+          eventWritten: applied.addedEvents,
+          userCreated: applied.addedUsers,
+          userUpdated: applied.updatedUsers,
+        );
+        return formed
+            ? AutoMemoryExtractionOutcome.success
+            : AutoMemoryExtractionOutcome.explicitEmpty;
+      }
       await _stateService.save(
         state.copyWith(
           lastProcessedMessageId: terminalMessageId,
@@ -207,6 +328,9 @@ class AutoMemoryExtractionService {
         try {
           await _stateService.save(
             state.copyWith(
+              explicitAttempts: explicit == null
+                  ? null
+                  : {...state.explicitAttempts, explicit.messageId: 'failed'},
               lastFailureAt: time,
               lastFailedMessageId: terminalMessageId,
             ),
@@ -231,7 +355,102 @@ class AutoMemoryExtractionService {
       return AutoMemoryExtractionOutcome.failed;
     } finally {
       _runningCharacters.remove(characterId);
+      _runningCompletion.remove(characterId);
+      completion.complete();
     }
+  }
+
+  /// User initiated, independent of both ordinary cursor and explicit attempts.
+  Future<MemoryReprocessingOutcome> reprocess(List<String> messageIds) async {
+    final ids = messageIds.toSet();
+    if (ids.isEmpty ||
+        ids.length != messageIds.length ||
+        ids.length > reprocessingMessageLimit) {
+      return MemoryReprocessingOutcome.invalidRange;
+    }
+    if (_deletingCharacters.contains(characterId) ||
+        !_runningCharacters.add(characterId)) {
+      return MemoryReprocessingOutcome.alreadyRunning;
+    }
+    final completion = Completer<void>();
+    _runningCompletion[characterId] = completion;
+    try {
+      final messages = (await _messagesLoader())
+          .where((m) => ids.contains(m.id) && _isEligible(m))
+          .toList();
+      if (messages.length != ids.length) {
+        return MemoryReprocessingOutcome.sourceUnavailable;
+      }
+      final characters = messages.fold<int>(
+        0,
+        (sum, m) => sum + MemoryContentBoundary.sourceCharacters(m),
+      );
+      if (characters > reprocessingCharacterLimit) {
+        return MemoryReprocessingOutcome.invalidRange;
+      }
+      final extraction = await _extractMessages(
+        messages,
+        await _settingsLoader(),
+      );
+      final result = extraction.result;
+      _log(
+        'reprocessing count=${messages.length} parseOutcome=${result.parseOutcome == 'success' ? 'success' : 'completed'}',
+      );
+      if (result.eventMemories.isEmpty && result.userMemories.isEmpty) {
+        return MemoryReprocessingOutcome.empty;
+      }
+      await Memory2Engine(storage: _storage).apply(
+        result,
+        legacyViews: extraction.legacy,
+        sourceMessages: messages,
+        historicalReprocessing: true,
+      );
+      return MemoryReprocessingOutcome.success;
+    } catch (error) {
+      _log('reprocessingFailed errorType=${error.runtimeType}');
+      return MemoryReprocessingOutcome.failed;
+    } finally {
+      _runningCharacters.remove(characterId);
+      _runningCompletion.remove(characterId);
+      completion.complete();
+    }
+  }
+
+  Future<({MemoryExtractionResult result, List<LegacyMemoryView> legacy})>
+  _extractMessages(
+    List<ChatMessage> messages,
+    CharacterSettings settings, {
+    String? explicitTarget,
+  }) async {
+    final events = await _storage.loadEventMemoriesStrict();
+    final users = await _storage.loadUserMemoriesStrict();
+    final legacy = await _legacyLoader();
+    final result = await _gateway.extract(
+      Memory2ExtractionRequest(
+        characterName: settings.characterName,
+        userName: await _userNameLoader(),
+        messages: messages,
+        explicitTarget: explicitTarget,
+        existingEventHints: events.reversed
+            .take(hintLimit)
+            .map((m) => m.content)
+            .toList(),
+        existingUserHints: users.reversed
+            .where((m) => m.status.name == 'active')
+            .take(40)
+            .map((m) => '[id=${m.id}] ${m.key}：${m.value}')
+            .toList(),
+        legacyHints: legacy.reversed
+            .where((m) => !m.legacyArchived)
+            .take(hintLimit)
+            .map((m) => m.content)
+            .toList(),
+      ),
+    );
+    return (
+      result: MemoryContentBoundary.grounded(result, messages),
+      legacy: legacy,
+    );
   }
 
   List<ChatMessage> _afterCursor(
@@ -253,7 +472,13 @@ class AutoMemoryExtractionService {
   bool _isEligible(ChatMessage message) =>
       (message.role == 'user' || message.role == 'assistant') &&
       message.isVisibleInConversationContext &&
-      message.content.trim().isNotEmpty;
+      (message.content.trim().isNotEmpty ||
+          (message.type == MessageType.image &&
+              (message.metadata['visionDescription']
+                      ?.toString()
+                      .trim()
+                      .isNotEmpty ??
+                  false)));
 
   void _log(String detail) =>
       _logger('Memory2Extraction characterId=$characterId $detail');

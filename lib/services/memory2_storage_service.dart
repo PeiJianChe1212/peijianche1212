@@ -5,6 +5,7 @@ import '../models/event_memory.dart';
 import '../models/memory_summary.dart';
 import '../models/user_memory.dart';
 import '../models/memory_source_type.dart';
+import '../platform/storage/platform_storage.dart';
 import 'character_scope_service.dart';
 import 'memory2_mutation_coordinator.dart';
 
@@ -16,7 +17,11 @@ typedef Memory2FileProvider =
 /// This service never reads or writes legacy memories.json, pending memories,
 /// CharacterArchive, CharacterUserProfile, or .pei packages.
 class Memory2StorageService {
-  const Memory2StorageService({required this.characterId, this.fileProvider});
+  const Memory2StorageService({
+    required this.characterId,
+    this.fileProvider,
+    this.platformStorage,
+  });
 
   static const int schemaVersion = 2;
   static const String eventFileName = 'event_memories.json';
@@ -25,6 +30,7 @@ class Memory2StorageService {
 
   final String characterId;
   final Memory2FileProvider? fileProvider;
+  final PlatformStorage? platformStorage;
 
   Future<List<EventMemory>> loadEventMemoriesStrict() async =>
       (await _loadItems(
@@ -125,9 +131,8 @@ class Memory2StorageService {
   Future<MemorySummary> _loadMemorySummary({required bool strict}) async {
     final fallback = MemorySummary(characterId: characterId);
     try {
-      final file = await _file(summaryFileName);
-      if (!await file.exists()) return fallback;
-      final raw = await file.readAsString();
+      if (!await _exists(summaryFileName)) return fallback;
+      final raw = await _readText(summaryFileName);
       if (raw.trim().isEmpty) {
         if (strict) throw const FormatException('Empty summary file');
         return fallback;
@@ -172,8 +177,6 @@ class Memory2StorageService {
 
   Future<void> saveMemorySummary(MemorySummary summary) async {
     await loadMemorySummaryStrict();
-    final file = await _file(summaryFileName);
-    await file.parent.create(recursive: true);
     final scoped = MemorySummary(
       characterId: characterId,
       generatedText: summary.generatedText,
@@ -182,12 +185,10 @@ class Memory2StorageService {
       editedAt: summary.editedAt,
       sourceRevision: summary.sourceRevision,
     );
-    final temporary = File('${file.path}.tmp');
-    await temporary.writeAsString(
+    await _replaceTextSafely(
+      summaryFileName,
       jsonEncode({'schemaVersion': schemaVersion, 'summary': scoped.toJson()}),
-      flush: true,
     );
-    await temporary.rename(file.path);
   }
 
   Future<List<dynamic>> _loadItems(
@@ -195,9 +196,8 @@ class Memory2StorageService {
     bool strict = false,
   }) async {
     try {
-      final file = await _file(fileName);
-      if (!await file.exists()) return const [];
-      final raw = await file.readAsString();
+      if (!await _exists(fileName)) return const [];
+      final raw = await _readText(fileName);
       if (raw.trim().isEmpty) {
         if (strict) throw const FormatException('Empty Memory2 file');
         return const [];
@@ -270,20 +270,48 @@ class Memory2StorageService {
     String fileName,
     List<Map<String, dynamic>> items,
   ) async {
-    final file = await _file(fileName);
-    await file.parent.create(recursive: true);
-    final temporary = File('${file.path}.tmp');
-    await temporary.writeAsString(
+    await _replaceTextSafely(
+      fileName,
       jsonEncode({'schemaVersion': schemaVersion, 'items': items}),
-      flush: true,
     );
-    await temporary.rename(file.path);
   }
 
-  Future<File> _file(String fileName) {
+  Future<(PlatformStorage, String)> _storageLocation(String fileName) async {
+    final scope = CharacterScopeService(characterId);
+    return (
+      platformStorage ?? await scope.storage(),
+      await scope.dataKey(fileName),
+    );
+  }
+
+  Future<bool> _exists(String fileName) async {
     final provider = fileProvider;
-    if (provider != null) return provider(characterId, fileName);
-    return CharacterScopeService(characterId).dataFile(fileName);
+    if (provider != null)
+      return (await provider(characterId, fileName)).exists();
+    final (storage, key) = await _storageLocation(fileName);
+    return storage.exists(key);
+  }
+
+  Future<String> _readText(String fileName) async {
+    final provider = fileProvider;
+    if (provider != null)
+      return (await provider(characterId, fileName)).readAsString();
+    final (storage, key) = await _storageLocation(fileName);
+    return storage.readText(key);
+  }
+
+  Future<void> _replaceTextSafely(String fileName, String value) async {
+    final provider = fileProvider;
+    if (provider != null) {
+      final file = await provider(characterId, fileName);
+      await file.parent.create(recursive: true);
+      final temporary = File('${file.path}.tmp');
+      await temporary.writeAsString(value, flush: true);
+      await temporary.rename(file.path);
+      return;
+    }
+    final (storage, key) = await _storageLocation(fileName);
+    await storage.replaceTextSafely(key, value);
   }
 
   EventMemory _scopeEvent(EventMemory item) => EventMemory(

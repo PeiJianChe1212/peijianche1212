@@ -1,10 +1,12 @@
 import '../models/event_memory.dart';
+import '../models/chat_message.dart';
 import '../models/legacy_memory_view.dart';
 import '../models/memory_extraction_result.dart';
 import '../models/memory_source_type.dart';
 import '../models/user_memory.dart';
 import 'memory2_storage_service.dart';
 import 'memory2_mutation_coordinator.dart';
+import 'explicit_remember_intent.dart';
 
 class Memory2ApplyResult {
   const Memory2ApplyResult({
@@ -27,15 +29,28 @@ class Memory2Engine {
     MemoryExtractionResult extracted, {
     required List<LegacyMemoryView> legacyViews,
     DateTime? now,
+    bool explicitRemember = false,
+    List<ChatMessage> sourceMessages = const [],
+    bool historicalReprocessing = false,
   }) => Memory2MutationCoordinator.runExclusive(
     storage.characterId,
-    () => _applyUnlocked(extracted, legacyViews: legacyViews, now: now),
+    () => _applyUnlocked(
+      extracted,
+      legacyViews: legacyViews,
+      now: now,
+      explicitRemember: explicitRemember,
+      sourceMessages: sourceMessages,
+      historicalReprocessing: historicalReprocessing,
+    ),
   );
 
   Future<Memory2ApplyResult> _applyUnlocked(
     MemoryExtractionResult extracted, {
     required List<LegacyMemoryView> legacyViews,
     DateTime? now,
+    bool explicitRemember = false,
+    List<ChatMessage> sourceMessages = const [],
+    bool historicalReprocessing = false,
   }) async {
     final time = now ?? DateTime.now();
     final events = await storage.loadEventMemoriesStrict();
@@ -58,14 +73,15 @@ class Memory2Engine {
       final duplicatesLegacy = legacyViews
           .where((item) => item.kind == LegacyMemoryKind.event)
           .any((item) => _similarText(item.content, candidate.content));
-      if (duplicatesLegacy) continue;
+      if (duplicatesLegacy && !explicitRemember) continue;
       if (duplicateIndex >= 0) {
         final existing = events[duplicateIndex];
         final mergedSources = _mergeIds(
           existing.sourceMessageIds,
           candidate.sourceMessageIds,
         );
-        if (mergedSources.length != existing.sourceMessageIds.length) {
+        if (explicitRemember ||
+            mergedSources.length != existing.sourceMessageIds.length) {
           events[duplicateIndex] = EventMemory(
             id: existing.id,
             characterId: existing.characterId,
@@ -74,15 +90,18 @@ class Memory2Engine {
             createdAt: existing.createdAt,
             updatedAt: time,
             sourceMessageIds: mergedSources,
-            status: existing.status,
+            status: explicitRemember
+                ? EventMemoryStatus.active
+                : existing.status,
             lastRecalledAt: existing.lastRecalledAt,
             recallCount: existing.recallCount,
-            isPinned: existing.isPinned,
+            isPinned: existing.isPinned || explicitRemember,
             sourceType: existing.sourceType,
             legacySourceId: existing.legacySourceId,
             metadata: existing.metadata,
           );
         }
+        if (explicitRemember) addedEvents++;
         continue;
       }
       events.add(
@@ -95,6 +114,7 @@ class Memory2Engine {
           updatedAt: time,
           sourceMessageIds: candidate.sourceMessageIds,
           sourceType: MemorySourceType.automatic,
+          isPinned: explicitRemember,
         ),
       );
       addedEvents++;
@@ -112,13 +132,14 @@ class Memory2Engine {
               '${candidate.key}${candidate.value}',
             ),
           );
-      if (legacyDuplicate) continue;
+      if (legacyDuplicate && !explicitRemember) continue;
       final existingIndex = users.indexWhere(
         (item) =>
             item.status == UserMemoryStatus.active &&
             _normalize(item.key) == normalizedKey,
       );
       if (existingIndex < 0) {
+        if (candidate.supersedesId != null) continue;
         users.add(
           UserMemory(
             id: 'user_memory_${time.microsecondsSinceEpoch}_$index',
@@ -129,6 +150,7 @@ class Memory2Engine {
             updatedAt: time,
             sourceMessageIds: candidate.sourceMessageIds,
             sourceType: MemorySourceType.automatic,
+            userConfirmed: explicitRemember,
           ),
         );
         addedUsers++;
@@ -142,7 +164,50 @@ class Memory2Engine {
         existing.sourceMessageIds,
         candidate.sourceMessageIds,
       );
-      if ((existing.userConfirmed || existing.isPinned) && !sameValue) {
+      if (!sameValue) {
+        // Model intent alone is insufficient: require exact user evidence.
+        final evidence = candidate.changeEvidence.trim();
+        final validChange =
+            candidate.supersedesId == existing.id &&
+            evidence.isNotEmpty &&
+            ExplicitRememberIntent.isChangeEvidence(evidence) &&
+            sourceMessages.any(
+              (m) =>
+                  m.role == 'user' &&
+                  m.isVisibleInConversationContext &&
+                  candidate.sourceMessageIds.contains(m.id) &&
+                  (!historicalReprocessing ||
+                      m.createdAt.isAfter(existing.createdAt)) &&
+                  ExplicitRememberIntent.containsDirectChange(
+                    m.content,
+                    evidence,
+                  ),
+            );
+        if (!validChange) continue;
+        final newId =
+            'user_memory_${time.microsecondsSinceEpoch}_${index}_${users.length}';
+        users[existingIndex] = UserMemory.fromJson({
+          ...existing.toJson(),
+          'status': UserMemoryStatus.superseded.name,
+          'supersededById': newId,
+          'updatedAt': time.toIso8601String(),
+        });
+        users.add(
+          UserMemory(
+            id: newId,
+            characterId: storage.characterId,
+            key: candidate.key,
+            value: candidate.value,
+            createdAt: time,
+            updatedAt: time,
+            sourceMessageIds: candidate.sourceMessageIds,
+            mergedFromIds: [existing.id],
+            sourceType: MemorySourceType.automatic,
+            userConfirmed: existing.userConfirmed || explicitRemember,
+            isPinned: existing.isPinned,
+          ),
+        );
+        updatedUsers++;
         continue;
       }
       users[existingIndex] = UserMemory(
@@ -157,7 +222,7 @@ class Memory2Engine {
         supersededById: existing.supersededById,
         mergedFromIds: existing.mergedFromIds,
         isPinned: existing.isPinned,
-        userConfirmed: existing.userConfirmed,
+        userConfirmed: existing.userConfirmed || explicitRemember,
         sourceType: existing.sourceType,
         legacySourceId: existing.legacySourceId,
       );

@@ -1,8 +1,9 @@
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -16,6 +17,35 @@ import '../../services/character_avatar_storage_service.dart';
 import '../../services/character_profile_storage_service.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/character_settings_storage_service.dart';
+
+@visibleForTesting
+Size backgroundCropViewportSize(
+  Size screenSize, {
+  double maxWidth = 320,
+  double maxHeight = 420,
+}) {
+  if (screenSize.width <= 0 || screenSize.height <= 0) {
+    return Size(maxWidth, maxHeight);
+  }
+  final aspectRatio = screenSize.width / screenSize.height;
+  final width = (maxHeight * aspectRatio).clamp(1.0, maxWidth).toDouble();
+  return Size(width, width / aspectRatio);
+}
+
+@visibleForTesting
+Size backgroundCoverRenderSize(Size sourceSize, Size viewportSize) {
+  if (sourceSize.width <= 0 ||
+      sourceSize.height <= 0 ||
+      viewportSize.width <= 0 ||
+      viewportSize.height <= 0) {
+    return viewportSize;
+  }
+  final scale = math.max(
+    viewportSize.width / sourceSize.width,
+    viewportSize.height / sourceSize.height,
+  );
+  return Size(sourceSize.width * scale, sourceSize.height * scale);
+}
 
 class CharacterCreationPage extends StatefulWidget {
   const CharacterCreationPage({super.key});
@@ -177,18 +207,20 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
           speakingStyle: value('speakingStyle'),
         ),
       );
-      await CharacterArchiveStorageService(characterId: id).save(
-        CharacterArchive(
-          characterId: id,
-          values: {
-            'likes': value('interests'),
-            'dislikes': value('dislikes'),
-            'possessions': value('possessions'),
-            'specialAbilities': value('abilities'),
-            'speakingStyle': value('speakingStyle'),
-          },
-        ),
-      );
+      if (!kIsWeb) {
+        await CharacterArchiveStorageService(characterId: id).save(
+          CharacterArchive(
+            characterId: id,
+            values: {
+              'likes': value('interests'),
+              'dislikes': value('dislikes'),
+              'possessions': value('possessions'),
+              'specialAbilities': value('abilities'),
+              'speakingStyle': value('speakingStyle'),
+            },
+          ),
+        );
+      }
       final registry = CharacterRegistryService();
       await registry.addCharacter(character);
       await registry.setActiveCharacter(id);
@@ -264,29 +296,21 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
               ),
             ]),
             _section('角色特点', Icons.star_border_rounded, [
-              _row([
-                _field('appearance', '外貌', required: true, lines: 6),
-                _field('personality', '性格', required: true, lines: 6),
-              ]),
-              _row([
-                _field('clothing', '穿着', lines: 4),
-                _field('speakingStyle', '说话风格', lines: 4),
-              ]),
+              _field('appearance', '外貌', required: true, lines: 4),
+              _field('personality', '性格', required: true, lines: 4),
+              _field('clothing', '穿着', lines: 3),
+              _field('speakingStyle', '说话风格', lines: 3),
             ]),
             _section('关系与生活', Icons.groups_outlined, [
-              _row([
-                _field(
-                  'relationships',
-                  '角色关系',
-                  lines: 5,
-                  hint: '好友、家人、宿敌、重要人物等…',
-                ),
-                _field('interests', '兴趣爱好', lines: 5),
-              ]),
-              _row([
-                _field('dislikes', '讨厌的事（东西）', lines: 5),
-                _field('possessions', '持有物品', lines: 5),
-              ]),
+              _field(
+                'relationships',
+                '角色关系',
+                lines: 4,
+                hint: '好友、家人、宿敌、重要人物等…',
+              ),
+              _field('interests', '兴趣爱好', lines: 4),
+              _field('dislikes', '讨厌的事（东西）', lines: 4),
+              _field('possessions', '持有物品', lines: 4),
             ]),
             _section('高级设定', Icons.auto_fix_high, [
               _field('abilities', '特殊能力', lines: 4, hint: '魔法、异能、修为、技能等特殊能力…'),
@@ -453,6 +477,7 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: TextField(
+      key: ValueKey('character-field-$key'),
       controller: _controllers[key],
       minLines: lines,
       maxLines: lines,
@@ -583,6 +608,28 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
   final _key = GlobalKey();
   final _controller = TransformationController();
   bool _saving = false;
+  Size? _sourceSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSourceSize();
+  }
+
+  Future<void> _loadSourceSize() async {
+    try {
+      final bytes = await File(widget.imagePath).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final size = Size(image.width.toDouble(), image.height.toDouble());
+      image.dispose();
+      codec.dispose();
+      if (mounted) setState(() => _sourceSize = size);
+    } catch (_) {
+      if (mounted) setState(() => _sourceSize = Size.zero);
+    }
+  }
 
   Future<void> _save() async {
     setState(() => _saving = true);
@@ -602,50 +649,71 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('调整背景图'),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text(
-          '双指缩放，拖动调整 16:9 展示范围',
-          style: TextStyle(color: Colors.black54),
-        ),
-        const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: RepaintBoundary(
-            key: _key,
-            child: SizedBox(
-              width: 320,
-              height: 180,
-              child: InteractiveViewer(
-                transformationController: _controller,
-                minScale: 1,
-                maxScale: 6,
-                boundaryMargin: EdgeInsets.zero,
-                clipBehavior: Clip.hardEdge,
-                child: Image.file(
-                  File(widget.imagePath),
-                  width: 320,
-                  height: 180,
-                  fit: BoxFit.cover,
-                ),
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+    final viewport = backgroundCropViewportSize(
+      screenSize,
+      maxHeight: (screenSize.height * .52).clamp(220, 420).toDouble(),
+    );
+    final sourceSize = _sourceSize;
+    final renderSize = sourceSize == null
+        ? null
+        : backgroundCoverRenderSize(sourceSize, viewport);
+    return AlertDialog(
+      title: const Text('调整背景图'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            '双指缩放、拖动图片；框内构图会用于 AI WORLD 全屏背景',
+            style: TextStyle(color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: RepaintBoundary(
+              key: _key,
+              child: SizedBox(
+                key: const ValueKey('ai-world-background-crop-viewport'),
+                width: viewport.width,
+                height: viewport.height,
+                child: renderSize == null
+                    ? const Center(child: CircularProgressIndicator())
+                    : sourceSize == Size.zero
+                    ? const Center(child: Icon(Icons.broken_image_outlined))
+                    : InteractiveViewer(
+                        transformationController: _controller,
+                        minScale: 1,
+                        maxScale: 6,
+                        constrained: false,
+                        alignment: Alignment.center,
+                        boundaryMargin: EdgeInsets.zero,
+                        clipBehavior: Clip.hardEdge,
+                        child: Image.file(
+                          File(widget.imagePath),
+                          width: renderSize.width,
+                          height: renderSize.height,
+                          fit: BoxFit.fill,
+                          filterQuality: FilterQuality.high,
+                        ),
+                      ),
               ),
             ),
           ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _saving || renderSize == null || sourceSize == Size.zero
+              ? null
+              : _save,
+          child: Text(_saving ? '保存中…' : '保存背景'),
         ),
       ],
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('取消'),
-      ),
-      FilledButton(
-        onPressed: _saving ? null : _save,
-        child: Text(_saving ? '保存中…' : '保存背景'),
-      ),
-    ],
-  );
+    );
+  }
 }

@@ -22,11 +22,15 @@ class ExtractedUserMemory {
     required this.key,
     required this.value,
     this.sourceMessageIds = const [],
+    this.supersedesId,
+    this.changeEvidence = '',
   });
 
   final String key;
   final String value;
   final List<String> sourceMessageIds;
+  final String? supersedesId;
+  final String changeEvidence;
 }
 
 class MemoryExtractionResult {

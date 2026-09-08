@@ -1,19 +1,23 @@
 import 'dart:io';
 
+import '../platform/media/media_store.dart';
+import '../platform/media/media_store_factory.dart';
 import 'character_scope_service.dart';
 
 /// 将聊天中选择的图片复制到角色自己的长期目录。
 ///
 /// image_picker 返回的路径可能只是系统临时文件，不能直接拿来长期保存。
 class ChatImageStorageService {
-  const ChatImageStorageService({this.characterId});
+  const ChatImageStorageService({this.characterId, this.mediaStore});
 
   final String? characterId;
-
+  final MediaStore? mediaStore;
+  MediaStore get _media => mediaStore ?? createDefaultMediaStore();
 
   Future<Directory> imageDirectory() async {
-    final characterDirectory =
-        await CharacterScopeService(characterId).characterDirectory();
+    final characterDirectory = await CharacterScopeService(
+      characterId,
+    ).characterDirectory();
     final directory = Directory('${characterDirectory.path}/chat_images');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
@@ -36,16 +40,14 @@ class ChatImageStorageService {
     final target = File(
       '${imageDirectory.path}/${messageId}_${DateTime.now().microsecondsSinceEpoch}$extension',
     );
-    await source.copy(target.path);
-    return target.path;
+    return _media.saveBytes(target.path, await source.readAsBytes());
   }
 
   Future<void> deleteImage(String path) async {
     if (path.trim().isEmpty) return;
-    final file = File(path);
-    if (!await file.exists()) return;
+    if (!await _media.exists(path)) return;
     try {
-      await file.delete();
+      await _media.delete(path);
     } catch (_) {
       // 图片清理失败不应阻断聊天回溯或重置。
     }

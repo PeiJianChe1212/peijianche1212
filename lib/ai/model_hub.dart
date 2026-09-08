@@ -10,19 +10,22 @@ import 'providers/volcengine_image_provider.dart';
 import 'providers/volcengine_multimodal_provider.dart';
 import 'speech_to_text_provider.dart';
 import 'text_to_speech_provider.dart';
+import '../platform/provider/provider_transport.dart';
 
 class ModelHub {
-  ModelHub({ApiSettingsStorageService? storage, this.client})
+  ModelHub({ApiSettingsStorageService? storage, this.client, this.transport})
     : _storage = storage ?? ApiSettingsStorageService();
 
   final ApiSettingsStorageService _storage;
   final http.Client? client;
+  final ProviderTransport? transport;
 
   Future<ChatModelProvider> chatProvider({ApiSettings? settings}) async {
     final resolvedSettings = settings ?? await _storage.loadSettings();
     return OpenAiCompatibleChatProvider(
       settings: resolvedSettings,
       client: client,
+      transport: transport,
     );
   }
 

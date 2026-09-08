@@ -253,15 +253,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _extractMemoryInBackground(String characterId) async {
-    final service = AutoMemoryExtractionService(characterId: characterId);
-    try {
-      await service.maybeExtract();
-    } finally {
-      service.dispose();
-    }
-  }
-
   Future<void> _createNewConversation() async {
     if (!mounted) return;
     setState(() {
@@ -542,6 +533,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _requestReply({String transientEventContext = ''}) async {
+    final memoryCharacterId = _activeCharacter.id;
+    final memoryUserMessageId = _messages
+        .where((m) => m.role == 'user')
+        .lastOrNull
+        ?.id;
     try {
       final reply = await _deepSeekService.sendMessage(
         messages: List<ChatMessage>.from(_messages),
@@ -600,9 +596,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         replyPersisted = replyPersisted && saved;
         _scrollToBottom();
       }
-      if (replyPersisted) {
-        unawaited(_extractMemoryInBackground(_activeCharacter.id));
-      }
+      AutoMemoryExtractionService.afterReplySaved(
+        characterId: memoryCharacterId,
+        replyPersisted: replyPersisted,
+        userMessageId: memoryUserMessageId,
+      );
       if (!_conversationTraceRecorded) {
         _conversationTraceRecorded = true;
         await _lifeTraceService.recordConversation();

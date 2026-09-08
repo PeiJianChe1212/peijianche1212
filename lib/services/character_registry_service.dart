@@ -1,45 +1,49 @@
 import 'dart:convert';
-import 'dart:io';
-
 import '../config/peilink_runtime.dart';
 
 import '../models/ai_character.dart';
+import '../platform/storage/platform_storage.dart';
 import 'developer_environment_service.dart';
 
 class CharacterRegistryService {
+  CharacterRegistryService({this.storage});
+
+  final PlatformStorage? storage;
   static const String _registryFileName = 'character_registry.json';
   static const String _activeFileName = 'active_character.json';
 
-  Future<Directory> _documentsDirectory() => getApplicationDocumentsDirectory();
-  Future<File> _registryFile() async =>
-      File('${(await _documentsDirectory()).path}/$_registryFileName');
-  Future<File> _activeFile() async =>
-      File('${(await _documentsDirectory()).path}/$_activeFileName');
+  Future<PlatformStorage> _platformStorage() =>
+      storage == null ? PeiLinkRuntime.storage() : Future.value(storage);
 
   Future<List<AiCharacter>> loadAllCharacters() async {
-    final file = await _registryFile();
-    if (!await file.exists()) {
+    final storage = await _platformStorage();
+    if (!await storage.exists(_registryFileName)) {
       await saveAllCharacters(const []);
       return const [];
     }
     try {
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! List) return const [];
-      return decoded
-          .whereType<Map>()
-          .map(AiCharacter.fromJson)
-          .where((character) => character.id.trim().isNotEmpty)
-          .toList();
+      final decoded = jsonDecode(await storage.readText(_registryFileName));
+      if (decoded is! List ||
+          decoded.any(
+            (e) =>
+                e is! Map ||
+                e['id'] is! String ||
+                (e['id'] as String).trim().isEmpty,
+          )) {
+        throw const FormatException('Invalid character registry');
+      }
+      return decoded.map((e) => AiCharacter.fromJson(e as Map)).toList();
     } catch (_) {
+      if (storage is FailFastPlatformStorage) rethrow;
       return const [];
     }
   }
 
   /// Import must not treat a damaged registry as an empty installation.
   Future<List<AiCharacter>> loadAllCharactersStrict() async {
-    final file = await _registryFile();
-    if (!await file.exists()) return [];
-    final raw = jsonDecode(await file.readAsString());
+    final storage = await _platformStorage();
+    if (!await storage.exists(_registryFileName)) return [];
+    final raw = jsonDecode(await storage.readText(_registryFileName));
     if (raw is! List ||
         raw.any(
           (e) =>
@@ -61,13 +65,11 @@ class CharacterRegistryService {
   }
 
   Future<void> saveAllCharacters(List<AiCharacter> characters) async {
-    final file = await _registryFile();
-    final temporary = File('${file.path}.tmp');
-    await temporary.writeAsString(
+    final storage = await _platformStorage();
+    await storage.replaceTextSafely(
+      _registryFileName,
       jsonEncode(characters.map((item) => item.toJson()).toList()),
-      flush: true,
     );
-    await temporary.rename(file.path);
   }
 
   Future<void> saveCharacters(List<AiCharacter> characters) async {
@@ -100,30 +102,37 @@ class CharacterRegistryService {
       throw StateError('开发者私有角色不能删除，只能通过环境隔离隐藏。');
     }
     final characters = await loadAllCharactersStrict();
+    final activeId = await loadActiveCharacterId();
     characters.removeWhere((item) => item.id == characterId);
     await saveAllCharacters(characters);
-    final activeId = await loadActiveCharacterId();
     if (activeId == characterId) {
       final visible = await loadCharacters();
-      if (visible.isNotEmpty) await setActiveCharacter(visible.first.id);
+      final storage = await _platformStorage();
+      if (visible.isEmpty) {
+        await storage.delete(_activeFileName);
+      } else {
+        await setActiveCharacter(visible.first.id);
+      }
     }
   }
 
   Future<String> loadActiveCharacterId() async {
     final characters = await loadCharacters();
     if (characters.isEmpty) return '';
-    final file = await _activeFile();
-    if (!await file.exists()) {
+    final storage = await _platformStorage();
+    if (!await storage.exists(_activeFileName)) {
       await setActiveCharacter(characters.first.id);
       return characters.first.id;
     }
     try {
-      final decoded = jsonDecode(await file.readAsString());
-      final id = decoded is Map ? decoded['characterId']?.toString() : null;
-      return characters.any((item) => item.id == id)
-          ? id!
-          : characters.first.id;
+      final decoded = jsonDecode(await storage.readText(_activeFileName));
+      if (decoded is! Map || decoded['characterId'] is! String) {
+        throw const FormatException('Invalid active character record');
+      }
+      final id = decoded['characterId'] as String;
+      return characters.any((item) => item.id == id) ? id : characters.first.id;
     } catch (_) {
+      if (storage is FailFastPlatformStorage) rethrow;
       return characters.first.id;
     }
   }
@@ -143,10 +152,10 @@ class CharacterRegistryService {
     if (!characters.any((item) => item.id == characterId)) {
       throw StateError('要切换的角色在当前环境中不可见：$characterId');
     }
-    final file = await _activeFile();
-    await file.writeAsString(
+    final storage = await _platformStorage();
+    await storage.writeText(
+      _activeFileName,
       jsonEncode({'characterId': characterId}),
-      flush: true,
     );
   }
 }

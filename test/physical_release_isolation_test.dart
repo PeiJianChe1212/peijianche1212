@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peijianche_app/config/peilink_runtime.dart';
+import 'package:peijianche_app/config/peilink_settings_sections_registry.dart';
+import 'package:peijianche_app/dev_only/developer_settings_sections.dart';
 import 'package:peijianche_app/pages/peilink/peilink_home_page.dart';
 import 'package:peijianche_app/pages/peilink/physical_host_page.dart';
 import 'package:peijianche_app/pages/settings_page.dart';
@@ -33,6 +35,9 @@ void main() {
     tester,
   ) async {
     PeiLinkRuntime.configure(PeiLinkBuild.dev);
+    PeiLinkSettingsSectionsRegistry.installDeveloperSections(
+      buildDeveloperSettingsSections,
+    );
     await DeveloperEnvironmentService().setEnabled(
       true,
       designatedAccount: true,
@@ -52,6 +57,9 @@ void main() {
     tester,
   ) async {
     PeiLinkRuntime.configure(PeiLinkBuild.dev);
+    PeiLinkSettingsSectionsRegistry.installDeveloperSections(
+      buildDeveloperSettingsSections,
+    );
     await DeveloperEnvironmentService().setEnabled(false);
 
     await tester.pumpWidget(const MaterialApp(home: SettingsPage()));

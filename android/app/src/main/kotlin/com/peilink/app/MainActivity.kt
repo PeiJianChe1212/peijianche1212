@@ -1,4 +1,4 @@
-package com.example.peijianche_app
+package com.peilink.app
 
 import android.content.Intent
 import android.net.Uri

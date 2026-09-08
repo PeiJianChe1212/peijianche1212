@@ -150,7 +150,7 @@ void main() {
   });
 
   test(
-    'old public character settings remove inherited developer defaults',
+    'persisted public character settings are not classified by value',
     () async {
       final character = AiCharacter(
         id: 'legacy_public',
@@ -165,16 +165,13 @@ void main() {
       await storage.saveSettings(
         CharacterSettings.fromAiCharacter(
           character,
-        ).copyWith(userCallName: CharacterSettings.defaults().userCallName),
+        ).copyWith(userCallName: '念念'),
       );
 
       final migrated = await storage.loadSettings();
-      expect(migrated.userCallName, isEmpty);
+      expect(migrated.userCallName, '念念');
       final persisted = await storage.loadSettings();
-      expect(persisted.userCallName, isEmpty);
-      expectNoPrivateTerms(
-        finalSystemPrompt(settings: migrated, characterId: character.id),
-      );
+      expect(persisted.userCallName, '念念');
     },
   );
 }

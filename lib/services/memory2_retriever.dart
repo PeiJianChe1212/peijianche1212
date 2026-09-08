@@ -10,6 +10,7 @@ import 'legacy_memory_adapter.dart';
 import 'memory2_storage_service.dart';
 import 'memory_diagnostics_service.dart';
 import 'legacy_memory_migration_service.dart';
+import 'user_memory_key_aliases.dart';
 
 typedef Memory2LegacyViewLoader = Future<List<LegacyMemoryView>> Function();
 typedef Memory2RetrieverLogger = void Function(String message);
@@ -43,6 +44,7 @@ class Memory2Retriever implements Memory2RetrieverGateway {
        _logger = logger ?? debugPrint;
 
   static const int maximumUserMemories = 4;
+  static const int maximumHistoricalUserMemories = 2;
   static const int maximumEventMemories = 3;
   static const int recentQueryMessages = 4;
   static const int summaryCharacters = 1200;
@@ -83,6 +85,16 @@ class Memory2Retriever implements Memory2RetrieverGateway {
       ).migratedSourceIds(events, users);
       final recallIntent = _hasRecallIntent(currentMessage);
       final query = _querySignals(currentMessage, recentMessages);
+      final historicalScores = _hasHistoricalUserIntent(currentMessage)
+          ? (users
+                .where((m) => m.status == UserMemoryStatus.superseded)
+                .map(
+                  (m) => _Scored<UserMemory>(m, _userScore(m, currentMessage)),
+                )
+                .where((m) => m.score >= 0.18)
+                .toList()
+              ..sort(_compareUsers))
+          : <_Scored<UserMemory>>[];
       final allEventScores = events.map((item) {
         final relevance = _relevance(item.content, query);
         return _Scored<EventMemory>(
@@ -105,7 +117,11 @@ class Memory2Retriever implements Memory2RetrieverGateway {
           users
               .where((item) => item.status == UserMemoryStatus.active)
               .map((item) {
-                final relevance = _relevance(item.displayText, query);
+                final relevance = _relevance(
+                  item.displayText,
+                  query,
+                  user: item,
+                );
                 return _Scored<UserMemory>(
                   item,
                   relevance.combined,
@@ -142,6 +158,8 @@ class Memory2Retriever implements Memory2RetrieverGateway {
         users: userScores,
         events: eventScores,
         legacy: legacyScores,
+        history: historicalScores,
+        allUsers: users,
       );
       _log(
         'retrieved eventCandidates=${eventScores.length} '
@@ -168,6 +186,7 @@ class Memory2Retriever implements Memory2RetrieverGateway {
       );
       return MemoryRetrievalResult(
         selectedUserMemories: built.users,
+        selectedHistoricalUserMemories: built.history,
         selectedEventMemories: built.events,
         selectedLegacyMemories: built.legacy,
         memorySummary: summary,
@@ -334,11 +353,14 @@ class Memory2Retriever implements Memory2RetrieverGateway {
     required List<_Scored<UserMemory>> users,
     required List<_Scored<EventMemory>> events,
     required List<_Scored<LegacyMemoryView>> legacy,
+    required List<_Scored<UserMemory>> history,
+    required List<UserMemory> allUsers,
   }) {
     final sections = <String>[];
     final selectedUsers = <UserMemory>[];
     final selectedEvents = <EventMemory>[];
     final selectedLegacy = <LegacyMemoryView>[];
+    final selectedHistory = <UserMemory>[];
     var remaining = totalContextCharacters;
 
     void addSection(String title, List<String> lines) {
@@ -361,6 +383,19 @@ class Memory2Retriever implements Memory2RetrieverGateway {
       selectedUsers.add(scored.value);
     }
     addSection('关于用户的记忆', userLines);
+
+    final historyLines = <String>[];
+    const historyTitle = '过去的用户事实｜仅回答过去，当前事实优先';
+    for (final scored in history.take(maximumHistoricalUserMemories)) {
+      final current = _currentVersion(scored.value, allUsers);
+      final line =
+          '- 过去：${_truncate(scored.value.displayText, userItemCharacters)}'
+          '${current == null ? '；当前状态未知' : '；当前：${_truncate(current.displayText, userItemCharacters)}'}';
+      if (!_fits(historyTitle, historyLines, line, remaining)) break;
+      historyLines.add(line);
+      selectedHistory.add(scored.value);
+    }
+    addSection(historyTitle, historyLines);
 
     final eventLines = <String>[];
     for (final scored in events.take(maximumEventMemories)) {
@@ -408,11 +443,28 @@ class Memory2Retriever implements Memory2RetrieverGateway {
       users: selectedUsers,
       events: selectedEvents,
       legacy: selectedLegacy,
+      history: selectedHistory,
     );
   }
 
   bool _fits(String title, List<String> lines, String next, int remaining) =>
       '【$title】\n${[...lines, next].join('\n')}'.length <= remaining;
+
+  UserMemory? _currentVersion(UserMemory historical, List<UserMemory> users) {
+    var next = historical.supersededById;
+    final visited = <String>{historical.id};
+    while (next != null && visited.add(next)) {
+      final item = users.where((m) => m.id == next).firstOrNull;
+      if (item == null) break;
+      if (item.status == UserMemoryStatus.active) return item;
+      next = item.supersededById;
+    }
+    return users
+        .where(
+          (m) => m.status == UserMemoryStatus.active && m.key == historical.key,
+        )
+        .firstOrNull;
+  }
 
   _QuerySignals _querySignals(String current, List<ChatMessage> recent) {
     final cleaned = _withoutRecallPhrases(current).trim();
@@ -428,8 +480,20 @@ class Memory2Retriever implements Memory2RetrieverGateway {
     );
   }
 
-  _RelevanceScore _relevance(String candidate, _QuerySignals query) {
-    final current = _score(candidate, query.current);
+  double _userScore(UserMemory user, String query) {
+    final lexical = _score(user.displayText, query);
+    final alias = UserMemoryKeyAliases.relevance(user.key, query);
+    return lexical > alias ? lexical : alias;
+  }
+
+  _RelevanceScore _relevance(
+    String candidate,
+    _QuerySignals query, {
+    UserMemory? user,
+  }) {
+    double score(String text) =>
+        user == null ? _score(candidate, text) : _userScore(user, text);
+    final current = score(query.current);
     if (!query.allowContextExpansion) {
       return _RelevanceScore(current: current, context: 0);
     }
@@ -440,8 +504,7 @@ class Memory2Retriever implements Memory2RetrieverGateway {
       index < query.context.length && index < weights.length;
       index++
     ) {
-      final contribution =
-          _score(candidate, query.context[index]) * weights[index];
+      final contribution = score(query.context[index]) * weights[index];
       if (contribution > context) context = contribution;
     }
     return _RelevanceScore(current: current, context: context);
@@ -526,6 +589,13 @@ class Memory2Retriever implements Memory2RetrieverGateway {
       'before',
     ].any(lower.contains);
   }
+
+  bool _hasHistoricalUserIntent(String value) =>
+      RegExp(
+        r'(以前|过去|之前|原来).{0,20}(喜欢|偏好|习惯|喝|吃|工作|是不是)|我.{0,6}(以前|过去|之前).{0,16}(什么|怎样|如何)|used to',
+        caseSensitive: false,
+      ).hasMatch(value) &&
+      !RegExp(r'不用回忆|别提过去|不要回忆').hasMatch(value);
 
   String _withoutRecallPhrases(String value) {
     var result = value.toLowerCase();
@@ -638,9 +708,11 @@ class _BuiltContext {
     required this.users,
     required this.events,
     required this.legacy,
+    required this.history,
   });
   final String text;
   final List<UserMemory> users;
   final List<EventMemory> events;
   final List<LegacyMemoryView> legacy;
+  final List<UserMemory> history;
 }

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'config/peilink_runtime.dart';
 import 'pages/home_page.dart';
 import 'services/character_registry_service.dart';
-import 'services/core_bridge_runtime.dart';
 import 'services/peilink_appearance_service.dart';
 import 'theme/app_dimensions.dart';
 import 'theme/app_text_styles.dart';
@@ -13,38 +12,33 @@ Future<void> main() => runPeiLink(PeiLinkBuild.user);
 Future<void> runPeiLink(PeiLinkBuild build) async {
   WidgetsFlutterBinding.ensureInitialized();
   PeiLinkRuntime.configure(build);
-  await CoreBridgeRuntime.instance.initialize();
   bool? initialHasVisibleCharacter;
   if (build == PeiLinkBuild.user) {
     final results = await Future.wait<Object>([
-      CharacterRegistryService()
-          .loadCharacters()
-          .then<Object>((characters) => characters.isNotEmpty)
-          .catchError((_) => false),
+      CharacterRegistryService().loadCharacters().then<Object>(
+        (characters) => characters.isNotEmpty,
+      ),
       Future<Object>.delayed(const Duration(seconds: 3), () => true),
     ]);
     initialHasVisibleCharacter = results.first as bool;
   } else {
     initialHasVisibleCharacter = await CharacterRegistryService()
         .loadCharacters()
-        .then((characters) => characters.isNotEmpty)
-        .catchError((_) => false);
+        .then((characters) => characters.isNotEmpty);
   }
-  runApp(
-    PeiJianCheApp(initialHasVisibleCharacter: initialHasVisibleCharacter),
-  );
+  runApp(PeiLinkApp(initialHasVisibleCharacter: initialHasVisibleCharacter));
 }
 
-class PeiJianCheApp extends StatefulWidget {
-  const PeiJianCheApp({super.key, this.initialHasVisibleCharacter});
+class PeiLinkApp extends StatefulWidget {
+  const PeiLinkApp({super.key, this.initialHasVisibleCharacter});
 
   final bool? initialHasVisibleCharacter;
 
   @override
-  State<PeiJianCheApp> createState() => _PeiJianCheAppState();
+  State<PeiLinkApp> createState() => _PeiLinkAppState();
 }
 
-class _PeiJianCheAppState extends State<PeiJianCheApp> {
+class _PeiLinkAppState extends State<PeiLinkApp> {
   final _appearance = PeiLinkAppearanceController.instance;
 
   @override

@@ -3,6 +3,7 @@ import 'dart:io';
 import '../config/peilink_runtime.dart';
 
 import '../models/ai_character.dart';
+import '../platform/storage/platform_storage.dart';
 import 'character_registry_service.dart';
 
 class CharacterScopeService {
@@ -22,6 +23,24 @@ class CharacterScopeService {
     }
     return CharacterRegistryService().loadActiveCharacterId();
   }
+
+  Future<String> dataKey(
+    String fileName, {
+    String? legacyDefaultFileName,
+  }) async {
+    final resolvedId = sanitizeCharacterId(await resolveCharacterId());
+    if (resolvedId == AiCharacter.defaultCharacterId) {
+      return legacyDefaultFileName ?? fileName;
+    }
+    return 'characters/$resolvedId/$fileName';
+  }
+
+  Future<String> characterKey() async {
+    final resolvedId = sanitizeCharacterId(await resolveCharacterId());
+    return 'characters/$resolvedId';
+  }
+
+  Future<PlatformStorage> storage() => PeiLinkRuntime.storage();
 
   Future<Directory> characterDirectory() async {
     final resolvedId = sanitizeCharacterId(await resolveCharacterId());
@@ -63,10 +82,7 @@ class CharacterScopeService {
       throw StateError('默认角色的数据不能通过该方法直接删除。');
     }
 
-    final documents = await getApplicationDocumentsDirectory();
-    final directory = Directory('${documents.path}/characters/$resolvedId');
-    if (await directory.exists()) {
-      await directory.delete(recursive: true);
-    }
+    final store = await storage();
+    await store.delete('characters/$resolvedId', recursive: true);
   }
 }

@@ -11,6 +11,8 @@ import '../services/legacy_memory_migration_service.dart';
 import '../theme/app_theme_background.dart';
 import 'memory_review_page.dart';
 import 'peilink/character_user_profile_page.dart';
+import '../widgets/memory_source_sheet.dart';
+import 'memory_reprocessing_page.dart';
 
 const _memoryMutationFailureMessage = '操作未完成，原始记忆仍保留，请检查存储后重试。';
 
@@ -52,6 +54,107 @@ class _MemoryPageState extends State<MemoryPage> {
   bool generating = false;
   String query = '';
   bool migrating = false;
+
+  Future<void> showHistory() async {
+    final items =
+        data?.userMemories
+            .where((m) => m.status == UserMemoryStatus.superseded)
+            .toList() ??
+        <UserMemory>[];
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text('历史版本（仅用于回顾过去）'),
+          if (items.isEmpty) const Text('暂无历史版本'),
+          for (final item in items)
+            ListTile(
+              title: Text(item.displayText),
+              onTap: () => showMemorySources(
+                context,
+                controller,
+                item.sourceMessageIds,
+                legacySourceId: item.legacySourceId,
+              ),
+              subtitle: Text(
+                '已被新事实替代${item.userConfirmed ? ' · 已确认' : ''}${item.isPinned ? ' · 曾固定' : ''}',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> showExplicitFailures() async {
+    try {
+      final items = await controller.loadExplicitFailures();
+      if (!mounted) return;
+      String? running;
+      final completed = <String>{};
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => StatefulBuilder(
+          builder: (sheetContext, update) => ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(16),
+            children: [
+              const Text('未形成记忆的保存请求'),
+              if (items.isEmpty) const Text('暂无需要重新整理的请求'),
+              for (final item in items)
+                ListTile(
+                  title: Text(item.content.isEmpty ? '原消息已不可用' : item.content),
+                  subtitle: Text(
+                    completed.contains(item.messageId)
+                        ? '已形成受保护记忆'
+                        : '尚未形成记忆，可重新整理原消息',
+                  ),
+                  trailing: TextButton(
+                    onPressed:
+                        running != null ||
+                            item.content.isEmpty ||
+                            completed.contains(item.messageId)
+                        ? null
+                        : () async {
+                            update(() => running = item.messageId);
+                            try {
+                              final outcome = await controller.retryExplicit(
+                                item.messageId,
+                              );
+                              if (!sheetContext.mounted) return;
+                              update(() {
+                                if (outcome.name == 'success') {
+                                  completed.add(item.messageId);
+                                }
+                              });
+                              snack(
+                                outcome.name == 'success'
+                                    ? '已保存并保护'
+                                    : '尚未形成记忆，请补充明确内容后再试',
+                              );
+                            } catch (_) {
+                              snack('重新整理失败，请稍后重试');
+                            } finally {
+                              if (sheetContext.mounted) {
+                                update(() => running = null);
+                              }
+                            }
+                          },
+                    child: const Text('重新整理'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      await load();
+    } catch (_) {
+      snack('无法读取保存请求，请稍后重试');
+    }
+  }
 
   Future<void> migrateLegacy() async {
     if (migrating) return;
@@ -125,6 +228,184 @@ class _MemoryPageState extends State<MemoryPage> {
       }
     } catch (_) {
       if (mounted) setState(() => loading = false);
+    }
+  }
+
+  bool _hasLegacyMemories(MemoryCenterSnapshot snapshot) => snapshot.legacy.any(
+    (item) => item.kind != LegacyMemoryKind.legacyUnclassified,
+  );
+
+  bool _needsLegacyMigration(MemoryCenterSnapshot snapshot) =>
+      snapshot.legacy.any(
+        (item) =>
+            !item.legacyArchived &&
+            item.kind != LegacyMemoryKind.legacyUnclassified &&
+            !snapshot.migratedLegacyIds.contains(item.legacySourceId),
+      );
+
+  Future<void> _showMemoryManagement(MemoryCenterSnapshot snapshot) async {
+    final hasLegacy = _hasLegacyMemories(snapshot);
+    final needsMigration = _needsLegacyMigration(snapshot);
+    final hasLegacyPending = snapshot.legacyPendingCount > 0;
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFFF9F7FC),
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: .9,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+            children: [
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  '记忆管理',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text('整理、回顾或导出 Ta 记住的内容'),
+              ),
+              _managementTile(
+                sheetContext,
+                value: 'reprocess',
+                icon: Icons.auto_awesome_rounded,
+                title: '重新整理聊天记录',
+              ),
+              _managementTile(
+                sheetContext,
+                value: 'history',
+                icon: Icons.history_rounded,
+                title: '用户记忆历史',
+              ),
+              _managementTile(
+                sheetContext,
+                value: 'explicit',
+                icon: Icons.bookmark_outline_rounded,
+                title: '未完成的保存请求',
+              ),
+              _managementTile(
+                sheetContext,
+                value: 'forgotten',
+                icon: Icons.visibility_off_outlined,
+                title: '已遗忘的记忆',
+              ),
+              _managementTile(
+                sheetContext,
+                value: 'copy',
+                icon: Icons.copy_all_outlined,
+                title: '复制全部记忆',
+              ),
+              if (hasLegacy || needsMigration || hasLegacyPending) ...[
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(4, 18, 4, 6),
+                  child: Text(
+                    '旧数据兼容',
+                    style: TextStyle(
+                      color: Color(0xFF8E849A),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (needsMigration)
+                  _managementTile(
+                    sheetContext,
+                    value: 'migrate',
+                    icon: Icons.move_to_inbox_outlined,
+                    title: '迁移旧版记忆',
+                    enabled: !migrating,
+                  ),
+                if (hasLegacy)
+                  _managementTile(
+                    sheetContext,
+                    value: 'legacy',
+                    icon: Icons.inventory_2_outlined,
+                    title: '旧版记忆',
+                  ),
+                if (hasLegacyPending)
+                  _managementTile(
+                    sheetContext,
+                    value: 'review',
+                    icon: Icons.fact_check_outlined,
+                    title: '旧版待审核',
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    await _handleManagementAction(selected, snapshot);
+  }
+
+  Widget _managementTile(
+    BuildContext sheetContext, {
+    required String value,
+    required IconData icon,
+    required String title,
+    bool enabled = true,
+  }) => Card(
+    margin: const EdgeInsets.only(top: 8),
+    elevation: 0,
+    color: Colors.white.withValues(alpha: .82),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    child: ListTile(
+      enabled: enabled,
+      leading: Icon(icon, color: const Color(0xFF7662A6)),
+      title: Text(title),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: enabled ? () => Navigator.pop(sheetContext, value) : null,
+    ),
+  );
+
+  Future<void> _handleManagementAction(
+    String value,
+    MemoryCenterSnapshot snapshot,
+  ) async {
+    if (value == 'reprocess') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MemoryReprocessingPage(controller: controller),
+        ),
+      );
+      await load();
+    }
+    if (value == 'history') await showHistory();
+    if (value == 'explicit') await showExplicitFailures();
+    if (value == 'copy') await copyAll();
+    if (value == 'migrate') await migrateLegacy();
+    if (value == 'forgotten') {
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ForgottenMemoriesPage(controller: controller),
+        ),
+      );
+      await load();
+    }
+    if (!mounted) return;
+    if (value == 'legacy') {
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => _LegacySheet(
+          items: snapshot.legacy,
+          migratedIds: snapshot.migratedLegacyIds,
+        ),
+      );
+    }
+    if (!mounted) return;
+    if (value == 'review') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MemoryReviewPage(characterId: widget.characterId),
+        ),
+      );
+      await load();
     }
   }
 
@@ -296,63 +577,12 @@ class _MemoryPageState extends State<MemoryPage> {
           ),
           centerTitle: true,
           actions: [
-            PopupMenuButton<String>(
+            IconButton(
               tooltip: '管理记忆',
-              onSelected: (value) async {
-                if (value == 'copy') await copyAll();
-                if (value == 'migrate') await migrateLegacy();
-                if (value == 'forgotten') {
-                  if (!context.mounted) return;
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          ForgottenMemoriesPage(controller: controller),
-                    ),
-                  );
-                  await load();
-                }
-                if (!context.mounted) return;
-                if (value == 'legacy') {
-                  await showModalBottomSheet<void>(
-                    context: context,
-                    showDragHandle: true,
-                    builder: (_) => _LegacySheet(
-                      items: snapshot?.legacy ?? const [],
-                      migratedIds: snapshot?.migratedLegacyIds ?? const {},
-                    ),
-                  );
-                }
-                if (!context.mounted) return;
-                if (value == 'review') {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          MemoryReviewPage(characterId: widget.characterId),
-                    ),
-                  );
-                }
-              },
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  value: 'migrate',
-                  enabled:
-                      !migrating &&
-                      (snapshot?.legacy.any(
-                            (item) =>
-                                !item.legacyArchived &&
-                                item.kind !=
-                                    LegacyMemoryKind.legacyUnclassified,
-                          ) ??
-                          false),
-                  child: const Text('迁移旧版记忆'),
-                ),
-                PopupMenuItem(value: 'copy', child: Text('复制全部记忆')),
-                PopupMenuItem(value: 'forgotten', child: Text('已遗忘的记忆')),
-                PopupMenuItem(value: 'legacy', child: Text('旧版记忆')),
-                PopupMenuItem(value: 'review', child: Text('旧版待审核')),
-              ],
+              icon: const Icon(Icons.tune_rounded),
+              onPressed: snapshot == null
+                  ? null
+                  : () => _showMemoryManagement(snapshot),
             ),
           ],
         ),
@@ -435,6 +665,12 @@ class _MemoryPageState extends State<MemoryPage> {
                       for (final item in users)
                         _UserTile(
                           item: item,
+                          onSource: () => showMemorySources(
+                            context,
+                            controller,
+                            item.sourceMessageIds,
+                            legacySourceId: item.legacySourceId,
+                          ),
                           onEdit: () => editUser(item),
                           onPin: () async {
                             await _runMemoryMutation(context, () async {
@@ -646,6 +882,12 @@ class _ForgottenState extends State<ForgottenMemoriesPage> {
                   Card(
                     child: ListTile(
                       title: Text(item.content),
+                      onTap: () => showMemorySources(
+                        context,
+                        widget.controller,
+                        item.sourceMessageIds,
+                        legacySourceId: item.legacySourceId,
+                      ),
                       trailing: PopupMenuButton<String>(
                         onSelected: (v) async {
                           if (v == 'restore') {
@@ -703,22 +945,27 @@ class _UserTile extends StatelessWidget {
     required this.onEdit,
     required this.onPin,
     required this.onDelete,
+    required this.onSource,
   });
   final UserMemory item;
-  final VoidCallback onEdit, onPin, onDelete;
+  final VoidCallback onEdit, onPin, onDelete, onSource;
   @override
   Widget build(BuildContext context) => ListTile(
     contentPadding: EdgeInsets.zero,
     leading: Icon(item.isPinned ? Icons.push_pin : Icons.favorite_border),
     title: Text(item.key.isEmpty ? '记住的事' : item.key),
-    subtitle: item.value.isEmpty ? null : Text(item.value),
+    subtitle: Text(
+      '${item.value}${item.userConfirmed ? '\n已确认 · 自动整理不会静默改写' : ''}',
+    ),
     trailing: PopupMenuButton<String>(
       onSelected: (v) {
         if (v == 'edit') onEdit();
         if (v == 'pin') onPin();
         if (v == 'delete') onDelete();
+        if (v == 'source') onSource();
       },
       itemBuilder: (_) => [
+        const PopupMenuItem(value: 'source', child: Text('查看来源')),
         const PopupMenuItem(value: 'edit', child: Text('编辑')),
         PopupMenuItem(value: 'pin', child: Text(item.isPinned ? '取消固定' : '固定')),
         const PopupMenuItem(value: 'delete', child: Text('删除')),
@@ -745,9 +992,20 @@ class _EventTile extends StatelessWidget {
     contentPadding: EdgeInsets.zero,
     leading: Icon(item.isPinned ? Icons.push_pin : Icons.auto_stories_outlined),
     title: Text(item.content),
-    subtitle: hint == null ? null : Text(hint!),
+    subtitle: item.isPinned
+        ? const Text('不要忘记 · 已固定')
+        : (hint == null ? null : Text(hint!)),
     trailing: PopupMenuButton<String>(
       onSelected: (v) async {
+        if (v == 'source') {
+          await showMemorySources(
+            context,
+            controller,
+            item.sourceMessageIds,
+            legacySourceId: item.legacySourceId,
+          );
+          return;
+        }
         if (v == 'pin') {
           await _runMemoryMutation(context, () async {
             await controller.setEventPinned(item, !item.isPinned);
@@ -765,6 +1023,7 @@ class _EventTile extends StatelessWidget {
         await reload();
       },
       itemBuilder: (_) => [
+        const PopupMenuItem(value: 'source', child: Text('查看来源')),
         PopupMenuItem(
           value: 'pin',
           child: Text(item.isPinned ? '取消固定' : '不要忘记'),

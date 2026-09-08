@@ -1,26 +1,31 @@
 import 'dart:convert';
-import 'dart:io';
-
 import '../models/chat_message.dart';
+import '../platform/storage/platform_storage.dart';
 import 'character_scope_service.dart';
 
 class ChatStorageService {
-  ChatStorageService({this.characterId});
+  ChatStorageService({this.characterId, this.storage});
 
   final String? characterId;
+  final PlatformStorage? storage;
 
-  Future<File> _historyFile() {
-    return CharacterScopeService(
-      characterId,
-    ).dataFile('chat_history.json', legacyDefaultFileName: 'chat_history.json');
+  Future<(PlatformStorage, String)> _location() async {
+    final scope = CharacterScopeService(characterId);
+    return (
+      storage ?? await scope.storage(),
+      await scope.dataKey(
+        'chat_history.json',
+        legacyDefaultFileName: 'chat_history.json',
+      ),
+    );
   }
 
   Future<List<ChatMessage>> loadMessages() async {
-    final file = await _historyFile();
-    if (!await file.exists()) return [];
+    final (store, key) = await _location();
+    if (!await store.exists(key)) return [];
 
     try {
-      final raw = await file.readAsString();
+      final raw = await store.readText(key);
       if (raw.trim().isEmpty) return [];
 
       final decoded = jsonDecode(raw);
@@ -43,15 +48,16 @@ class ChatStorageService {
           )
           .toList();
     } catch (_) {
+      if (store is FailFastPlatformStorage) rethrow;
       return [];
     }
   }
 
   Future<void> saveMessages(List<ChatMessage> messages) async {
-    final file = await _historyFile();
-    await file.writeAsString(
+    final (store, key) = await _location();
+    await store.writeText(
+      key,
       jsonEncode(messages.map((message) => message.toJson()).toList()),
-      flush: true,
     );
   }
 
@@ -115,9 +121,7 @@ class ChatStorageService {
   }
 
   Future<void> clearMessages() async {
-    final file = await _historyFile();
-    if (await file.exists()) {
-      await file.delete();
-    }
+    final (store, key) = await _location();
+    if (await store.exists(key)) await store.delete(key);
   }
 }

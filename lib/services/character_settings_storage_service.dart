@@ -1,40 +1,39 @@
 import 'dart:convert';
-import 'dart:io';
-
 import '../models/ai_character.dart';
 import '../models/character_settings.dart';
+import '../platform/storage/platform_storage.dart';
 import 'character_registry_service.dart';
 import 'character_scope_service.dart';
 
 class CharacterSettingsStorageService {
-  CharacterSettingsStorageService({this.characterId});
+  CharacterSettingsStorageService({
+    this.characterId,
+    this.storage,
+    CharacterRegistryService? registry,
+  }) : _registry = registry ?? CharacterRegistryService(storage: storage);
 
   final String? characterId;
+  final PlatformStorage? storage;
+  final CharacterRegistryService _registry;
 
   Future<String> _resolvedId() async {
     final explicit = characterId?.trim();
     if (explicit != null && explicit.isNotEmpty) return explicit;
-    return CharacterRegistryService().loadActiveCharacterId();
+    return _registry.loadActiveCharacterId();
   }
 
-  Future<File> _settingsFile() {
-    return CharacterScopeService(characterId).dataFile(
-      'character_settings.json',
-      legacyDefaultFileName: 'character_settings.json',
-    );
-  }
-
-  Future<File> _legacyChatSettingsFile() {
-    return CharacterScopeService(characterId).dataFile(
-      'chat_settings.json',
-      legacyDefaultFileName: 'chat_settings.json',
+  Future<(PlatformStorage, String)> _location(String name) async {
+    final scope = CharacterScopeService(characterId);
+    return (
+      storage ?? await scope.storage(),
+      await scope.dataKey(name, legacyDefaultFileName: name),
     );
   }
 
   Future<CharacterSettings> loadSettings() async {
-    final file = await _settingsFile();
+    final (store, key) = await _location('character_settings.json');
 
-    if (!await file.exists()) {
+    if (!await store.exists(key)) {
       final id = await _resolvedId();
       final settings = id == AiCharacter.defaultCharacterId
           ? await _migrateLegacyChatSettings()
@@ -44,7 +43,7 @@ class CharacterSettingsStorageService {
     }
 
     try {
-      final raw = await file.readAsString();
+      final raw = await store.readText(key);
       if (raw.trim().isEmpty) return _fallbackSettings();
 
       final decoded = jsonDecode(raw);
@@ -58,13 +57,11 @@ class CharacterSettingsStorageService {
         decoded,
         fallbackDefaults: fallback,
       );
-      final sanitized = _removeLegacyDeveloperDefaults(saved, characterId: id);
-      final reconciled = await _reconcileIdentityWithRegistry(sanitized);
-      if (sanitized.toJson().toString() != saved.toJson().toString()) {
-        await saveSettings(reconciled);
-      }
-      return reconciled;
+      // Persisted values are user data. Content alone does not establish
+      // whether a field came from a historical default or an explicit edit.
+      return await _reconcileIdentityWithRegistry(saved);
     } catch (_) {
+      if (store is FailFastPlatformStorage) rethrow;
       return _fallbackSettings();
     }
   }
@@ -76,7 +73,7 @@ class CharacterSettingsStorageService {
     CharacterSettings saved,
   ) async {
     final id = await _resolvedId();
-    final characters = await CharacterRegistryService().loadCharacters();
+    final characters = await _registry.loadCharacters();
     final index = characters.indexWhere((item) => item.id == id);
     if (index < 0) return saved;
 
@@ -116,7 +113,7 @@ class CharacterSettingsStorageService {
   }
 
   Future<CharacterSettings> _createSettingsFromRegistry(String id) async {
-    final characters = await CharacterRegistryService().loadCharacters();
+    final characters = await _registry.loadCharacters();
     final character = characters.firstWhere(
       (item) => item.id == id,
       orElse: () => AiCharacter(
@@ -129,56 +126,14 @@ class CharacterSettingsStorageService {
     return CharacterSettings.fromAiCharacter(character);
   }
 
-  CharacterSettings _removeLegacyDeveloperDefaults(
-    CharacterSettings settings, {
-    required String characterId,
-  }) {
-    if (characterId == AiCharacter.defaultCharacterId) return settings;
-    final developerDefaults = CharacterSettings.defaults();
-    return settings.copyWith(
-      userCallName: settings.userCallName == developerDefaults.userCallName
-          ? ''
-          : settings.userCallName,
-      remark: settings.remark == developerDefaults.remark
-          ? ''
-          : settings.remark,
-      relation: settings.relation == developerDefaults.relation
-          ? ''
-          : settings.relation,
-      birthday: settings.birthday == developerDefaults.birthday
-          ? ''
-          : settings.birthday,
-      anniversary: settings.anniversary == developerDefaults.anniversary
-          ? ''
-          : settings.anniversary,
-      introduction: settings.introduction == developerDefaults.introduction
-          ? ''
-          : settings.introduction,
-      coreProfile: settings.coreProfile == developerDefaults.coreProfile
-          ? ''
-          : settings.coreProfile,
-      behaviorStyle: settings.behaviorStyle == developerDefaults.behaviorStyle
-          ? ''
-          : settings.behaviorStyle,
-      forbiddenRules:
-          settings.forbiddenRules == developerDefaults.forbiddenRules
-          ? ''
-          : settings.forbiddenRules,
-      exampleDialogues:
-          settings.exampleDialogues == developerDefaults.exampleDialogues
-          ? ''
-          : settings.exampleDialogues,
-    );
-  }
-
   Future<CharacterSettings> _migrateLegacyChatSettings() async {
     final defaults = CharacterSettings.defaults();
-    final legacyFile = await _legacyChatSettingsFile();
+    final (store, key) = await _location('chat_settings.json');
 
-    if (!await legacyFile.exists()) return defaults;
+    if (!await store.exists(key)) return defaults;
 
     try {
-      final raw = await legacyFile.readAsString();
+      final raw = await store.readText(key);
       if (raw.trim().isEmpty) return defaults;
 
       final decoded = jsonDecode(raw);
@@ -247,8 +202,8 @@ class CharacterSettingsStorageService {
   }
 
   Future<void> saveSettings(CharacterSettings settings) async {
-    final file = await _settingsFile();
-    await file.writeAsString(jsonEncode(settings.toJson()), flush: true);
+    final (store, key) = await _location('character_settings.json');
+    await store.writeText(key, jsonEncode(settings.toJson()));
   }
 
   Future<void> restoreDefaults() async {

@@ -2158,7 +2158,7 @@ class _CharacterHeroCard extends StatelessWidget {
                       ),
                       _sourceImage(
                         fit: BoxFit.cover,
-                        alignment: Alignment.topCenter,
+                        alignment: Alignment.center,
                       ),
                     ],
                   ),

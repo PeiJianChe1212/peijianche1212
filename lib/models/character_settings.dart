@@ -1,5 +1,3 @@
-import '../prompts/character_prompt.dart';
-import '../prompts/example_messages.dart';
 import 'ai_character.dart';
 
 class CharacterSettings {
@@ -169,33 +167,14 @@ $persona
     );
   }
 
-  factory CharacterSettings.defaults() => CharacterSettings(
-    characterName: '裴简澈',
-    remark: '老裴',
-    relation: '恋人',
-    birthday: '12月12日',
-    anniversary: '1月17日',
-    introduction: '银白短发、蓝色眼睛，外冷内热，偶尔嘴硬。',
-    userCallName: '念念',
-    coreProfile: defaultCharacterCoreProfile,
-    behaviorStyle: defaultCharacterBehaviorStyle,
-    forbiddenRules: defaultCharacterForbiddenRules,
-    exampleDialogues: _defaultExamplesText(),
-    conversationMode: 'basic',
-    temperature: 0.72,
-    replyLength: 'standard',
-    initiative: 0.58,
-    intimacy: 0.52,
-    tsundere: 0.62,
-    proactiveEnabled: true,
-    lateNightMessages: true,
-    maxProactivePerDay: 2,
-  );
+  /// 兼容入口保留的安全中性默认值。
+  ///
+  /// 发布前清理已移除开发者私人默认角色；新装用户、用户创建角色、
+  /// 导入角色与旧角色缺字段补默认时都只会得到中性值。
+  factory CharacterSettings.defaults() => CharacterSettings.genericDefaults();
 
   /// Neutral defaults for every player-created or imported character.
-  ///
-  /// Developer-private defaults above are reserved for the isolated built-in
-  /// character and must never be used as a public character fallback.
+
   factory CharacterSettings.genericDefaults() => const CharacterSettings(
     characterName: '未命名 AI',
     remark: '',
@@ -355,15 +334,9 @@ $forbiddenRules
       final speaker = line.substring(0, separatorIndex).trim();
       final content = line.substring(separatorIndex + 1).trim();
       if (content.isEmpty) continue;
-      if (speaker == userCallName ||
-          speaker == '念念' ||
-          speaker == '用户' ||
-          speaker == '我') {
+      if (speaker == userCallName || speaker == '用户' || speaker == '我') {
         result.add({'role': 'user', 'content': content});
-      } else if (speaker == characterName ||
-          speaker == remark ||
-          speaker == '裴简澈' ||
-          speaker == '老裴') {
+      } else if (speaker == characterName || speaker == remark) {
         result.add({'role': 'assistant', 'content': content});
       }
     }
@@ -372,11 +345,4 @@ $forbiddenRules
     }
     return result;
   }
-
-  static String _defaultExamplesText() => exampleMessages
-      .map((message) {
-        final speaker = message['role'] == 'user' ? '念念' : '裴简澈';
-        return '$speaker：${message['content'] ?? ''}';
-      })
-      .join('\n');
 }

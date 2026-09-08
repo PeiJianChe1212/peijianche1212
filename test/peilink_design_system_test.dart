@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:peijianche_app/config/peilink_runtime.dart';
 import 'package:peijianche_app/design_system/peilink_design_system.dart';
 import 'package:peijianche_app/pages/settings_page.dart';
+import 'package:peijianche_app/config/peilink_settings_sections_registry.dart';
+import 'package:peijianche_app/dev_only/developer_settings_sections.dart';
 
 void main() {
   tearDown(() => PeiLinkRuntime.configure(PeiLinkBuild.unspecified));
@@ -122,6 +124,9 @@ void main() {
 
   testWidgets('Settings 保留返回和 dev Prompt 入口', (tester) async {
     PeiLinkRuntime.configure(PeiLinkBuild.dev);
+    PeiLinkSettingsSectionsRegistry.installDeveloperSections(
+      buildDeveloperSettingsSections,
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(

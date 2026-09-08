@@ -6,6 +6,7 @@ class MemoryExtractionState {
     this.lastSuccessfulExtractionAt,
     this.lastFailureAt,
     this.lastFailedMessageId,
+    this.explicitAttempts = const {},
   });
 
   final String characterId;
@@ -14,6 +15,8 @@ class MemoryExtractionState {
   final DateTime? lastSuccessfulExtractionAt;
   final DateTime? lastFailureAt;
   final String? lastFailedMessageId;
+  // Per-source execution outcomes, not candidates or review records.
+  final Map<String, String> explicitAttempts;
 
   MemoryExtractionState copyWith({
     String? lastProcessedMessageId,
@@ -22,8 +25,10 @@ class MemoryExtractionState {
     DateTime? lastFailureAt,
     String? lastFailedMessageId,
     bool clearFailure = false,
+    Map<String, String>? explicitAttempts,
   }) => MemoryExtractionState(
     characterId: characterId,
+    explicitAttempts: explicitAttempts ?? this.explicitAttempts,
     lastProcessedMessageId:
         lastProcessedMessageId ?? this.lastProcessedMessageId,
     lastProcessedAt: lastProcessedAt ?? this.lastProcessedAt,
@@ -37,10 +42,10 @@ class MemoryExtractionState {
 
   Map<String, dynamic> toJson() => {
     'characterId': characterId,
+    'explicitAttempts': explicitAttempts,
     'lastProcessedMessageId': lastProcessedMessageId,
     'lastProcessedAt': lastProcessedAt?.toIso8601String(),
-    'lastSuccessfulExtractionAt': lastSuccessfulExtractionAt
-        ?.toIso8601String(),
+    'lastSuccessfulExtractionAt': lastSuccessfulExtractionAt?.toIso8601String(),
     'lastFailureAt': lastFailureAt?.toIso8601String(),
     'lastFailedMessageId': lastFailedMessageId,
   };
@@ -50,6 +55,9 @@ class MemoryExtractionState {
     required String characterId,
   }) => MemoryExtractionState(
     characterId: characterId,
+    explicitAttempts: (json['explicitAttempts'] as Map? ?? const {}).map(
+      (key, value) => MapEntry(key.toString(), value.toString()),
+    ),
     lastProcessedMessageId: _nullableText(json['lastProcessedMessageId']),
     lastProcessedAt: _date(json['lastProcessedAt']),
     lastSuccessfulExtractionAt: _date(json['lastSuccessfulExtractionAt']),

@@ -22,6 +22,7 @@ class MemoryRetrievalDiagnostics {
 class MemoryRetrievalResult {
   const MemoryRetrievalResult({
     this.selectedUserMemories = const [],
+    this.selectedHistoricalUserMemories = const [],
     this.selectedEventMemories = const [],
     this.selectedLegacyMemories = const [],
     required this.memorySummary,
@@ -30,6 +31,7 @@ class MemoryRetrievalResult {
   });
 
   final List<UserMemory> selectedUserMemories;
+  final List<UserMemory> selectedHistoricalUserMemories;
   final List<EventMemory> selectedEventMemories;
   final List<LegacyMemoryView> selectedLegacyMemories;
   final MemorySummary memorySummary;

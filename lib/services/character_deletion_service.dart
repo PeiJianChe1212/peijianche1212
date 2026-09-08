@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../models/ai_character.dart';
 import 'auto_memory_extraction_service.dart';
 import 'character_registry_service.dart';
@@ -17,6 +19,11 @@ class CharacterDeletionService {
     if (characterId == AiCharacter.defaultCharacterId ||
         characterId.trim().isEmpty) {
       throw StateError('不能删除默认角色或空角色。');
+    }
+    if (kIsWeb) {
+      await registry.deleteCharacter(characterId);
+      await CharacterScopeService(characterId).deleteAllData();
+      return;
     }
     await AutoMemoryExtractionService.duringCharacterDeletion(
       characterId,

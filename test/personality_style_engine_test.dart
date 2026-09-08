@@ -21,7 +21,15 @@ void main() {
       flow: flow,
     );
 
-    final peiJianChe = CharacterSettings.defaults();
+    final peiJianChe = CharacterSettings.genericDefaults().copyWith(
+      characterName: '冷感测试角色',
+      remark: '测试',
+      introduction: '看起来冷淡疏离，实际外冷内热。',
+      coreProfile: '外冷内热，嘴硬爱调侃，会一本正经地接梗。',
+      behaviorStyle: '偶尔故意逗人，幽默接梗。',
+      exampleDialogues: '',
+      tsundere: 0.75,
+    );
     final baiZhuo = CharacterSettings.defaults().copyWith(
       characterName: '白濯',
       remark: '白濯',
@@ -68,7 +76,7 @@ void main() {
       expect(xuanStyle.toPromptSection(), isNot(peiStyle.toPromptSection()));
     });
 
-    test('裴简澈从已有资料解析外冷内热与调侃表达', () {
+    test('外冷内热角色从已有资料解析冷感与调侃表达', () {
       final style = engine.resolve(
         settings: peiJianChe,
         replyStrategy: replyStrategy,

@@ -138,9 +138,15 @@ void main() {
     await controller.updateUserMemory(original, key: '偏好', value: '最新值');
     await controller.setUserMemoryPinned(original, true);
 
-    final saved = (await s.loadUserMemories()).single;
+    final versions = await s.loadUserMemories();
+    final saved = versions.singleWhere(
+      (m) => m.status == UserMemoryStatus.active,
+    );
     expect(saved.value, '最新值');
     expect(saved.isPinned, isTrue);
+    expect(versions.first.value, '旧值');
+    expect(versions.first.status, UserMemoryStatus.superseded);
+    expect(versions.first.isPinned, original.isPinned);
   });
 
   test('concurrent summary operations preserve the latest user edit', () async {
