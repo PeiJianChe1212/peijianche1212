@@ -5,13 +5,19 @@ class PhysicalSessionTurn {
     required this.userTranscript,
     required this.assistantSpokenText,
     required this.completedAt,
+    this.displayText,
   });
 
   final String userTranscript;
   final String assistantSpokenText;
+
+  /// Complete character reply for UI/session/next-turn context. When absent,
+  /// [assistantSpokenText] is used for backward compatibility.
+  final String? displayText;
   final DateTime completedAt;
 
-  int get characterCount => userTranscript.length + assistantSpokenText.length;
+  int get characterCount =>
+      userTranscript.length + (displayText ?? assistantSpokenText).length;
 }
 
 class PhysicalSessionMemory {
@@ -44,7 +50,7 @@ class PhysicalSessionMemory {
       ),
       ChatMessage(
         role: 'assistant',
-        content: turn.assistantSpokenText,
+        content: turn.displayText ?? turn.assistantSpokenText,
         createdAt: turn.completedAt,
         source: 'physical',
       ),

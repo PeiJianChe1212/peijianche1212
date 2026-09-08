@@ -14,6 +14,7 @@ typedef CoreBridgeReplySender =
       required double initiative,
       required double intimacy,
       required double tsundere,
+      String? physicalSpeechContract,
     });
 
 class CoreBridgeService {
@@ -32,6 +33,7 @@ class CoreBridgeService {
     required String characterId,
     required String userText,
     List<ChatMessage> transientContext = const [],
+    String? physicalSpeechContract,
   }) async {
     final characters = await _registry.loadCharacters();
     if (!characters.any((character) => character.id == characterId)) {
@@ -65,6 +67,7 @@ class CoreBridgeService {
           required initiative,
           required intimacy,
           required tsundere,
+          String? physicalSpeechContract,
         }) => _deepSeek!.sendMessage(
           messages: messages,
           characterId: characterId,
@@ -74,6 +77,7 @@ class CoreBridgeService {
           initiative: initiative,
           intimacy: intimacy,
           tsundere: tsundere,
+          physicalSpeechContract: physicalSpeechContract,
         );
     return sender(
       messages: messages,
@@ -84,6 +88,7 @@ class CoreBridgeService {
       initiative: settings.initiative,
       intimacy: settings.intimacy,
       tsundere: settings.tsundere,
+      physicalSpeechContract: physicalSpeechContract,
     );
   }
 

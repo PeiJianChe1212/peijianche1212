@@ -122,6 +122,7 @@ class DeepSeekService {
     String? characterId,
     String transientEventContext = '',
     bool applyStoredChatControls = false,
+    String? physicalSpeechContract,
   }) async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
@@ -387,6 +388,16 @@ class DeepSeekService {
             ),
           );
     }
+    final contract = physicalSpeechContract?.trim();
+    if (contract != null && contract.isNotEmpty) {
+      composer.addContext(
+        PromptContext.extension(
+          id: 'physical_speech_contract',
+          content: contract,
+          priority: 800,
+        ),
+      );
+    }
     final modelContext = composer.compose();
 
     final provider = await _modelHub.chatProvider(settings: apiSettings);
@@ -485,7 +496,11 @@ class DeepSeekService {
         .reversed
         .take(3)
         .toList();
-    final guarded = useFullPeiLinkPrompt
+    final contractActive =
+        physicalSpeechContract?.trim().isNotEmpty ?? false;
+    final guarded = contractActive
+        ? await generate(modelContext.messages)
+        : useFullPeiLinkPrompt
         ? _applyV2OutputGuard(
             await generate(modelContext.messages),
             recentAssistantReplies: recentAssistantReplies,
@@ -509,7 +524,7 @@ class DeepSeekService {
               return generate(messages);
             },
           );
-    return _cleanReply(guarded);
+    return contractActive ? guarded : _cleanReply(guarded);
   }
 
   Future<void> _recordMemory2RecallSafely(

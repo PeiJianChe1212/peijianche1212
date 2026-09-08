@@ -59,6 +59,7 @@ void main() {
               required initiative,
               required intimacy,
               required tsundere,
+              String? physicalSpeechContract,
             }) async {
               expect(characterId, character.id);
               expect(messages.map((message) => message.content), [
@@ -97,6 +98,7 @@ void main() {
               required initiative,
               required intimacy,
               required tsundere,
+              String? physicalSpeechContract,
             }) async => 'unexpected',
       );
       addTearDown(service.dispose);
@@ -141,6 +143,7 @@ void main() {
               required initiative,
               required intimacy,
               required tsundere,
+              String? physicalSpeechContract,
             }) async {
               expect(messages.map((message) => message.content), [
                 '正式历史',

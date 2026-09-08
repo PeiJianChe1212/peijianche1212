@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design_system/peilink_design_system.dart';
+import '../../dev_only/physical_speech_diagnostics_card.dart';
 import '../../models/ai_character.dart';
 import '../../physical/doubao_speech_clients.dart';
 import '../../physical/physical_host_settings.dart';
@@ -240,6 +241,11 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
                           _controller.message,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
+                        if (_controller.lastEndToEndTiming
+                            case final timing?) ...[
+                          const SizedBox(height: 12),
+                          PhysicalE2ETimingCard(timing: timing),
+                        ],
                         if (_controller.lastAsrStats case final stats?) ...[
                           const SizedBox(height: 12),
                           PhysicalAsrStatsCard(stats: stats),
@@ -248,9 +254,23 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
                           const SizedBox(height: 12),
                           Text('识别文本：${_controller.transcript}'),
                         ],
+                        if (_controller.displayReply.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text('角色原文：${_controller.displayReply}'),
+                        ],
                         if (_controller.spokenReply.isNotEmpty) ...[
                           const SizedBox(height: 8),
                           Text('实际朗读：${_controller.spokenReply}'),
+                        ],
+                        if (_controller.speechContractDiagnostics
+                            case final diagnostics?) ...[
+                          const SizedBox(height: 12),
+                          PhysicalSpeechDiagnosticsCard(
+                            diagnostics: diagnostics,
+                            displayReply: _controller.displayReply,
+                            spokenReply: _controller.spokenReply,
+                            ttsInputExact: _controller.ttsInputExact,
+                          ),
                         ],
                         if (_controller.ttsReview case final review?) ...[
                           const SizedBox(height: 8),
@@ -270,6 +290,13 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
                               : () => _controller.check(_settings),
                           icon: const Icon(Icons.wifi_find),
                           label: const Text('检查 Phase 9 设备'),
+                        ),
+                        const SizedBox(height: 8),
+                        PhysicalEndToEndButton(
+                          enabled:
+                              !_controller.isBusy && _settings.isConfigured,
+                          onPressed: () =>
+                              _controller.startEndToEndTurn(_settings),
                         ),
                         const SizedBox(height: 8),
                         FilledButton.icon(
@@ -328,6 +355,73 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
             ),
     );
   }
+}
+
+class PhysicalEndToEndButton extends StatelessWidget {
+  const PhysicalEndToEndButton({
+    super.key,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+    key: const ValueKey('physical-end-to-end-turn'),
+    onPressed: enabled ? onPressed : null,
+    icon: const Icon(Icons.auto_awesome_rounded),
+    label: const Text('一键完整对话（录音 → AI → 播放）'),
+  );
+}
+
+class PhysicalE2ETimingCard extends StatelessWidget {
+  const PhysicalE2ETimingCard({required this.timing, super.key});
+
+  final PhysicalE2ETiming timing;
+
+  String _ms(int? value) => value == null ? '-' : '$value ms';
+
+  String get _failedLabel {
+    final stage = timing.failedStage;
+    if (stage == null) return '-';
+    return switch (stage) {
+      PhysicalE2EFailureStage.model => 'model',
+      PhysicalE2EFailureStage.status => 'status',
+      PhysicalE2EFailureStage.record => 'record',
+      PhysicalE2EFailureStage.asr => 'ASR',
+      PhysicalE2EFailureStage.llm => 'LLM',
+      PhysicalE2EFailureStage.tts => 'TTS',
+      PhysicalE2EFailureStage.resample => 'resample',
+      PhysicalE2EFailureStage.audio => 'audio/playback',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    key: const ValueKey('physical-e2e-timing'),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Text(
+        'E2E 耗时统计\n'
+        'status: ${_ms(timing.statusMs)}\n'
+        'record: ${_ms(timing.recordMs)}\n'
+        'ASR: ${_ms(timing.asrMs)}\n'
+        'LLM: ${_ms(timing.llmMs)}\n'
+        'TTS: ${_ms(timing.ttsMs)}\n'
+        'resample: ${_ms(timing.resampleMs)}\n'
+        'audio/playback: ${_ms(timing.audioMs)}\n'
+        'total: ${_ms(timing.totalMs)}\n'
+        '失败阶段: $_failedLabel',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ),
+  );
 }
 
 class PhysicalAsrStatsCard extends StatelessWidget {
