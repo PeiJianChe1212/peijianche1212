@@ -48,3 +48,16 @@ app.*.map.json
 key.properties
 *.keystore
 *.jks
+
+# AI tool temporary artifacts
+.codex_*
+
+# Android local build caches
+android/.gradle/
+android/.kotlin/
+
+# Flutter platform ephemeral directories
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+macos/Flutter/ephemeral/
+ios/Flutter/ephemeral/

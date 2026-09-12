@@ -5,9 +5,15 @@ import 'package:flutter/material.dart';
 import '../../models/ai_character.dart';
 import '../../models/group_chat.dart';
 import '../../models/group_member.dart';
+import '../../models/group_user_profile.dart';
+import '../../models/user_profile.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/group_chat_storage_service.dart';
 import '../../services/group_message_storage_service.dart';
+import '../../services/group_user_profile_storage_service.dart';
+import '../../services/user_profile_storage_service.dart';
+import 'group_user_profile_page.dart';
+import '../../widgets/group/group_visuals.dart';
 
 class GroupChatSettingsPage extends StatefulWidget {
   const GroupChatSettingsPage({super.key, required this.groupId});
@@ -24,6 +30,8 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
 
   GroupChat? _group;
   List<AiCharacter> _characters = const [];
+  UserProfile _userProfile = const UserProfile();
+  GroupUserProfile _groupUserProfile = const GroupUserProfile(groupId: '');
   bool _loading = true;
 
   @override
@@ -36,13 +44,44 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
     final results = await Future.wait([
       _groupStorage.loadGroup(widget.groupId),
       _registry.loadCharacters(),
+      UserProfileStorageService().loadProfile(),
+      GroupUserProfileStorageService(groupId: widget.groupId).loadResolved(),
     ]);
     if (!mounted) return;
     setState(() {
       _group = results[0] as GroupChat?;
       _characters = results[1] as List<AiCharacter>;
+      _userProfile = results[2] as UserProfile;
+      _groupUserProfile = results[3] as GroupUserProfile;
       _loading = false;
     });
+  }
+
+  /// 本群身份优先取群聊身份，缺省回退全局用户资料（不写盘、不绑定）。
+  String get _userName {
+    final name = _groupUserProfile.displayName.trim().isNotEmpty
+        ? _groupUserProfile.displayName.trim()
+        : _userProfile.nickname.trim();
+    if (name.isEmpty || name == '未设置') return '我';
+    return name;
+  }
+
+  String get _userAvatarPath => _groupUserProfile.avatarPath.trim().isNotEmpty
+      ? _groupUserProfile.avatarPath.trim()
+      : _userProfile.avatarPath.trim();
+
+  Future<void> _openGroupIdentity() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupUserProfilePage(
+          groupId: widget.groupId,
+          groupName: _group?.name ?? '',
+        ),
+      ),
+    );
+    if (changed != true || !mounted) return;
+    await _load();
   }
 
   Future<void> _rename() async {
@@ -67,6 +106,8 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
     final result = await showModalBottomSheet<Set<String>>(
       context: context,
       isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: GroupVisuals.page,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) {
           return SafeArea(
@@ -97,24 +138,32 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
                     ),
                   ),
                   Expanded(
-                    child: ListView.builder(
-                      itemCount: _characters.length,
-                      itemBuilder: (context, index) {
-                        final character = _characters[index];
-                        return CheckboxListTile(
-                          value: selected.contains(character.id),
-                          title: Text(character.displayName),
-                          onChanged: (value) {
-                            setSheetState(() {
-                              if (value == true) {
-                                selected.add(character.id);
-                              } else {
+                    child: ListView(
+                      children: [
+                        GroupMemberChoice(
+                          name: _userName,
+                          avatar: _UserMemberTile(
+                            name: '我',
+                            avatarPath: _userAvatarPath,
+                          ),
+                          selected: true,
+                          locked: true,
+                        ),
+                        for (final character in _characters)
+                          GroupMemberChoice(
+                            key: ValueKey('manage-member-${character.id}'),
+                            name: character.displayName,
+                            avatar: _Avatar(character: character),
+                            selected: selected.contains(character.id),
+                            onTap: () => setSheetState(() {
+                              if (selected.contains(character.id)) {
                                 selected.remove(character.id);
+                              } else {
+                                selected.add(character.id);
                               }
-                            });
-                          },
-                        );
-                      },
+                            }),
+                          ),
+                      ],
                     ),
                   ),
                   const Padding(
@@ -144,6 +193,11 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
         )
         .toList();
     await _save(group.copyWith(members: members));
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('群成员已更新')));
+    }
   }
 
   Future<void> _save(GroupChat group) async {
@@ -153,7 +207,11 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
   }
 
   Future<void> _clearMessages() async {
-    final confirmed = await _confirm('清空聊天记录', '清空后无法恢复，确定继续吗？');
+    final confirmed = await _confirm(
+      '清空聊天记录',
+      '清空后无法恢复，确定继续吗？',
+      confirmLabel: '清空',
+    );
     if (!confirmed) return;
     final group = _group;
     if (group == null) return;
@@ -173,7 +231,11 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
   }
 
   Future<void> _deleteGroup() async {
-    final confirmed = await _confirm('删除并退出群聊', '群聊和本地聊天记录都会被删除。');
+    final confirmed = await _confirm(
+      '删除并退出群聊',
+      '群聊和本地聊天记录都会被删除，且无法恢复。',
+      confirmLabel: '删除并退出',
+    );
     if (!confirmed) return;
     await _groupStorage.deleteGroup(widget.groupId);
     await GroupMessageStorageService(
@@ -183,20 +245,37 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
     Navigator.pop(context, 'deleted');
   }
 
-  Future<bool> _confirm(String title, String content) async {
+  Future<bool> _confirm(
+    String title,
+    String content, {
+    String confirmLabel = '确定',
+  }) async {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             title: Text(title),
             content: Text(content),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF7A8288),
+                ),
                 child: const Text('取消'),
               ),
-              TextButton(
+              FilledButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('确定'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFD64545),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(confirmLabel),
               ),
             ],
           ),
@@ -215,10 +294,10 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
   Widget build(BuildContext context) {
     final group = _group;
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F4F4),
+      backgroundColor: GroupVisuals.page,
       appBar: AppBar(
         title: const Text('群聊设置'),
-        backgroundColor: const Color(0xFFF4F4F4),
+        backgroundColor: GroupVisuals.page,
         surfaceTintColor: Colors.transparent,
       ),
       body: _loading
@@ -226,67 +305,116 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
           : group == null
           ? const Center(child: Text('群聊不存在'))
           : ListView(
+              padding: EdgeInsets.fromLTRB(
+                14,
+                14,
+                14,
+                28 + MediaQuery.paddingOf(context).bottom,
+              ),
               children: [
-                Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.all(16),
-                  child: Wrap(
-                    spacing: 14,
-                    runSpacing: 14,
+                _SectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final member in group.members)
-                        _MemberTile(character: _character(member.characterId)),
-                      InkWell(
-                        onTap: _editMembers,
-                        borderRadius: BorderRadius.circular(8),
-                        child: const SizedBox(
-                          width: 58,
-                          child: Column(
-                            children: [
-                              _AddMemberBox(),
-                              SizedBox(height: 5),
-                              Text(
-                                '管理',
-                                style: TextStyle(
-                                  color: Color(0xFF777777),
-                                  fontSize: 12,
-                                ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              group.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF1B2028),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
                               ),
-                            ],
+                            ),
                           ),
+                          Text(
+                            '${group.members.length + 1} 人',
+                            style: const TextStyle(
+                              color: Color(0xFF8A9298),
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 80 + MediaQuery.textScalerOf(context).scale(18),
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [
+                            _UserMemberTile(
+                              name: _userName,
+                              avatarPath: _userAvatarPath,
+                              onTap: _openGroupIdentity,
+                            ),
+                            for (final member in group.members)
+                              _MemberTile(
+                                character: _character(member.characterId),
+                              ),
+                            _ManageMemberTile(onTap: _editMembers),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                _SettingTile(
-                  title: '群名称',
-                  trailing: group.name,
-                  onTap: _rename,
+                _SectionCard(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      _SettingTile(
+                        key: const ValueKey('group-identity-entry'),
+                        title: '我的群聊身份',
+                        subtitle: '$_userName · 只在本群展示',
+                        icon: Icons.badge_outlined,
+                        onTap: _openGroupIdentity,
+                      ),
+                      const _InsetDivider(),
+                      _SettingTile(
+                        title: '群名称',
+                        trailing: group.name,
+                        onTap: _rename,
+                      ),
+                      const _InsetDivider(),
+                      SwitchListTile(
+                        title: const Text('消息免打扰'),
+                        value: group.isMuted,
+                        activeThumbColor: GroupVisuals.accent,
+                        onChanged: (value) =>
+                            _save(group.copyWith(isMuted: value)),
+                      ),
+                      const _InsetDivider(),
+                      SwitchListTile(
+                        title: const Text('置顶聊天'),
+                        value: group.isPinned,
+                        activeThumbColor: GroupVisuals.accent,
+                        onChanged: (value) =>
+                            _save(group.copyWith(isPinned: value)),
+                      ),
+                    ],
+                  ),
                 ),
-                SwitchListTile(
-                  tileColor: Colors.white,
-                  title: const Text('消息免打扰'),
-                  value: group.isMuted,
-                  activeThumbColor: const Color(0xFF4E8EAD),
-                  onChanged: (value) => _save(group.copyWith(isMuted: value)),
+                _SectionCard(
+                  padding: EdgeInsets.zero,
+                  child: _SettingTile(
+                    title: '清空聊天记录',
+                    subtitle: '仅清空本群的聊天记录',
+                    icon: Icons.delete_sweep_outlined,
+                    titleColor: const Color(0xFF886F4E),
+                    onTap: _clearMessages,
+                  ),
                 ),
-                SwitchListTile(
-                  tileColor: Colors.white,
-                  title: const Text('置顶聊天'),
-                  value: group.isPinned,
-                  activeThumbColor: const Color(0xFF4E8EAD),
-                  onChanged: (value) => _save(group.copyWith(isPinned: value)),
-                ),
-                const SizedBox(height: 10),
-                _SettingTile(title: '清空聊天记录', onTap: _clearMessages),
-                const SizedBox(height: 10),
-                _SettingTile(
-                  title: '删除并退出群聊',
-                  titleColor: const Color(0xFFD64545),
-                  centered: true,
-                  onTap: _deleteGroup,
+                _SectionCard(
+                  padding: EdgeInsets.zero,
+                  child: _SettingTile(
+                    title: '删除并退出群聊',
+                    titleColor: const Color(0xFFD64545),
+                    centered: true,
+                    onTap: _deleteGroup,
+                  ),
                 ),
               ],
             ),
@@ -359,18 +487,153 @@ class _MemberTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final item = character;
     return SizedBox(
-      width: 58,
+      width: 66,
       child: Column(
         children: [
           _Avatar(character: item),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           Text(
             item?.displayName ?? '已移除',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Color(0xFF777777), fontSize: 12),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFF777F86), fontSize: 12),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 圆角卡片容器：统一设置页的视觉层级。
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.child, this.padding});
+
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: padding ?? const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: GroupVisuals.card(),
+      clipBehavior: Clip.antiAlias,
+      child: Material(color: Colors.transparent, child: child),
+    );
+  }
+}
+
+class _InsetDivider extends StatelessWidget {
+  const _InsetDivider();
+
+  @override
+  Widget build(BuildContext context) => const Divider(
+    height: 1,
+    thickness: 1,
+    indent: 16,
+    color: Color(0xFFF1F4F6),
+  );
+}
+
+/// 用户本人固定显示为群成员第一项；不会写入 group storage。
+class _UserMemberTile extends StatelessWidget {
+  const _UserMemberTile({
+    required this.name,
+    required this.avatarPath,
+    this.onTap,
+  });
+
+  final String name;
+  final String avatarPath;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = avatarPath.trim();
+    final file = path.isEmpty ? null : File(path);
+    final hasImage = file?.existsSync() == true;
+    return InkWell(
+      key: const ValueKey('group-member-self'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        width: 66,
+        child: Column(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE3E7E9),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF9FC2D4), width: 1.4),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: hasImage
+                  ? Image.file(file!, fit: BoxFit.cover)
+                  : const Icon(
+                      Icons.person_rounded,
+                      color: Color(0xFF7E8B92),
+                      size: 26,
+                    ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF3E5866),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 明确的成员管理入口（复用既有增删逻辑，不新建第二套页面）。
+class _ManageMemberTile extends StatelessWidget {
+  const _ManageMemberTile({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      key: const ValueKey('group-member-manage'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        width: 66,
+        child: Column(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F7F9),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFDCE5EA)),
+              ),
+              child: const Icon(
+                Icons.group_add_outlined,
+                color: Color(0xFF6F8FA3),
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              '管理',
+              style: TextStyle(color: Color(0xFF6F8FA3), fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -387,7 +650,7 @@ class _Avatar extends StatelessWidget {
     final path = item?.avatarPath.trim() ?? '';
     if (path.isNotEmpty && File(path).existsSync()) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(14),
         child: Image.file(File(path), width: 52, height: 52, fit: BoxFit.cover),
       );
     }
@@ -396,77 +659,66 @@ class _Avatar extends StatelessWidget {
       height: 52,
       decoration: BoxDecoration(
         color: const Color(0xFFE5EBEE),
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(14),
       ),
-      child: const Icon(Icons.auto_awesome_rounded),
-    );
-  }
-}
-
-class _AddMemberBox extends StatelessWidget {
-  const _AddMemberBox();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFD7D7D7)),
-        borderRadius: BorderRadius.circular(7),
+      child: const Icon(
+        Icons.auto_awesome_rounded,
+        color: Color(0xFF7E8B92),
+        size: 24,
       ),
-      child: const Icon(Icons.add_rounded, color: Color(0xFF999999)),
     );
   }
 }
 
 class _SettingTile extends StatelessWidget {
   const _SettingTile({
+    super.key,
     required this.title,
     required this.onTap,
     this.trailing = '',
-    this.titleColor = const Color(0xFF222222),
+    this.subtitle,
+    this.icon,
+    this.titleColor = const Color(0xFF303340),
     this.centered = false,
   });
-
-  final String title;
-  final String trailing;
+  final String title, trailing;
+  final String? subtitle;
+  final IconData? icon;
   final Color titleColor;
   final bool centered;
   final VoidCallback onTap;
-
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      child: ListTile(
-        onTap: onTap,
-        title: Text(
-          title,
-          textAlign: centered ? TextAlign.center : TextAlign.start,
-          style: TextStyle(color: titleColor),
-        ),
-        trailing: centered
-            ? null
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (trailing.isNotEmpty)
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 180),
-                      child: Text(
-                        trailing,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Color(0xFF999999)),
-                      ),
-                    ),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: Color(0xFFB0B0B0),
-                  ),
-                ],
-              ),
+  Widget build(BuildContext context) => Material(
+    color: Colors.transparent,
+    child: ListTile(
+      onTap: onTap,
+      leading: icon == null
+          ? null
+          : CircleAvatar(
+              radius: 19,
+              backgroundColor: const Color(0xFFF0EDF7),
+              child: Icon(icon, size: 21, color: GroupVisuals.accent),
+            ),
+      title: Text(
+        title,
+        textAlign: centered ? TextAlign.center : TextAlign.start,
+        style: TextStyle(color: titleColor, fontSize: 15),
       ),
-    );
-  }
+      subtitle: subtitle == null && trailing.isEmpty
+          ? null
+          : Text(
+              subtitle ?? trailing,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF777386),
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+      trailing: centered
+          ? null
+          : const Icon(Icons.chevron_right_rounded, color: Color(0xFFAAA5B5)),
+    ),
+  );
 }

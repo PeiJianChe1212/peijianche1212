@@ -395,7 +395,7 @@ class _CharacterAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final path = character.avatarPath.trim();
+    final path = character.effectiveSocialAvatarPath.trim();
     if (path.isNotEmpty && File(path).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(7),
@@ -654,7 +654,7 @@ class _MiniAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final path = character.avatarPath.trim();
+    final path = character.effectiveSocialAvatarPath.trim();
     if (path.isNotEmpty && File(path).existsSync()) {
       return Image.file(File(path), fit: BoxFit.cover);
     }

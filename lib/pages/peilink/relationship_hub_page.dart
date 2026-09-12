@@ -468,20 +468,32 @@ class _GroupTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(bottom: 7),
-    decoration: _glass(16),
-    child: ListTile(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      leading: Text(emoji, style: const TextStyle(fontSize: 22)),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('$count', style: const TextStyle(color: Color(0xFF8C8299))),
-          const Icon(Icons.chevron_right_rounded),
-        ],
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 7),
+    child: Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: Ink(
+        decoration: _glass(16),
+        child: ListTile(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          leading: Text(emoji, style: const TextStyle(fontSize: 22)),
+          title: Text(
+            name,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$count', style: const TextStyle(color: Color(0xFF8C8299))),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
       ),
     ),
   );

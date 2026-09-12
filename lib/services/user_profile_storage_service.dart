@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../config/peilink_runtime.dart';
 
 import '../models/user_profile.dart';
 
 class UserProfileStorageService {
+  static final ValueNotifier<int> changes = ValueNotifier<int>(0);
   Future<File> _profileFile() async {
     final directory = await getApplicationDocumentsDirectory();
     return File('${directory.path}/user_profile.json');
@@ -35,6 +38,7 @@ class UserProfileStorageService {
   Future<void> saveProfile(UserProfile profile) async {
     final file = await _profileFile();
     await file.writeAsString(jsonEncode(profile.toJson()), flush: true);
+    changes.value++;
   }
 
   Future<String> saveAvatarCopy(String sourcePath) async {
@@ -50,10 +54,12 @@ class UserProfileStorageService {
     final extension = sourcePath.contains('.')
         ? sourcePath.substring(sourcePath.lastIndexOf('.'))
         : '.jpg';
-    final target = File('${avatarDirectory.path}/avatar$extension');
+    final target = File(
+      '${avatarDirectory.path}/avatar_${DateTime.now().microsecondsSinceEpoch}$extension',
+    );
 
     for (final file in avatarDirectory.listSync().whereType<File>()) {
-      if (file.path != target.path && file.path.contains('avatar.')) {
+      if (file.path != target.path && file.path.contains('avatar')) {
         try {
           await file.delete();
         } catch (_) {}

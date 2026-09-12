@@ -79,6 +79,7 @@ class ContextBuilder {
     String extensionProfile = '',
     String relationshipContext = '',
     String socialProtocol = '',
+    String groupIdentityContext = '',
     String styleExamples = '',
     String expressionProfile = '',
     String sourceFacts = '',
@@ -105,6 +106,7 @@ class ContextBuilder {
     ];
 
     _add(sections, '本次表达所需角色资料', expressionProfile);
+    _add(sections, '群聊身份', groupIdentityContext);
     _add(sections, '任务规则', taskRules);
     _add(sections, '当前动态状态', dynamicState);
     _add(sections, '本次任务相关记忆', relevantMemory);

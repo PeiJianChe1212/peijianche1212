@@ -6,8 +6,6 @@ import 'memory2_retriever.dart';
 class Memory2ChatContextBuilder {
   const Memory2ChatContextBuilder._();
 
-  static const int characterUserProfileCharacters = 800;
-
   static String build({
     required MemoryRetrievalResult retrieval,
     required CharacterUserProfile characterUserProfile,
@@ -15,7 +13,7 @@ class Memory2ChatContextBuilder {
     final sections = <String>[
       retrieval.contextText.trim(),
       _currentFacts(retrieval),
-      _characterUserProfile(characterUserProfile),
+      characterUserProfileSection(characterUserProfile),
     ].where((item) => item.isNotEmpty).toList(growable: false);
     if (sections.isEmpty) return '';
     return '''【Memory 2.0｜仅作为已知事实，不得扩写】
@@ -46,7 +44,11 @@ ${sections.join('\n\n')}''';
     return '【当前用户事实｜active，优先于 Summary 中的旧值】\n${lines.join('\n')}';
   }
 
-  static String _characterUserProfile(CharacterUserProfile profile) {
+  /// 角色级「我的个人设定」Prompt 区块。
+  ///
+  /// 不做字符截断：UI 已将 personaDescription 限制在 2000 字以内，
+  /// 其余字段均为短文本。静默截断用户手写设定会导致"明明写了 AI 却不知道"。
+  static String characterUserProfileSection(CharacterUserProfile profile) {
     String line(String label, String value) {
       final clean = value.trim();
       if (clean.isEmpty || clean == '未填写' || clean == '未设置') return '';
@@ -63,8 +65,6 @@ ${sections.join('\n\n')}''';
       line('用户设定', profile.effectiveDescription),
     ].where((item) => item.isNotEmpty).join('\n');
     if (lines.isEmpty) return '';
-    final text = '【用户手写角色世界设定｜最高优先级】\n$lines';
-    if (text.length <= characterUserProfileCharacters) return text;
-    return '${text.substring(0, characterUserProfileCharacters - 1).trimRight()}…';
+    return '【用户手写角色世界设定｜最高优先级】\n$lines';
   }
 }

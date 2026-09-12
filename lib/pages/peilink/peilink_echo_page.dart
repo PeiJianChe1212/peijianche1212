@@ -3,7 +3,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../models/ai_character.dart';
 import '../../models/character_settings.dart';
@@ -23,9 +22,11 @@ import '../../services/echo_image_storage_service.dart';
 import '../../services/echo_album_service.dart';
 import '../../services/echo_comment_preview_service.dart';
 import '../../services/echo_comment_author_service.dart';
+import '../../services/echo_identity.dart';
 import '../../services/echo_interaction_stats_service.dart';
 import '../../services/echo_profile_storage_service.dart';
 import '../../services/echo_space_decoration_storage_service.dart';
+import 'echo_space_decoration_page.dart';
 import '../../services/echo_storage_service.dart';
 import '../../services/echo_visitor_storage_service.dart';
 import '../../services/echo_visitor_social_service.dart';
@@ -38,8 +39,6 @@ import '../../widgets/echo/echo_space_overview.dart';
 import '../../widgets/echo/ai_verified_badge.dart';
 import '../../widgets/echo/echo_visitor_card.dart';
 import 'echo_compose_page.dart';
-import 'echo_cover_editor_page.dart';
-import 'echo_cover_preview_page.dart';
 import 'relationship_gift_page.dart';
 import 'relationship_growth_page.dart';
 import 'echo_visitor_list_page.dart';
@@ -70,9 +69,8 @@ class PeiLinkEchoPage extends StatefulWidget {
 }
 
 class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
-  static const String _userEchoId = 'peilink_user_echo';
+  static const String _userEchoId = EchoIdentity.userEchoOwnerId;
 
-  final ImagePicker _imagePicker = ImagePicker();
   final CharacterRegistryService _registry = CharacterRegistryService();
 
   AiCharacter? _character;
@@ -291,14 +289,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   AiCharacter _composeOwner() {
     final character = _spaceCharacter;
     if (!_isUserPage && character != null) return character;
-    return AiCharacter(
-      id: _userEchoId,
-      characterName: _userProfile.nickname,
-      remark: '',
-      avatarPath: _userProfile.avatarPath,
-      relationship: _userProfile.identity,
-      createdAt: DateTime.now(),
-    );
+    return userEchoOwner(_userProfile);
   }
 
   Future<void> _openCompose() async {
@@ -313,6 +304,15 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       ),
     );
     if (created == true) await _reloadTimeline();
+  }
+
+  /// Public feed entry: open the current user's own Echo space.
+  Future<void> _openMyEchoSpace() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => const PeiLinkEchoPage()),
+    );
+    if (mounted) await _reloadTimeline();
   }
 
   Future<void> _openAiDraft() async {
@@ -414,6 +414,23 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
       ),
     );
     if (!mounted || action == null) return;
+    if (action == 'decoration') {
+      final character = _spaceCharacter;
+      if (character == null) return;
+      final updated = await Navigator.push<EchoSpaceDecorationConfig>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EchoSpaceDecorationPage(
+            characterId: character.id,
+            initialConfig: _spaceDecoration,
+          ),
+        ),
+      );
+      if (updated != null && mounted) {
+        setState(() => _spaceDecoration = updated);
+      }
+      return;
+    }
     _showMessage('敬请期待');
   }
 
@@ -462,51 +479,6 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
     );
   }
 
-  Future<void> _changeCover() async {
-    try {
-      final result = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 95,
-        maxWidth: 2600,
-      );
-      if (result == null || !mounted) return;
-
-      final bytes = await Navigator.push<Uint8List>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EchoCoverEditorPage(imagePath: result.path),
-        ),
-      );
-      if (bytes == null) return;
-
-      final service = EchoProfileStorageService(ownerId: _ownerId);
-      final path = await service.saveCoverBytes(bytes);
-      final updated = _echoProfile.copyWith(coverPath: path);
-      await service.saveProfile(updated);
-      if (!mounted) return;
-      setState(() => _echoProfile = updated);
-    } catch (error) {
-      debugPrint('更换 Echo 封面失败：$error');
-      _showMessage('更换封面失败，请稍后再试');
-    }
-  }
-
-  Future<void> _openCoverPreview() async {
-    await Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EchoCoverPreviewPage(
-          coverPath: _echoProfile.coverPath,
-          onChangeCover: _changeCover,
-        ),
-      ),
-    );
-    if (!mounted) return;
-    final profile = await EchoProfileStorageService(
-      ownerId: _ownerId,
-    ).loadProfile();
-    if (mounted) setState(() => _echoProfile = profile);
-  }
 
   Future<void> _editSignature() async {
     final controller = TextEditingController(text: _echoProfile.signature);
@@ -698,7 +670,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
     }
 
     final character = _characterForItem(item);
-    final path = character?.avatarPath.trim() ?? '';
+    final path = character?.effectiveSocialAvatarPath.trim() ?? '';
     if (path.isNotEmpty && File(path).existsSync()) {
       return Image.file(
         File(path),
@@ -727,7 +699,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   Widget _avatar({double size = 66}) {
     final path = _isUserPage
         ? _userProfile.avatarPath.trim()
-        : (_character?.avatarPath.trim() ?? '');
+        : (_character?.effectiveSocialAvatarPath.trim() ?? '');
     if (path.isNotEmpty && File(path).existsSync()) {
       return Image.file(
         File(path),
@@ -749,22 +721,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   }
 
   Widget _cover() {
-    final path = _echoProfile.coverPath.trim();
-    if (path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(File(path), fit: BoxFit.cover);
-    }
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF7E98A5), Color(0xFFB8C6CB), Color(0xFF607985)],
-        ),
-      ),
-      child: const Center(
-        child: Icon(Icons.waves_rounded, size: 58, color: Colors.white70),
-      ),
-    );
+    return _SpaceBackground(config: _spaceDecoration);
   }
 
   @override
@@ -798,6 +755,9 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                     onBack: widget.embedded
                         ? null
                         : () => Navigator.maybePop(context),
+                    avatar: _avatar(size: 32),
+                    onOpenMyEcho: widget.embedded ? null : _openMyEchoSpace,
+                    onCreate: widget.embedded ? null : _showCreateMenu,
                   )
                 : _EchoLifeHeader(
                     cover: _cover(),
@@ -808,14 +768,19 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                         ? null
                         : () => Navigator.maybePop(context),
                     onCreate: _showCreateMenu,
-                    onOpenCover: _openCoverPreview,
                     onEditSignature: _editSignature,
                   ),
           ),
           if (_items.isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
-              child: _QuietEmptyState(onCreate: _showCreateMenu),
+              child: _isPublicTimeline
+                  ? _QuietEmptyState(
+                      onCreate: _showCreateMenu,
+                      title: '还没有 Echo。',
+                      subtitle: '记录第一段生活片段吧。',
+                    )
+                  : _QuietEmptyState(onCreate: _showCreateMenu),
             )
           else
             _timelineSliver(),
@@ -868,7 +833,6 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                     visitors: _visitors,
                     growthProfile: _growthProfile,
                     onBack: () => Navigator.maybePop(context),
-                    onOpenCover: _openCoverPreview,
                     onCreate: _showCreateMenu,
                     onMore: _showSpaceMoreMenu,
                     onEditSignature: _editSignature,
@@ -923,7 +887,6 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
                     signature: _signature,
                     onBack: () => Navigator.maybePop(context),
                     onCreate: _showCreateMenu,
-                    onOpenCover: _openCoverPreview,
                     onEditSignature: _editSignature,
                   ),
                 ),
@@ -959,6 +922,8 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
               child: _QuietEmptyState(
                 onCreate: _showCreateMenu,
                 spaceStyle: true,
+                title: '还没有留下 Echo。',
+                subtitle: '记录第一段属于你的生活。',
               ),
             ),
           )
@@ -1187,6 +1152,7 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
           onOpenMemory: item.isFromSharedExperience && _isCharacterSpace
               ? () => setState(() => _spaceTabIndex = 2)
               : null,
+          showAiBadge: item.characterId != _userEchoId,
           spaceStyle: true,
         );
       },
@@ -1209,7 +1175,6 @@ class _CharacterSpaceHeader extends StatelessWidget {
     required this.visitors,
     required this.growthProfile,
     required this.onBack,
-    required this.onOpenCover,
     required this.onCreate,
     required this.onMore,
     required this.onEditSignature,
@@ -1234,7 +1199,6 @@ class _CharacterSpaceHeader extends StatelessWidget {
   final List<EchoVisitorRecord> visitors;
   final RelationshipGrowthProfile? growthProfile;
   final VoidCallback onBack;
-  final VoidCallback onOpenCover;
   final VoidCallback onCreate;
   final VoidCallback onMore;
   final VoidCallback onEditSignature;
@@ -1266,7 +1230,7 @@ class _CharacterSpaceHeader extends StatelessWidget {
               children: [
                 Material(
                   color: Colors.transparent,
-                  child: InkWell(onTap: onOpenCover, child: cover),
+                  child: cover,
                 ),
                 const IgnorePointer(
                   child: DecoratedBox(
@@ -1439,7 +1403,6 @@ class _UserSpaceHeader extends StatelessWidget {
     required this.signature,
     required this.onBack,
     required this.onCreate,
-    required this.onOpenCover,
     required this.onEditSignature,
   });
 
@@ -1449,7 +1412,6 @@ class _UserSpaceHeader extends StatelessWidget {
   final String signature;
   final VoidCallback onBack;
   final VoidCallback onCreate;
-  final VoidCallback onOpenCover;
   final VoidCallback onEditSignature;
 
   @override
@@ -1464,7 +1426,7 @@ class _UserSpaceHeader extends StatelessWidget {
             children: [
               Material(
                 color: Colors.transparent,
-                child: InkWell(onTap: onOpenCover, child: cover),
+                child: cover,
               ),
               const IgnorePointer(
                 child: DecoratedBox(
@@ -1523,15 +1485,31 @@ class _UserSpaceHeader extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(132, 6, 20, 0),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              displayName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF1B2028),
-                fontSize: 23,
-                fontWeight: FontWeight.w700,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '我的 Echo',
+                  key: ValueKey('my-echo-title'),
+                  style: TextStyle(
+                    color: Color(0xFF6F8FA3),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF1B2028),
+                    fontSize: 23,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -2727,16 +2705,24 @@ int _daysSince(DateTime start, DateTime now) {
 }
 
 class _PublicEchoHeader extends StatelessWidget {
-  const _PublicEchoHeader({this.onBack});
+  const _PublicEchoHeader({
+    this.onBack,
+    this.avatar,
+    this.onOpenMyEcho,
+    this.onCreate,
+  });
 
   final VoidCallback? onBack;
+  final Widget? avatar;
+  final VoidCallback? onOpenMyEcho;
+  final VoidCallback? onCreate;
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 8, 18, 12),
+        padding: EdgeInsets.fromLTRB(onBack == null ? 10 : 2, 8, 8, 12),
         child: Row(
           children: [
             if (onBack != null)
@@ -2746,7 +2732,26 @@ class _PublicEchoHeader extends StatelessWidget {
               )
             else
               const SizedBox(width: 8),
-            const SizedBox(width: 4),
+            if (onOpenMyEcho != null) ...[
+              const SizedBox(width: 2),
+              InkWell(
+                key: const ValueKey('echo-public-my-echo'),
+                borderRadius: BorderRadius.circular(19),
+                onTap: onOpenMyEcho,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3E7E9),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFD3DDE2)),
+                  ),
+                  child: ClipOval(child: avatar ?? const SizedBox.shrink()),
+                ),
+              ),
+            ],
+            const SizedBox(width: 8),
             const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2767,6 +2772,17 @@ class _PublicEchoHeader extends StatelessWidget {
                 ],
               ),
             ),
+            if (onCreate != null)
+              IconButton(
+                key: const ValueKey('echo-public-compose'),
+                onPressed: onCreate,
+                tooltip: '发布 Echo',
+                icon: const Icon(
+                  Icons.add_circle_outline_rounded,
+                  color: Color(0xFF171717),
+                  size: 25,
+                ),
+              ),
           ],
         ),
       ),
@@ -2782,7 +2798,6 @@ class _EchoLifeHeader extends StatelessWidget {
     required this.signature,
     required this.onBack,
     required this.onCreate,
-    required this.onOpenCover,
     required this.onEditSignature,
   });
 
@@ -2792,7 +2807,6 @@ class _EchoLifeHeader extends StatelessWidget {
   final String signature;
   final VoidCallback? onBack;
   final VoidCallback onCreate;
-  final VoidCallback onOpenCover;
   final VoidCallback onEditSignature;
 
   @override
@@ -2807,7 +2821,7 @@ class _EchoLifeHeader extends StatelessWidget {
             children: [
               Material(
                 color: Colors.transparent,
-                child: InkWell(onTap: onOpenCover, child: cover),
+                child: cover,
               ),
               const IgnorePointer(
                 child: DecoratedBox(
@@ -2927,13 +2941,23 @@ class _EchoLifeHeader extends StatelessWidget {
 }
 
 class _QuietEmptyState extends StatelessWidget {
-  const _QuietEmptyState({required this.onCreate, this.spaceStyle = false});
+  const _QuietEmptyState({
+    required this.onCreate,
+    this.spaceStyle = false,
+    this.title,
+    this.subtitle,
+  });
 
   final VoidCallback onCreate;
   final bool spaceStyle;
+  final String? title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
+    final resolvedTitle = title ?? '他的生活还没有开始记录';
+    final resolvedSubtitle =
+        subtitle ?? (spaceStyle ? '等待这个世界留下第一段故事' : '等待第一次 Echo');
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2959,9 +2983,9 @@ class _QuietEmptyState extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
-                  '他的生活还没有开始记录',
-                  style: TextStyle(
+                Text(
+                  resolvedTitle,
+                  style: const TextStyle(
                     color: Color(0xFF68757D),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -2969,7 +2993,7 @@ class _QuietEmptyState extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  spaceStyle ? '等待这个世界留下第一段故事' : '等待第一次 Echo',
+                  resolvedSubtitle,
                   style: const TextStyle(
                     color: Color(0xFFA8B0B5),
                     fontSize: 11,
@@ -3047,6 +3071,7 @@ class _TimelineItem extends StatelessWidget {
     required this.onCommentAuthorTap,
     this.onAuthorTap,
     this.onOpenMemory,
+    this.showAiBadge = true,
     this.spaceStyle = false,
   });
 
@@ -3061,6 +3086,10 @@ class _TimelineItem extends StatelessWidget {
   final ValueChanged<EchoComment> onCommentAuthorTap;
   final VoidCallback? onAuthorTap;
   final VoidCallback? onOpenMemory;
+
+  /// The verified badge marks AI characters with an independent persona; the
+  /// user's own Echo must never show it.
+  final bool showAiBadge;
   final bool spaceStyle;
 
   Widget _buildSpaceCard(BuildContext context) {
@@ -3131,8 +3160,10 @@ class _TimelineItem extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                              const AiVerifiedBadge(size: 14),
+                              if (showAiBadge) ...[
+                                const SizedBox(width: 6),
+                                const AiVerifiedBadge(size: 14),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 3),

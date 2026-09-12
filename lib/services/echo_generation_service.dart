@@ -22,6 +22,7 @@ import 'narrative_engine_service.dart';
 import 'story_fragment_engine_service.dart';
 import 'life_moment_storage_service.dart';
 import 'echo_expression_prompt.dart';
+import 'echo_text_sanitizer.dart';
 import 'echo_image_intent_service.dart';
 import 'echo_image_prompt.dart';
 import 'structured_model_output_exception.dart';
@@ -324,7 +325,7 @@ $officialNarrative
     if (value.startsWith('“') && value.endsWith('”') && value.length > 1) {
       value = value.substring(1, value.length - 1).trim();
     }
-    return value;
+    return EchoTextSanitizer.clean(value);
   }
 
   void dispose() {

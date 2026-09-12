@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.6.7+17
+version: 0.6.8+18
 
 environment:
   sdk: ^3.12.2
@@ -70,6 +70,25 @@ flutter:
     - assets/images/guide/ache_welcome.png
     - assets/backgrounds/
     - assets/backgrounds/simple_pack/
+    # OFL 许可证文本随包分发（SIL OFL 1.1 要求随字体一同提供）。
+    - assets/fonts/licenses/
+
+  # PeiLink 装扮字体（全部为 SIL OFL 1.1 开源字体，官方来源见
+  # assets/fonts/licenses/）。family 名称为 PeiLink 内部稳定名称，
+  # 不依赖任何系统商业字体。
+  fonts:
+    - family: PeiLinkHandwriting
+      fonts:
+        - asset: assets/fonts/MaShanZheng-Regular.ttf
+    - family: PeiLinkKai
+      fonts:
+        - asset: assets/fonts/LXGWWenKai-Regular.ttf
+    - family: PeiLinkGentleRounded
+      fonts:
+        - asset: assets/fonts/ZenMaruGothic-Regular.ttf
+    - family: PeiLinkTechMono
+      fonts:
+        - asset: assets/fonts/NotoSansMonoCJKsc-Regular.otf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'chat_input_bar.dart';
@@ -18,6 +20,8 @@ class ChatInputArea extends StatelessWidget {
     required this.onRedPacket,
     required this.onChangeAvatar,
     required this.onUnavailable,
+    this.pendingImagePath,
+    this.onRemovePendingImage,
   });
 
   final TextEditingController controller;
@@ -32,12 +36,44 @@ class ChatInputArea extends StatelessWidget {
   final VoidCallback onRedPacket;
   final VoidCallback onChangeAvatar;
   final ValueChanged<String> onUnavailable;
+  final String? pendingImagePath;
+  final VoidCallback? onRemovePendingImage;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (pendingImagePath?.isNotEmpty == true)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 6, 14, 4),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      File(pendingImagePath!),
+                      width: 72,
+                      height: 72,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: IconButton.filled(
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 16,
+                      onPressed: onRemovePendingImage,
+                      icon: const Icon(Icons.close),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ChatInputBar(
           controller: controller,
           focusNode: focusNode,

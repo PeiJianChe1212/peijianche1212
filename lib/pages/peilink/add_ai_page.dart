@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'character_creation_page.dart';
+import 'create_group_chat_page.dart';
 
 class AddAiPage extends StatelessWidget {
   const AddAiPage({super.key});
@@ -16,6 +17,16 @@ class AddAiPage extends StatelessWidget {
     final created = await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (_) => const CharacterCreationPage()),
+    );
+    if (created == true && context.mounted) {
+      Navigator.pop(context, true);
+    }
+  }
+
+  Future<void> _openCreateGroup(BuildContext context) async {
+    final created = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateGroupChatPage()),
     );
     if (created == true && context.mounted) {
       Navigator.pop(context, true);
@@ -71,7 +82,7 @@ class AddAiPage extends StatelessWidget {
               iconColor: Color(0xFFF2994A),
               title: '创建群聊',
               subtitle: '让多位 AI 和你一起聊天',
-              onTap: () => _showComingSoon(context, '创建群聊'),
+              onTap: () => _openCreateGroup(context),
             ),
           ],
         ),
@@ -97,7 +108,8 @@ class _AddOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    // Material 外壳保证 ListTile 的点击水波纹正常显示（避免被 ColoredBox 遮挡）。
+    return Material(
       color: Colors.white,
       child: ListTile(
         onTap: onTap,

@@ -1,33 +1,59 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'character_scope_service.dart';
 
 class EchoProfile {
-  const EchoProfile({this.coverPath = '', this.signature = ''});
+  const EchoProfile({
+    this.coverPath = '',
+    this.signature = '',
+    this.coverScale = 1,
+    this.coverOffsetX = 0,
+    this.coverOffsetY = 0,
+  });
 
   final String coverPath;
   final String signature;
+  final double coverScale;
+  final double coverOffsetX;
+  final double coverOffsetY;
 
-  EchoProfile copyWith({String? coverPath, String? signature}) {
+  EchoProfile copyWith({
+    String? coverPath,
+    String? signature,
+    double? coverScale,
+    double? coverOffsetX,
+    double? coverOffsetY,
+  }) {
     return EchoProfile(
       coverPath: coverPath ?? this.coverPath,
       signature: signature ?? this.signature,
+      coverScale: coverScale ?? this.coverScale,
+      coverOffsetX: coverOffsetX ?? this.coverOffsetX,
+      coverOffsetY: coverOffsetY ?? this.coverOffsetY,
     );
   }
 
   Map<String, dynamic> toJson() => {
     'coverPath': coverPath,
     'signature': signature,
+    if (coverScale != 1) 'coverScale': coverScale,
+    if (coverOffsetX != 0) 'coverOffsetX': coverOffsetX,
+    if (coverOffsetY != 0) 'coverOffsetY': coverOffsetY,
   };
 
   factory EchoProfile.fromJson(Map<dynamic, dynamic> json) {
     return EchoProfile(
       coverPath: json['coverPath']?.toString() ?? '',
       signature: json['signature']?.toString() ?? '',
+      coverScale: _number(json['coverScale'], 1).clamp(1, 4),
+      coverOffsetX: _number(json['coverOffsetX'], 0),
+      coverOffsetY: _number(json['coverOffsetY'], 0),
     );
   }
+
+  static double _number(dynamic value, double fallback) =>
+      value is num ? value.toDouble() : double.tryParse('$value') ?? fallback;
 }
 
 class EchoProfileStorageService {
@@ -52,54 +78,6 @@ class EchoProfileStorageService {
   Future<void> saveProfile(EchoProfile profile) async {
     final file = await _profileFile();
     await file.writeAsString(jsonEncode(profile.toJson()), flush: true);
-  }
-
-  Future<String> saveCoverCopy(String sourcePath) async {
-    final source = File(sourcePath);
-    if (!await source.exists()) throw StateError('选择的封面图片已经不存在。');
-
-    final directory = await CharacterScopeService(ownerId).characterDirectory();
-    final coverDirectory = Directory('${directory.path}/echo_cover');
-    if (!await coverDirectory.exists()) {
-      await coverDirectory.create(recursive: true);
-    }
-
-    final extension = _extensionOf(sourcePath);
-    final target = File('${coverDirectory.path}/cover$extension');
-    for (final file in coverDirectory.listSync().whereType<File>()) {
-      if (file.path != target.path) {
-        try {
-          await file.delete();
-        } catch (_) {}
-      }
-    }
-    await source.copy(target.path);
-    return target.path;
-  }
-
-  Future<String> saveCoverBytes(Uint8List bytes) async {
-    final directory = await CharacterScopeService(ownerId).characterDirectory();
-    final coverDirectory = Directory('${directory.path}/echo_cover');
-    if (!await coverDirectory.exists()) {
-      await coverDirectory.create(recursive: true);
-    }
-
-    for (final file in coverDirectory.listSync().whereType<File>()) {
-      try {
-        await file.delete();
-      } catch (_) {}
-    }
-
-    final target = File('${coverDirectory.path}/cover.png');
-    await target.writeAsBytes(bytes, flush: true);
-    return target.path;
-  }
-
-  String _extensionOf(String path) {
-    final dot = path.lastIndexOf('.');
-    if (dot < 0 || dot == path.length - 1) return '.jpg';
-    final extension = path.substring(dot).toLowerCase();
-    return extension.length <= 6 ? extension : '.jpg';
   }
 }
 

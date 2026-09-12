@@ -28,7 +28,6 @@ import '../services/chat_storage_service.dart';
 import '../services/deepseek_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
-import '../services/multimodal_service.dart';
 import '../services/session_reset_service.dart';
 import '../services/character_settings_storage_service.dart';
 import '../services/today_service.dart';
@@ -68,7 +67,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final ChatImageRequestRouterService _chatImageRequestRouter =
       ChatImageRequestRouterService();
   final ImagePicker _imagePicker = ImagePicker();
-  final MultimodalService _multimodalService = MultimodalService();
   final CharacterSettingsStorageService _characterStorage =
       CharacterSettingsStorageService();
   final UserProfileStorageService _profileStorage = UserProfileStorageService();
@@ -96,6 +94,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   AiCharacter _activeCharacter = AiCharacter.placeholder();
   CharacterSettings _characterSettings = CharacterSettings.genericDefaults();
   bool _isRedirectingBack = false;
+  String? _pendingImagePath;
   String _conversationMode = 'basic';
   double _temperature = 0.72;
   String _replyLength = 'standard';
@@ -108,6 +107,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _imageTaskManager.addListener(_onImageTaskChanged);
+    UserProfileStorageService.changes.addListener(_onUserProfileChanged);
     _chatResetSubscription = SessionResetService.chatResets.listen(
       _onChatReset,
     );
@@ -135,8 +135,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _inputFocusNode.dispose();
     _scrollController.dispose();
     _deepSeekService.dispose();
-    _multimodalService.dispose();
     _imageTaskManager.removeListener(_onImageTaskChanged);
+    UserProfileStorageService.changes.removeListener(_onUserProfileChanged);
     _chatImageRequestRouter.dispose();
     super.dispose();
   }
@@ -178,6 +178,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         _activeCharacter = character;
         _resolvedActivity = null;
       });
+      _syncImageTaskState();
     } catch (error) {
       debugPrint('加载当前角色失败：$error');
     }
@@ -191,6 +192,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     } catch (error) {
       debugPrint('加载用户资料失败：$error');
     }
+  }
+
+  void _onUserProfileChanged() {
+    unawaited(_loadProfile());
   }
 
   Future<void> _loadChatSettings() async {
@@ -283,12 +288,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Future<void> _sendMessage() async {
     final userMessage = _controller.text.trim();
-    if (userMessage.isEmpty || _isLoading) return;
+    if ((userMessage.isEmpty && _pendingImagePath == null) || _isLoading) {
+      return;
+    }
     if (!await _deepSeekService.hasApiKey) {
       _showSnack('还没有配置模型与 API，请先到设置中填写。');
       return;
     }
 
+    if (_pendingImagePath != null) {
+      await _sendPendingImage(userMessage);
+      return;
+    }
     _hideActivitySubtitle();
     setState(() {
       _messages.add(ChatMessage(role: 'user', content: userMessage));
@@ -326,6 +337,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   void _syncImageTaskState() {
     final state = _imageTaskManager.state;
+    if (state.characterId.isNotEmpty &&
+        state.characterId != _activeCharacter.id) {
+      return;
+    }
     final running = state.status == ChatImageTaskStatus.running;
     _isGeneratingImage = running;
     if (running) _isLoading = true;
@@ -344,6 +359,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   Future<void> _handleImageTaskChanged() async {
     if (!mounted) return;
     final state = _imageTaskManager.state;
+    if (state.characterId.isNotEmpty &&
+        state.characterId != _activeCharacter.id) {
+      return;
+    }
 
     if (state.status == ChatImageTaskStatus.running) {
       setState(() {
@@ -379,7 +398,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       final error = state.errorMessage;
       _imageTaskManager.clearFinishedState();
       if (error != null && error.isNotEmpty) _showSnack(error);
-      await _requestReply();
+      if (state.kind == ChatImageTaskKind.generatedImage) {
+        await _requestReply();
+      } else {
+        await _loadMessages();
+      }
     }
   }
 
@@ -397,15 +420,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         maxWidth: 2048,
       );
       if (picked == null || !mounted) return;
+      setState(() => _pendingImagePath = picked.path);
+      _inputFocusNode.requestFocus();
+    } catch (error) {
+      _showSnack('选择图片失败：$error');
+    }
+  }
 
-      final caption = _controller.text.trim();
+  Future<void> _sendPendingImage(String caption) async {
+    final pickedPath = _pendingImagePath;
+    if (pickedPath == null) return;
+    if (_imageTaskManager.isRunning) {
+      _showSnack('另一个图片任务还在处理，请稍后再发送。');
+      return;
+    }
+    try {
       final message = ChatMessage(
         role: 'user',
         type: MessageType.image,
         content: caption,
       );
       final savedPath = await _chatImageStorage.saveImage(
-        sourcePath: picked.path,
+        sourcePath: pickedPath,
         messageId: message.id,
       );
 
@@ -417,44 +453,25 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         );
         _controller.clear();
+        _pendingImagePath = null;
         _isLoading = true;
         _isRegenerating = false;
       });
       await _saveMessages();
       _scrollToBottom();
 
-      String description;
-      try {
-        final result = await _multimodalService.understandForChat(
-          imagePath: savedPath,
-          userText: caption,
-        );
-        description = result.description;
-      } catch (error) {
-        description = '';
-        debugPrint('识图失败：$error');
-        if (mounted) {
-          _showSnack('图片已经发出，但识图失败了。这次会按看不清图片来回复。');
-        }
-      }
-
-      if (!mounted) return;
-      final index = _messages.indexWhere((item) => item.id == message.id);
-      if (index >= 0) {
-        final current = _messages[index];
-        setState(() {
-          _messages[index] = current.copyWith(
-            metadata: {
-              ...current.metadata,
-              'visionDescription': description,
-              'visionStatus': description.isEmpty ? 'failed' : 'completed',
-            },
-          );
-        });
-        await _saveMessages();
-      }
-
-      await _requestReply();
+      _imageTaskManager.startUserImage(
+        characterId: _activeCharacter.id,
+        messageId: message.id,
+        imagePath: savedPath,
+        caption: caption,
+        conversationMode: _conversationMode,
+        temperature: _temperature,
+        replyLength: _replyLength,
+        initiative: _initiative,
+        intimacy: _intimacy,
+        tsundere: _tsundere,
+      );
     } catch (error) {
       await _handleRequestError('发送图片失败：$error');
     }
@@ -486,10 +503,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         characterId: _activeCharacter.id,
       ).decide();
       if (decision.accepted) {
-        final path = await avatarStorage.acceptPendingAvatar(
+        final path = await avatarStorage.acceptPendingSocialAvatar(
           characterId: _activeCharacter.id,
         );
-        final updated = _activeCharacter.copyWith(avatarPath: path);
+        final updated = _activeCharacter.copyWith(socialAvatarPath: path);
         await _characterRegistry.updateCharacter(updated);
         if (!mounted) return;
         setState(() => _activeCharacter = updated);
@@ -497,35 +514,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         await avatarStorage.clearPendingAvatar(_activeCharacter.id);
       }
 
-      const userText = '给你换了个头像，喜欢吗？';
-      setState(() {
-        _messages.add(ChatMessage(role: 'user', content: userText));
-        _isLoading = true;
-        _isRegenerating = false;
-      });
-      await _saveMessages();
-      _scrollToBottom();
-      if (!await _deepSeekService.hasApiKey) {
-        if (!mounted) return;
-        setState(() {
-          _messages.add(
-            ChatMessage(
-              role: 'assistant',
-              content: decision.accepted
-                  ? '嗯，新头像还不错，挺像我的。'
-                  : '这个不太符合我的风格，下次换一个？',
-            ),
-          );
-          _isLoading = false;
-        });
-        await _saveMessages();
-        return;
-      }
-      await _requestReply(
-        transientEventContext: decision.accepted
-            ? '【AvatarChangeRequest】用户正在请求为你更换头像，业务结果为接受${decision.forced ? '（上次已拒绝，本次强制接受）' : ''}。请只针对换头像事件，结合核心人设、性格和说话风格自然回应，不要转回之前话题。'
-            : '【AvatarChangeRequest】用户正在请求为你更换头像，业务结果为拒绝。请只针对换头像事件，结合核心人设、性格和说话风格温和拒绝，不要转回之前话题。下一次请求业务上必须接受。',
-      );
+      if (mounted) _showSnack(decision.accepted ? '社交头像已更新' : 'Ta 暂时不想使用这张头像');
     } catch (error) {
       debugPrint('更换角色头像失败：$error');
       if (mounted) _showSnack('更换头像失败，请稍后再试');
@@ -1073,7 +1062,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Widget _buildAvatar({required bool isUser, double size = 40}) {
     if (!isUser) {
-      final path = _activeCharacter.avatarPath.trim();
+      final path = _activeCharacter.effectiveSocialAvatarPath.trim();
       final file = path.isEmpty ? null : File(path);
       if (file != null && file.existsSync()) {
         return _SquareAvatar(size: size, image: FileImage(file));
@@ -1177,14 +1166,22 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      _ChatIdentityStatus(
-                        relationship: _activeCharacter.relationship,
-                        status: _resolvedActivity == null
-                            ? MessageListStatus.online
-                            : MessageListStatus.fromActivity(
-                                _resolvedActivity!,
+                      _isLoading
+                          ? const Text(
+                              '正在输入…',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
                               ),
-                      ),
+                            )
+                          : _ChatIdentityStatus(
+                              relationship: _activeCharacter.relationship,
+                              status: _resolvedActivity == null
+                                  ? MessageListStatus.online
+                                  : MessageListStatus.fromActivity(
+                                      _resolvedActivity!,
+                                    ),
+                            ),
                     ],
                   ),
                 ),
@@ -1243,16 +1240,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         },
                       ),
               ),
-              if (_isLoading)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(11, 3, 11, 8),
-                  child: _TypingIndicator(
-                    isRegenerating: _isRegenerating,
-                    isGeneratingImage: _isGeneratingImage,
-                    avatar: _buildAvatar(isUser: false, size: 38),
-                    displayName: _activeDisplayName,
-                  ),
-                ),
               ChatInputArea(
                 controller: _controller,
                 focusNode: _inputFocusNode,
@@ -1279,6 +1266,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 onRedPacket: _showRedPacketSendDialog,
                 onChangeAvatar: _requestAvatarChange,
                 onUnavailable: (feature) => _showSnack('$feature功能敬请期待'),
+                pendingImagePath: _pendingImagePath,
+                onRemovePendingImage: () =>
+                    setState(() => _pendingImagePath = null),
               ),
             ],
           ),
@@ -1372,104 +1362,4 @@ class _AvatarPlaceholder extends StatelessWidget {
       color: const Color(0xFF647C8B),
     ),
   );
-}
-
-class _TypingIndicator extends StatefulWidget {
-  const _TypingIndicator({
-    required this.isRegenerating,
-    required this.isGeneratingImage,
-    required this.avatar,
-    required this.displayName,
-  });
-
-  final bool isRegenerating;
-  final bool isGeneratingImage;
-  final Widget avatar;
-  final String displayName;
-
-  @override
-  State<_TypingIndicator> createState() => _TypingIndicatorState();
-}
-
-class _TypingIndicatorState extends State<_TypingIndicator>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          widget.avatar,
-          const SizedBox(width: 7),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(17),
-                topRight: Radius.circular(17),
-                bottomLeft: Radius.circular(5),
-                bottomRight: Radius.circular(17),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(3, (index) {
-                return AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, child) {
-                    final phase = (_controller.value - index * 0.18) % 1.0;
-                    final lift = phase < 0.5 ? phase / 0.5 : (1 - phase) / 0.5;
-                    return Transform.translate(
-                      offset: Offset(0, -2.5 * lift),
-                      child: Opacity(opacity: 0.42 + 0.58 * lift, child: child),
-                    );
-                  },
-                  child: Container(
-                    width: 6,
-                    height: 6,
-                    margin: EdgeInsets.only(right: index == 2 ? 0 : 5),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF6E7781),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: Text(
-              widget.isGeneratingImage
-                  ? '正在准备图片…'
-                  : widget.isRegenerating
-                  ? '重新组织语言…'
-                  : '${widget.displayName}正在输入',
-              style: const TextStyle(fontSize: 12, color: Colors.black38),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

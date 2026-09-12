@@ -65,6 +65,37 @@ class CharacterAvatarStorageService {
     return path;
   }
 
+  Future<String> acceptPendingSocialAvatar({
+    required String characterId,
+  }) async {
+    final directory = await CharacterScopeService(
+      characterId,
+    ).avatarDirectory();
+    final pending = File('${directory.path}/pending_avatar.png');
+    if (!await pending.exists()) throw StateError('待确认头像不存在。');
+    final bytes = await _media.readBytes(pending.path);
+    final target = File(
+      '${directory.path}/social_avatar_${DateTime.now().microsecondsSinceEpoch}.png',
+    );
+    final path = await _media.saveBytes(target.path, bytes);
+    await _media.delete(pending.path);
+    return path;
+  }
+
+  Future<String> saveSocialAvatarBytes({
+    required String characterId,
+    required Uint8List bytes,
+  }) async {
+    final directory = await CharacterScopeService(characterId).avatarDirectory();
+    final target = File('${directory.path}/social_avatar.png');
+    await _removeFilesWithPrefix(
+      directory,
+      'social_avatar',
+      exceptPath: target.path,
+    );
+    return _media.saveBytes(target.path, bytes);
+  }
+
   Future<void> clearPendingAvatar(String characterId) async {
     final directory = await CharacterScopeService(
       characterId,

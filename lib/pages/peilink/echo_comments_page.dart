@@ -167,7 +167,7 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
         replyToAuthorNameSnapshot: comment.authorNameSnapshot,
         authorId: character.id,
         authorNameSnapshot: character.displayName,
-        authorAvatarSnapshot: character.avatarPath,
+        authorAvatarSnapshot: character.effectiveSocialAvatarPath,
         sourceType: EchoCommentSourceType.autoReply,
         commentType: EchoCommentType.aiCharacter,
       );
@@ -276,7 +276,7 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
                     _EchoSummary(
                       authorName: widget.character?.characterName ?? _userName,
                       authorAvatarPath:
-                          widget.character?.avatarPath ??
+                          widget.character?.effectiveSocialAvatarPath ??
                           widget.userProfile.avatarPath,
                       isCharacter: widget.character != null,
                       content: _echo.content,
@@ -331,7 +331,7 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
                                 userAvatarPath: widget.userProfile.avatarPath,
                                 characterName: _characterName,
                                 characterAvatarPath:
-                                    widget.character?.avatarPath ?? '',
+                                    widget.character?.effectiveSocialAvatarPath ?? '',
                                 resolvedCharacter:
                                     EchoCommentAuthorService.characterFor(
                                       comment,

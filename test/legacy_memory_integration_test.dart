@@ -168,7 +168,7 @@ void main() {
   );
 
   testWidgets(
-    'real Memory Center preview cancel then confirm refreshes and labels legacy',
+    'hidden legacy UI preserves reading and explicit compatibility migration',
     (tester) async {
       await tester.runAsync(() async {
         final old = await files('role-a', 'memories.json');
@@ -188,31 +188,21 @@ void main() {
         const MaterialApp(home: MemoryPage(characterId: 'role-a')),
       );
       await _waitForUi(tester, find.byType(SwitchListTile));
-      Future<void> openPreview() async {
-        await tester.tap(find.byTooltip('管理记忆'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('迁移旧版记忆'));
-        await _waitForUi(tester, find.text('确认整理'));
-      }
-
-      await openPreview();
-      expect(find.textContaining('关于我的记忆：1 条'), findsOneWidget);
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
+      expect(find.byTooltip('管理记忆'), findsNothing);
+      expect(find.text('迁移旧版记忆'), findsNothing);
       await tester.runAsync(() async {
-        for (final name in [
-          'event_memories.json',
-          'user_memories.json',
-          LegacyMemoryMigrationService.ledgerFile,
-        ]) {
-          expect(await (await files('role-a', name)).exists(), isFalse);
-        }
-      });
-      await openPreview();
-      await tester.tap(find.text('确认整理'));
-      await _waitForUi(tester, find.text('旧记忆已经整理到新的记忆系统中，原始数据仍为你保留。'));
-      await _waitForUi(tester, find.text('喜欢红茶'));
-      await tester.runAsync(() async {
+        final old = await files('role-a', 'memories.json');
+        final before = await old.readAsBytes();
+        final controller = MemoryCenterController(characterId: 'role-a');
+        expect((await controller.load()).legacy.length, 2);
+        final service = LegacyMemoryMigrationService(
+          characterId: 'role-a',
+          fileProvider: files,
+        );
+        expect(
+          (await service.execute(await service.preview())).success,
+          isTrue,
+        );
         final snapshot = await MemoryCenterController(
           characterId: 'role-a',
         ).load();
@@ -222,23 +212,67 @@ void main() {
           snapshot.migratedLegacyIds,
           containsAll(['event-ui', 'user-ui']),
         );
-        expect(
-          RegExp('共同参观水族馆')
-              .allMatches(
-                MemoryCenterController(
-                  characterId: 'role-a',
-                ).buildCopyText(snapshot),
-              )
-              .length,
-          1,
-        );
+        expect(await old.readAsBytes(), before);
       });
-      await _waitForUi(tester, find.text('喜欢红茶'));
-      await tester.tap(find.byTooltip('管理记忆'));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'card entry saves experiences and restores after reopening with role isolation',
+    (tester) async {
+      tester.view.physicalSize = const Size(420, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        const MaterialApp(home: MemoryPage(characterId: 'role-a')),
+      );
+      await _waitForUi(tester, find.byType(SwitchListTile));
+      final entry = find.byKey(const Key('add-shared-experience'));
+      await tester.scrollUntilVisible(
+        entry,
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.text('还没有共同经历被记下来。'), findsOneWidget);
+      await tester.tap(entry);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('旧版记忆'));
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        '一起看日出',
+      );
+      await tester.tap(find.text('保存'));
+      await _waitForUi(tester, find.widgetWithText(ListTile, '一起看日出'));
+      await tester.runAsync(() async {
+        expect(
+          (await storage('role-a').loadEventMemoriesStrict()).single.content,
+          '一起看日出',
+        );
+        expect(await storage('role-b').loadEventMemoriesStrict(), isEmpty);
+      });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        const MaterialApp(home: MemoryPage(characterId: 'role-a')),
+      );
+      await _waitForUi(tester, find.byType(SwitchListTile));
+      await tester.scrollUntilVisible(
+        entry,
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('一起看日出'), findsOneWidget);
+      expect(entry, findsOneWidget);
+      await tester.tap(entry);
       await tester.pumpAndSettle();
-      expect(find.text('已迁移'), findsNWidgets(2));
+      expect(find.text('新增经历'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

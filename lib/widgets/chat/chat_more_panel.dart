@@ -9,6 +9,9 @@ class ChatMorePanel extends StatefulWidget {
     required this.onChangeAvatar,
     required this.onUnavailable,
     this.closeOnSelection = true,
+    this.personaLabel = '我的个人设定',
+    this.disabledLabels = const [],
+    this.highlightPersona = false,
   });
 
   final VoidCallback onUserPersona;
@@ -17,6 +20,13 @@ class ChatMorePanel extends StatefulWidget {
   final VoidCallback onChangeAvatar;
   final ValueChanged<String> onUnavailable;
   final bool closeOnSelection;
+  final bool highlightPersona;
+
+  /// 首项文案：单聊为「我的个人设定」，群聊替换为「我的群聊身份」。
+  final String personaLabel;
+
+  /// 当前场景没有真实链路的入口，按不可用样式展示（不弹假入口）。
+  final List<String> disabledLabels;
 
   @override
   State<ChatMorePanel> createState() => _ChatMorePanelState();
@@ -49,6 +59,14 @@ class _ChatMorePanelState extends State<ChatMorePanel> {
 
   int get _pageCount => (_items.length / _pageSize).ceil();
 
+  String _labelFor(_MoreItem item) =>
+      item.action == _MoreAction.userPersona ? widget.personaLabel : item.label;
+
+  bool _isAvailable(_MoreItem item) {
+    if (item.action == _MoreAction.unavailable) return false;
+    return !widget.disabledLabels.contains(_labelFor(item));
+  }
+
   void _select(_MoreItem item) {
     if (widget.closeOnSelection) Navigator.maybePop(context);
     switch (item.action) {
@@ -70,7 +88,9 @@ class _ChatMorePanelState extends State<ChatMorePanel> {
     return SafeArea(
       top: false,
       child: Container(
-        color: const Color(0xFFF5F5F5),
+        color: widget.highlightPersona
+            ? const Color(0xFFF7F5FB)
+            : const Color(0xFFF5F5F5),
         padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -94,8 +114,18 @@ class _ChatMorePanelState extends State<ChatMorePanel> {
                           crossAxisSpacing: 6,
                           mainAxisSpacing: 4,
                         ),
-                    itemBuilder: (context, index) =>
-                        _MoreButton(item: pageItems[index], onTap: _select),
+                    itemBuilder: (context, index) {
+                      final item = pageItems[index];
+                      return _MoreButton(
+                        item: item,
+                        label: _labelFor(item),
+                        isAvailable: _isAvailable(item),
+                        highlighted:
+                            widget.highlightPersona &&
+                            item.action == _MoreAction.userPersona,
+                        onTap: _select,
+                      );
+                    },
                   );
                 },
               ),
@@ -127,32 +157,41 @@ class _ChatMorePanelState extends State<ChatMorePanel> {
 }
 
 class _MoreButton extends StatelessWidget {
-  const _MoreButton({required this.item, required this.onTap});
+  const _MoreButton({
+    required this.item,
+    required this.label,
+    required this.isAvailable,
+    this.highlighted = false,
+    required this.onTap,
+  });
 
   final _MoreItem item;
+  final String label;
+  final bool isAvailable;
+  final bool highlighted;
   final ValueChanged<_MoreItem> onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => onTap(item),
+      onTap: isAvailable ? () => onTap(item) : null,
       child: Column(
         children: [
           Container(
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: item.isAvailable
-                  ? Colors.white
+              color: isAvailable
+                  ? (highlighted ? const Color(0xFFE9E3F5) : Colors.white)
                   : Colors.white.withValues(alpha: 0.56),
               borderRadius: BorderRadius.circular(13),
             ),
             child: Icon(
               item.icon,
               size: 26,
-              color: item.isAvailable
-                  ? Colors.black87
+              color: isAvailable
+                  ? (highlighted ? const Color(0xFF7668A6) : Colors.black87)
                   : const Color(0xFFB8B8B8),
             ),
           ),
@@ -160,13 +199,13 @@ class _MoreButton extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
-              item.label,
+              label,
               maxLines: 1,
               softWrap: false,
               style: TextStyle(
                 fontSize: item.action == _MoreAction.userPersona ? 11 : 12,
-                color: item.isAvailable
-                    ? Colors.black87
+                color: isAvailable
+                    ? (highlighted ? const Color(0xFF7668A6) : Colors.black87)
                     : const Color(0xFFAAAAAA),
               ),
             ),

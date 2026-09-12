@@ -17,8 +17,6 @@ class EchoDailyLifeService {
     List<String> excludedSummaries = const [],
     int variation = 0,
   }) {
-    if (initial) return _arrival(character, at, variation);
-
     final context = _EchoLifeContext(character: character, profile: profile);
     final options = <EchoDailyLife>[
       ..._dailyOptions(context, at),
@@ -54,37 +52,19 @@ class EchoDailyLifeService {
         .toList();
     final pool = available.isEmpty ? options : available;
     final dayKey = '${at.year}-${at.month}-${at.day}';
-    return pool[(_hash('${character.id}|$dayKey|${pool.length}') + variation) %
-        pool.length];
-  }
-
-  EchoDailyLife _arrival(AiCharacter character, DateTime at, int variation) {
-    const openings = ['第一次来这里', '新的地方', '从这里开始', '先在这里落个脚'];
-    const actions = ['留个位置', '记下这一刻', '先写下一小句', '放下一点生活的痕迹'];
-    const endings = ['以后想到什么就记一点。', '其他的以后慢慢说。', '接下来的日子再慢慢补上。', '先这样，往后再继续。'];
-    final seed = _hash(
-      '${character.id}|${character.createdAt.toIso8601String()}',
-    );
-    final opening = openings[(seed + variation) % openings.length];
-    final action =
-        actions[(seed ~/ 7 + variation ~/ openings.length) % actions.length];
-    final ending =
-        endings[(seed ~/ 17 + variation ~/ (openings.length * actions.length)) %
-            endings.length];
-    final period = _period(at);
-    final timeLead = switch (at.hour) {
-      < 6 => '夜还很深，',
-      < 11 => '今天上午，',
-      < 18 => '',
-      < 23 => '今晚，',
-      _ => '夜里，',
-    };
+    final picked =
+        pool[(_hash('${character.id}|$dayKey|${pool.length}') + variation) %
+            pool.length];
+    if (!initial) return picked;
+    // The first Echo keeps its arrival marker for UI labels, state and
+    // statistics, but its text is an ordinary life line instead of an
+    // onboarding announcement. No "第一次来到这里 / 留个位置" template.
     return EchoDailyLife(
       kind: EchoDailyLifeKind.arrival,
-      content: '$timeLead$opening，$action。$ending',
+      content: picked.content,
       summary: '初次来到 PeiLink',
       sourceEvent: 'character_arrival',
-      characterState: period,
+      characterState: picked.characterState,
     );
   }
 

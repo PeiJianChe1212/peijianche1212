@@ -373,9 +373,14 @@ class Memory2Retriever implements Memory2RetrieverGateway {
 
     final summary = _truncate(summaryText, summaryCharacters);
     addSection('长期记忆汇总', summary.isEmpty ? const [] : [summary]);
+    final normalizedSummary = _normalize(summary);
 
     final userLines = <String>[];
-    for (final scored in users.take(maximumUserMemories)) {
+    for (final scored in users) {
+      if (selectedUsers.length >= maximumUserMemories) break;
+      if (_coveredBySummary(normalizedSummary, scored.value.displayText)) {
+        continue;
+      }
       final line =
           '- ${_truncate(scored.value.displayText, userItemCharacters)}';
       if (!_fits('关于用户的记忆', userLines, line, remaining)) break;
@@ -398,7 +403,9 @@ class Memory2Retriever implements Memory2RetrieverGateway {
     addSection(historyTitle, historyLines);
 
     final eventLines = <String>[];
-    for (final scored in events.take(maximumEventMemories)) {
+    for (final scored in events) {
+      if (selectedEvents.length >= maximumEventMemories) break;
+      if (_coveredBySummary(normalizedSummary, scored.value.content)) continue;
       final line = '- ${_truncate(scored.value.content, eventItemCharacters)}';
       if (!_fits('相关共同经历', eventLines, line, remaining)) break;
       eventLines.add(line);
@@ -449,6 +456,12 @@ class Memory2Retriever implements Memory2RetrieverGateway {
 
   bool _fits(String title, List<String> lines, String next, int remaining) =>
       '【$title】\n${[...lines, next].join('\n')}'.length <= remaining;
+
+  bool _coveredBySummary(String normalizedSummary, String candidate) {
+    final normalizedCandidate = _normalize(candidate);
+    return normalizedCandidate.length >= 4 &&
+        normalizedSummary.contains(normalizedCandidate);
+  }
 
   UserMemory? _currentVersion(UserMemory historical, List<UserMemory> users) {
     var next = historical.supersededById;

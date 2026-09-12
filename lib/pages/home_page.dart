@@ -239,12 +239,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await _openPeiLink();
       return;
     }
-    final activeId = await _characterRegistry.loadActiveCharacterId();
-    final recentCharacter = characters.firstWhere(
-      (character) => character.id == activeId,
+    // 聊天入口必须跟随 AI World 当前展示的角色，而不是别处持久化的
+    // activeCharacter；用稳定的 characterId 在当前列表中解析同一个角色。
+    final displayedId = _homeCharacter.id;
+    final displayedCharacter = characters.firstWhere(
+      (character) => character.id == displayedId,
       orElse: () => _homeCharacter,
     );
-    await _openChatForCharacter(recentCharacter);
+    await _openChatForCharacter(displayedCharacter);
   }
 
   Future<void> _openPeiLink() async {
@@ -650,10 +652,10 @@ class _CharacterDesktopPage extends StatelessWidget {
                       onTap: onChat,
                     ),
                     _QuickAction(
+                      key: const ValueKey('ai-world-echo-entry'),
                       icon: Icons.auto_awesome_rounded,
                       label: 'Echo',
                       caption: '他的生活回声',
-                      assetPath: 'assets/images/app_icons/echo.png',
                       onTap: onEcho,
                     ),
                     _QuickAction(
@@ -2638,7 +2640,6 @@ class _QuickAction extends StatelessWidget {
     required this.caption,
     required this.onTap,
     this.badgeCount = 0,
-    this.assetPath,
   });
 
   final IconData icon;
@@ -2646,7 +2647,6 @@ class _QuickAction extends StatelessWidget {
   final String caption;
   final VoidCallback onTap;
   final int badgeCount;
-  final String? assetPath;
 
   @override
   Widget build(BuildContext context) {
@@ -2701,16 +2701,8 @@ class _QuickAction extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: assetPath == null
-                          ? Icon(icon, color: Colors.white, size: 20)
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(13),
-                              child: Image.asset(
-                                assetPath!,
-                                fit: BoxFit.cover,
-                                filterQuality: FilterQuality.high,
-                              ),
-                            ),
+                      // 三个快捷入口统一使用简洁符号图标，视觉权重一致。
+                      child: Icon(icon, color: Colors.white, size: 20),
                     ),
                     const SizedBox(height: 5),
                     Text(

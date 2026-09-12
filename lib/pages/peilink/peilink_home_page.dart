@@ -13,6 +13,8 @@ import '../../theme/app_dimensions.dart';
 import '../../theme/app_text_styles.dart';
 import 'ai_creation_center_page.dart';
 import 'character_management_page.dart';
+import 'create_group_chat_page.dart';
+import 'echo_compose_page.dart';
 import 'peilink_chats_page.dart';
 import 'relationship_hub_page.dart';
 import 'peilink_echo_page.dart';
@@ -33,6 +35,7 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   int _currentIndex = 0;
   int _contactsRevision = 0;
   int _chatsRevision = 0;
+  int _echoRevision = 0;
   UserProfile _profile = const UserProfile();
   bool _physicalUiEnabled = false;
 
@@ -41,8 +44,16 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   List<Widget> get _pages => [
     PeiLinkChatsPage(key: ValueKey(_chatsRevision)),
     RelationshipHubPage(key: ValueKey(_contactsRevision)),
-    const PeiLinkEchoPage(showPublicTimeline: true, embedded: true),
+    PeiLinkEchoPage(
+      key: ValueKey('peilink-echo-$_echoRevision'),
+      showPublicTimeline: true,
+      embedded: true,
+    ),
   ];
+
+  static const int _echoTabIndex = 2;
+
+  bool get _isEchoTab => _currentIndex == _echoTabIndex;
 
   @override
   void initState() {
@@ -95,6 +106,38 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
     );
   }
 
+  /// Echo tab entry: the current user's own Echo space.
+  Future<void> _openMyEcho() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => const PeiLinkEchoPage()),
+    );
+    if (!mounted) return;
+    setState(() => _echoRevision += 1);
+  }
+
+  Future<void> _openMyEchoFromDrawer() async {
+    Navigator.pop(context);
+    await _openMyEcho();
+  }
+
+  /// Echo tab entry: publish an Echo as the current user.
+  Future<void> _publishEcho() async {
+    final created = await openUserEchoCompose(context, _profile);
+    if (!mounted || !created) return;
+    setState(() => _echoRevision += 1);
+  }
+
+  /// 消息首页入口：创建群聊，复用既有创建页，不新增第二套实现。
+  Future<void> _openCreateGroup() async {
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateGroupChatPage()),
+    );
+    if (!mounted) return;
+    setState(() => _chatsRevision += 1);
+  }
+
   Future<void> _openCharacterManagementFromDrawer() async {
     Navigator.pop(context);
     final registry = CharacterRegistryService();
@@ -134,14 +177,30 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
           backgroundColor: Colors.transparent,
           drawer: PeiLinkProfileDrawer(
             onOpenCharacterManagement: _openCharacterManagementFromDrawer,
+            onOpenMyEcho: _openMyEchoFromDrawer,
             onProfileChanged: (profile) {
               if (mounted) setState(() => _profile = profile);
             },
           ),
           appBar: AppBar(
-            backgroundColor: const Color(0xEAF7F9FA),
+            backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             elevation: 0,
+            flexibleSpace: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.68),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.72),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             centerTitle: true,
             leadingWidth: 58,
             leading: Padding(
@@ -149,7 +208,9 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
               child: InkWell(
                 key: const ValueKey('peilink-profile-entry'),
                 borderRadius: BorderRadius.circular(AppDimensions.radiusPill),
-                onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                onTap: _isEchoTab
+                    ? _openMyEcho
+                    : () => _scaffoldKey.currentState?.openDrawer(),
                 child: ClipOval(
                   child: Container(
                     color: const Color(0xFFE3E7E9),
@@ -167,7 +228,32 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
             title: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_titles[_currentIndex], style: AppTextStyles.pageTitle),
+                InkWell(
+                  key: const ValueKey('peilink-guide-entry'),
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: _openGuide,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'assets/images/brand/peilink_butterfly.png',
+                          width: 20,
+                          height: 20,
+                        ),
+                        const SizedBox(width: 7),
+                        Text(
+                          _titles[_currentIndex],
+                          style: AppTextStyles.pageTitle,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 if (_physicalUiEnabled) ...[
                   const SizedBox(height: 1),
                   const Row(
@@ -189,27 +275,64 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
               ],
             ),
             actions: [
-              IconButton(
-                key: const ValueKey('peilink-guide-entry'),
-                onPressed: _openGuide,
-                tooltip: '阿澈 Guide',
-                icon: Image.asset(
-                  'assets/images/brand/peilink_butterfly.png',
-                  width: 27,
-                  height: 27,
+              if (_currentIndex == 0)
+                PopupMenuButton<String>(
+                  key: const ValueKey('peilink-create-entry'),
+                  tooltip: '新建',
+                  padding: EdgeInsets.zero,
+                  offset: const Offset(0, 44),
+                  color: Colors.white,
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  onSelected: (value) {
+                    if (value == 'character') _showCreateMenu();
+                    if (value == 'group') _openCreateGroup();
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'character',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Color(0xFF6F79A8),
+                        ),
+                        title: Text('创建角色'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'group',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.groups_2_outlined,
+                          color: Color(0xFFF2994A),
+                        ),
+                        title: Text('创建群聊'),
+                      ),
+                    ),
+                  ],
+                  icon: const Icon(
+                    Icons.add_circle_outline_rounded,
+                    color: Color(0xFF171717),
+                    size: 25,
+                  ),
+                )
+              else
+                IconButton(
+                  key: const ValueKey('peilink-create-entry'),
+                  onPressed: _isEchoTab ? _publishEcho : _showCreateMenu,
+                  tooltip: _isEchoTab ? '发布 Echo' : '创建',
+                  icon: const Icon(
+                    Icons.add_circle_outline_rounded,
+                    color: Color(0xFF171717),
+                    size: 25,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              IconButton(
-                key: const ValueKey('peilink-create-entry'),
-                onPressed: _showCreateMenu,
-                tooltip: '创建',
-                icon: const Icon(
-                  Icons.add_circle_outline_rounded,
-                  color: Color(0xFF171717),
-                  size: 25,
-                ),
-              ),
               const SizedBox(width: 4),
             ],
           ),
@@ -240,34 +363,86 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
                       ),
                     ],
                   ),
-                  child: SizedBox(
-                    height: AppDimensions.bottomNavigationHeight,
-                    child: BottomNavigationBar(
-                      currentIndex: _currentIndex,
-                      type: BottomNavigationBarType.fixed,
-                      backgroundColor: Colors.transparent,
-                      elevation: 0,
-                      selectedItemColor: const Color(0xFF3E809D),
-                      unselectedItemColor: const Color(0xFF536068),
-                      selectedFontSize: 11,
-                      unselectedFontSize: 11,
-                      iconSize: AppDimensions.bottomNavigationIcon,
-                      onTap: (index) => setState(() => _currentIndex = index),
-                      items: const [
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.chat_bubble_outline_rounded),
-                          activeIcon: Icon(Icons.chat_bubble_rounded),
-                          label: '消息',
+                  child: _PeiLinkNavigationBar(
+                    currentIndex: _currentIndex,
+                    onChanged: (index) => setState(() => _currentIndex = index),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PeiLinkNavigationBar extends StatelessWidget {
+  const _PeiLinkNavigationBar({
+    required this.currentIndex,
+    required this.onChanged,
+  });
+
+  final int currentIndex;
+  final ValueChanged<int> onChanged;
+
+  static const _items = [
+    (Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, '消息'),
+    (Icons.favorite_border_rounded, Icons.favorite_rounded, '羁绊'),
+    (Icons.graphic_eq_rounded, Icons.waves_rounded, 'Echo'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: AppDimensions.bottomNavigationHeight,
+      child: Row(
+        children: List.generate(_items.length, (index) {
+          final item = _items[index];
+          final selected = index == currentIndex;
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 7),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  key: ValueKey('peilink-tab-$index'),
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => onChanged(index),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 210),
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFFDDE8FA).withValues(alpha: 0.86)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(18),
+                      border: selected
+                          ? Border.all(color: const Color(0x80FFFFFF))
+                          : null,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          selected ? item.$2 : item.$1,
+                          size: AppDimensions.bottomNavigationIcon,
+                          color: selected
+                              ? const Color(0xFF526DA5)
+                              : const Color(0xFF66737B),
                         ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.people_outline_rounded),
-                          activeIcon: Icon(Icons.people_rounded),
-                          label: '羁绊',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.waves_outlined),
-                          activeIcon: Icon(Icons.waves_rounded),
-                          label: 'Echo',
+                        const SizedBox(height: 2),
+                        Text(
+                          item.$3,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: selected
+                                ? const Color(0xFF405B91)
+                                : const Color(0xFF66737B),
+                          ),
                         ),
                       ],
                     ),
@@ -275,8 +450,8 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
                 ),
               ),
             ),
-          ),
-        ),
+          );
+        }),
       ),
     );
   }

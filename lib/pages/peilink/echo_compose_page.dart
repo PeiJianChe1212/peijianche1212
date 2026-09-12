@@ -5,9 +5,44 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../models/ai_character.dart';
 import '../../models/echo_item.dart';
+import '../../models/user_profile.dart';
+import '../../services/echo_identity.dart';
 import '../../services/echo_image_storage_service.dart';
 import '../../services/echo_storage_service.dart';
 import '../../services/echo_social_interaction_service.dart';
+
+/// Synthetic owner used when the current user records their own Echo.
+///
+/// It reuses the user's profile snapshot only; the owner id stays stable so
+/// the user timeline never mixes with a character timeline.
+AiCharacter userEchoOwner(UserProfile profile) => AiCharacter(
+  id: EchoIdentity.userEchoOwnerId,
+  characterName: profile.nickname,
+  remark: '',
+  avatarPath: profile.avatarPath,
+  relationship: profile.identity,
+  createdAt: DateTime.now(),
+);
+
+/// Opens the composer for the current user's own Echo.
+///
+/// Returns `true` when a new Echo was published.
+Future<bool> openUserEchoCompose(
+  BuildContext context,
+  UserProfile profile,
+) async {
+  final created = await Navigator.push<bool>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => EchoComposePage(
+        character: userEchoOwner(profile),
+        ownerLabel: '自己',
+        isUserEcho: true,
+      ),
+    ),
+  );
+  return created == true;
+}
 
 class EchoComposePage extends StatefulWidget {
   const EchoComposePage({

@@ -130,21 +130,20 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('管理记忆'));
-    await tester.pumpAndSettle();
+    expect(find.byTooltip('管理记忆'), findsNothing);
 
-    expect(find.text('记忆管理'), findsOneWidget);
-    expect(find.text('重新整理聊天记录'), findsOneWidget);
-    expect(find.text('用户记忆历史'), findsOneWidget);
-    expect(find.text('未完成的保存请求'), findsOneWidget);
-    expect(find.text('已遗忘的记忆'), findsOneWidget);
-    expect(find.text('复制全部记忆'), findsOneWidget);
+    expect(find.text('记忆管理'), findsNothing);
+    expect(find.text('重新整理聊天记录'), findsNothing);
+    expect(find.text('用户记忆历史'), findsNothing);
+    expect(find.text('未完成的保存请求'), findsNothing);
+    expect(find.text('已遗忘的记忆'), findsNothing);
+    expect(find.text('复制全部记忆'), findsNothing);
     expect(find.text('迁移旧版记忆'), findsNothing);
     expect(find.text('旧版记忆'), findsNothing);
     expect(find.text('旧版待审核'), findsNothing);
   });
 
-  testWidgets('management reveals only applicable legacy operations', (
+  testWidgets('legacy data does not expose management operations', (
     tester,
   ) async {
     final base = _snapshot();
@@ -179,19 +178,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('管理记忆'));
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('旧版待审核'),
-      200,
-      scrollable: find.byType(Scrollable).last,
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('迁移旧版记忆'), findsOneWidget);
-    expect(find.text('旧数据兼容'), findsOneWidget);
-    expect(find.text('旧版记忆'), findsOneWidget);
-    expect(find.text('旧版待审核'), findsOneWidget);
+    expect(find.byTooltip('管理记忆'), findsNothing);
+    expect(find.text('迁移旧版记忆'), findsNothing);
+    expect(find.text('旧数据兼容'), findsNothing);
+    expect(find.text('旧版记忆'), findsNothing);
+    expect(find.text('旧版待审核'), findsNothing);
   });
 
   testWidgets(
@@ -237,15 +228,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('已确认'), findsOneWidget);
       expect(find.textContaining('旧咖啡'), findsNothing);
-      await tester.tap(find.byTooltip('管理记忆'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('用户记忆历史'));
-      await tester.pumpAndSettle();
-      expect(find.text('饮品：旧咖啡'), findsOneWidget);
-      expect(find.textContaining('已被新事实替代'), findsOneWidget);
+      expect(find.byTooltip('管理记忆'), findsNothing);
+      expect(controller.snapshot.userMemories.length, 2);
     },
   );
-  testWidgets('failed explicit request can retry its source from management', (
+  testWidgets('hidden management never retries explicit requests', (
     tester,
   ) async {
     final controller = _FakeController(_snapshot());
@@ -259,21 +246,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('管理记忆'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('未完成的保存请求'));
-    await tester.pumpAndSettle();
-    expect(find.text('你要记住我们的纪念日'), findsOneWidget);
-    await tester.tap(find.text('重新整理'));
-    await tester.pumpAndSettle();
-    expect(controller.retries, 1);
-    expect(find.text('已形成受保护记忆'), findsOneWidget);
-    expect(
-      tester
-          .widget<TextButton>(find.widgetWithText(TextButton, '重新整理'))
-          .onPressed,
-      isNull,
-    );
+    expect(find.byTooltip('管理记忆'), findsNothing);
+    expect(controller.retries, 0);
+    expect(find.text('未完成的保存请求'), findsNothing);
   });
   testWidgets(
     'Memory center displays three layers and hides forgotten technical state',

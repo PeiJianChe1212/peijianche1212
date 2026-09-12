@@ -351,6 +351,28 @@ void main() {
   );
 
   test(
+    'summary suppresses exact duplicate selected fact and event only',
+    () async {
+      final service = storage('role-a');
+      await service.saveMemorySummary(
+        MemorySummary(characterId: 'role-a', generatedText: '用户喜欢咖啡。一起在海边散步。'),
+      );
+      await service.saveUserMemories([
+        UserMemory(id: 'u', characterId: 'role-a', key: '用户喜欢', value: '咖啡'),
+      ]);
+      await service.saveEventMemories([event('e', '一起在海边散步')]);
+
+      final result = await retriever(
+        service,
+      ).retrieve(currentMessage: '咖啡 海边散步', now: now);
+      expect(result.contextText, contains('用户喜欢咖啡'));
+      expect('一起在海边散步'.allMatches(result.contextText).length, 1);
+      expect(result.selectedEventMemories, isEmpty);
+      expect(result.selectedUserMemories, isEmpty);
+    },
+  );
+
+  test(
     'legacy event/user are fallback only; archived and unclassified are excluded; new duplicate wins',
     () async {
       final service = storage('role-a');

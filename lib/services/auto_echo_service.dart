@@ -285,22 +285,14 @@ class AutoEchoService {
       }
     }
     if (life == null && trigger == AutoEchoTrigger.initial) {
-      final fallback = _dailyLife.create(
+      // Last resort so a fresh character still shows one visible first Echo.
+      // Keep it an ordinary life line, never an arrival statement.
+      life = _dailyLife.create(
         character: character,
         at: now,
         profile: profile,
         initial: true,
         variation: maximumAttempts,
-      );
-      life = EchoDailyLife(
-        kind: fallback.kind,
-        content:
-            '${fallback.content}就从${character.createdAt.month}月'
-            '${character.createdAt.day}日 ${character.createdAt.hour}:'
-            '${character.createdAt.minute.toString().padLeft(2, '0')}这一刻开始。',
-        summary: fallback.summary,
-        sourceEvent: fallback.sourceEvent,
-        characterState: fallback.characterState,
       );
     }
     if (life == null) return null;

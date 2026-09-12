@@ -14,7 +14,9 @@ void main() {
   ) async {
     final controller = _UiController();
     await tester.pumpWidget(
-      MaterialApp(home: MemoryPage(characterId: 'role', controller: controller)),
+      MaterialApp(
+        home: MemoryPage(characterId: 'role', controller: controller),
+      ),
     );
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -23,21 +25,16 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
 
-    final fadingOpacity = tester.widget<Opacity>(find.ancestor(
-      of: find.text('雨天一起喝咖啡'),
-      matching: find.byType(Opacity),
-    ));
-    final pendingOpacity = tester.widget<Opacity>(find.ancestor(
-      of: find.text('正在遗忘'),
-      matching: find.byType(Opacity),
-    ));
+    final fadingOpacity = tester.widget<Opacity>(
+      find.ancestor(of: find.text('雨天一起喝咖啡'), matching: find.byType(Opacity)),
+    );
+    final pendingOpacity = tester.widget<Opacity>(
+      find.ancestor(of: find.text('正在遗忘'), matching: find.byType(Opacity)),
+    );
     expect(fadingOpacity.opacity, .78);
     expect(pendingOpacity.opacity, .62);
     expect(
-      find.ancestor(
-        of: find.text('今天一起散步'),
-        matching: find.byType(Opacity),
-      ),
+      find.ancestor(of: find.text('今天一起散步'), matching: find.byType(Opacity)),
       findsNothing,
     );
     expect(find.byKey(const Key('fading-divider')), findsOneWidget);
@@ -51,7 +48,9 @@ void main() {
   ) async {
     final controller = _UiController();
     await tester.pumpWidget(
-      MaterialApp(home: MemoryPage(characterId: 'role', controller: controller)),
+      MaterialApp(
+        home: MemoryPage(characterId: 'role', controller: controller),
+      ),
     );
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -64,10 +63,12 @@ void main() {
       of: find.text('今天一起散步'),
       matching: find.byType(ListTile),
     );
-    await tester.tap(find.descendant(
-      of: eventTile,
-      matching: find.byType(PopupMenuButton<String>),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: eventTile,
+        matching: find.byType(PopupMenuButton<String>),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('不要忘记'));
     await tester.pumpAndSettle();
@@ -77,18 +78,20 @@ void main() {
       of: find.text('今天一起散步'),
       matching: find.byType(ListTile),
     );
-    await tester.tap(find.descendant(
-      of: pinnedTile,
-      matching: find.byType(PopupMenuButton<String>),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: pinnedTile,
+        matching: find.byType(PopupMenuButton<String>),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('取消固定'), findsOneWidget);
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('管理记忆'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('已遗忘的记忆'));
+    await tester.pumpWidget(
+      MaterialApp(home: ForgottenMemoriesPage(controller: controller)),
+    );
     await tester.pumpAndSettle();
     expect(find.text('永远隐藏'), findsOneWidget);
     await tester.tap(find.byType(PopupMenuButton<String>).first);
@@ -97,12 +100,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.restoreCalls, 1);
     expect(find.text('永远隐藏'), findsNothing);
-    await tester.pageBack();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MemoryPage(characterId: 'role', controller: controller),
+      ),
+    );
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('永远隐藏'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('永远隐藏'), findsOneWidget);
   });
 
-  testWidgets('memory operation errors never expose internal details', (tester) async {
+  testWidgets('memory operation errors never expose internal details', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: MemoryPage(
@@ -121,10 +135,12 @@ void main() {
       of: find.text('内部错误测试'),
       matching: find.byType(ListTile),
     );
-    await tester.tap(find.descendant(
-      of: userTile,
-      matching: find.byType(PopupMenuButton<String>),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: userTile,
+        matching: find.byType(PopupMenuButton<String>),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('编辑').last);
     await tester.pumpAndSettle();
@@ -180,14 +196,17 @@ class _UiController extends MemoryCenterController {
   );
 
   @override
-  Future<MemoryCenterSnapshot> load({DateTime? now}) async => MemoryCenterSnapshot(
-    events: [active, fading, pending, forgotten],
-    userMemories: const [],
-    summary: const MemorySummary(characterId: 'role'),
-    characterUserProfile: const CharacterUserProfile(characterId: 'role'),
-    settings: CharacterSettings.genericDefaults().copyWith(characterName: '测试角色'),
-    legacy: const [],
-  );
+  Future<MemoryCenterSnapshot> load({DateTime? now}) async =>
+      MemoryCenterSnapshot(
+        events: [active, fading, pending, forgotten],
+        userMemories: const [],
+        summary: const MemorySummary(characterId: 'role'),
+        characterUserProfile: const CharacterUserProfile(characterId: 'role'),
+        settings: CharacterSettings.genericDefaults().copyWith(
+          characterName: '测试角色',
+        ),
+        legacy: const [],
+      );
 
   @override
   Future<void> setEventPinned(EventMemory item, bool pinned) async {

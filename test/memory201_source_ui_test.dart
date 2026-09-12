@@ -162,14 +162,8 @@ void main() {
     (tester) async {
       final controller = _Controller();
       await tester.pumpWidget(
-        MaterialApp(
-          home: MemoryPage(characterId: 'c', controller: controller),
-        ),
+        MaterialApp(home: MemoryReprocessingPage(controller: controller)),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('管理记忆'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('重新整理聊天记录'));
       await tester.pumpAndSettle();
       expect(controller.calls, 0);
       expect(

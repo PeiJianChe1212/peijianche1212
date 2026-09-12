@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'platform_storage.dart';
@@ -7,6 +9,8 @@ class NativePlatformStorage implements PlatformStorage {
   NativePlatformStorage(this.rootPath);
 
   final String rootPath;
+  static final Random _temporaryRandom = Random.secure();
+  static int _temporaryCounter = 0;
 
   String _path(String key) {
     final clean = key.replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
@@ -27,30 +31,66 @@ class NativePlatformStorage implements PlatformStorage {
   @override
   Future<bool> exists(String key) => File(_path(key)).exists();
   @override
-  Future<String> readText(String key) => File(_path(key)).readAsString();
+  Future<String> readText(String key) =>
+      _withSharingRetry(() => File(_path(key)).readAsString());
   @override
-  Future<Uint8List> readBytes(String key) => File(_path(key)).readAsBytes();
+  Future<Uint8List> readBytes(String key) =>
+      _withSharingRetry(() => File(_path(key)).readAsBytes());
   @override
-  Future<void> writeText(String key, String value) async {
-    final file = File(_path(key));
-    await file.parent.create(recursive: true);
-    await file.writeAsString(value, flush: true);
-  }
+  Future<void> writeText(String key, String value) =>
+      _replaceBytes(key, utf8.encode(value));
 
   @override
-  Future<void> writeBytes(String key, Uint8List value) async {
-    final file = File(_path(key));
-    await file.parent.create(recursive: true);
-    await file.writeAsBytes(value, flush: true);
-  }
+  Future<void> writeBytes(String key, Uint8List value) =>
+      _replaceBytes(key, value);
 
   @override
-  Future<void> replaceTextSafely(String key, String value) async {
+  Future<void> replaceTextSafely(String key, String value) =>
+      writeText(key, value);
+
+  Future<void> _replaceBytes(String key, List<int> value) async {
     final file = File(_path(key));
     await file.parent.create(recursive: true);
-    final temporary = File('${file.path}.tmp');
-    await temporary.writeAsString(value, flush: true);
-    await temporary.rename(file.path);
+    // Counter separates overlapping operations; random suffix also separates
+    // isolates/processes. Keep staging beside the target on the same volume.
+    final nonce = List.generate(
+      4,
+      (_) =>
+          _temporaryRandom.nextInt(1 << 32).toRadixString(16).padLeft(8, '0'),
+    ).join();
+    final temporary = File(
+      '${file.path}.$pid.${_temporaryCounter++}.$nonce.tmp',
+    );
+    try {
+      await temporary.writeAsBytes(value, flush: true);
+      await _withSharingRetry(() => temporary.rename(file.path));
+    } finally {
+      // Never delete the destination or another writer's staging file. A
+      // concurrent directory deletion may already have removed this file.
+      try {
+        if (await temporary.exists()) await temporary.delete();
+      } on FileSystemException {
+        // Preserve the original write/rename failure if cleanup cannot finish.
+      }
+    }
+  }
+
+  Future<T> _withSharingRetry<T>(Future<T> Function() operation) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await operation();
+      } on FileSystemException catch (error) {
+        // Windows can briefly deny either a read or replacement while another
+        // operation holds a handle. Never delete the target to unlock it.
+        // Permanent errors still propagate within a bounded time.
+        if (!Platform.isWindows ||
+            ![5, 32, 33].contains(error.osError?.errorCode) ||
+            attempt >= 5) {
+          rethrow;
+        }
+        await Future<void>.delayed(Duration(milliseconds: 10 * (1 << attempt)));
+      }
+    }
   }
 
   @override

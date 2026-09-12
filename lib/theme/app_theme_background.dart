@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'theme_background.dart';
+import 'theme_background_surface.dart';
 import '../services/peilink_appearance_service.dart';
 
 abstract final class AppThemeBackground {
@@ -123,6 +124,134 @@ abstract final class AppThemeBackground {
     opacity: 0.8,
   );
 
+  static const moonButterfly = ThemeBackground(
+    id: 'moon_butterfly',
+    name: '月光蝴蝶',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFF5F6FE), Color(0xFFE8EDF8)],
+    ),
+    opacity: 1,
+    pattern: BackgroundPattern.butterfly,
+  );
+  static const whitePeach = ThemeBackground(
+    id: 'white_peach',
+    name: '白桃花瓣',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFCFA), Color(0xFFFAEEF1)],
+    ),
+    opacity: 1,
+    pattern: BackgroundPattern.petals,
+  );
+  static const osmanthusShade = ThemeBackground(
+    id: 'osmanthus_shade',
+    name: '桂花碎影',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFCF4), Color(0xFFF6F1E4)],
+    ),
+    opacity: 1,
+    pattern: BackgroundPattern.osmanthus,
+  );
+  static const ginkgoLeaf = ThemeBackground(
+    id: 'ginkgo_leaf',
+    name: '银杏微叶',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFAFCF5), Color(0xFFEDF2E4)],
+    ),
+    opacity: 1,
+    pattern: BackgroundPattern.ginkgo,
+  );
+  static const quietSnow = ThemeBackground(
+    id: 'quiet_snow',
+    name: '细雪',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFF7FAFD), Color(0xFFE9EFF6)],
+    ),
+    opacity: 1,
+    pattern: BackgroundPattern.snow,
+  );
+  static const rainGlass = ThemeBackground(
+    id: 'rain_glass',
+    name: '雨滴玻璃',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFF3F8FA), Color(0xFFE3EEF0)],
+    ),
+    opacity: 1,
+    pattern: BackgroundPattern.rain,
+  );
+  static const seaSalt = ThemeBackground(
+    id: 'sea_salt',
+    name: '海盐波纹',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFF8FCFC), Color(0xFFE4F1F2)],
+    ),
+    opacity: 1,
+    pattern: BackgroundPattern.waves,
+  );
+  static const auroraDust = ThemeBackground(
+    id: 'aurora_dust',
+    name: '极光微粒',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFEEF2FB), Color(0xFFE7F3F0)],
+    ),
+    opacity: 1,
+    pattern: BackgroundPattern.aurora,
+  );
+  static const pureWhite = ThemeBackground(
+    id: 'pure_white',
+    name: '纯净白',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF)],
+    ),
+    opacity: 1,
+  );
+  static const softFogGray = ThemeBackground(
+    id: 'soft_fog_gray',
+    name: '柔雾灰',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFF6F7F8), Color(0xFFEDF0F2)],
+    ),
+    opacity: 1,
+  );
+  static const warmWhite = ThemeBackground(
+    id: 'warm_white',
+    name: '淡暖白',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFFFFCF6), Color(0xFFFAF6EE)],
+    ),
+    opacity: 1,
+  );
+  static const midnightSlate = ThemeBackground(
+    id: 'midnight_slate',
+    name: '深夜蓝灰',
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF263548), Color(0xFF182535)],
+    ),
+    opacity: 1,
+  );
   static const List<ThemeBackground> builtInPack = [
     catPawBlush,
     starButterflyBlue,
@@ -130,6 +259,18 @@ abstract final class AppThemeBackground {
     mistStar,
     lavenderFlower,
     softCloudBlue,
+    moonButterfly,
+    whitePeach,
+    osmanthusShade,
+    ginkgoLeaf,
+    quietSnow,
+    rainGlass,
+    seaSalt,
+    auroraDust,
+    pureWhite,
+    softFogGray,
+    warmWhite,
+    midnightSlate,
   ];
 
   static const List<ThemeBackground> legacyAtmospherePack = [
@@ -175,15 +316,11 @@ class ThemeBackgroundContainer extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          DecoratedBox(
-            key: ValueKey('theme-background-${resolvedBackground.id}'),
-            decoration: BoxDecoration(gradient: resolvedBackground.gradient),
+          ThemeBackgroundSurface(
+            background: resolvedBackground,
+            image: resolvedImage,
+            imageFit: imageFit,
           ),
-          if (resolvedImage != null)
-            Opacity(
-              opacity: resolvedBackground.opacity,
-              child: Image(image: resolvedImage, fit: imageFit),
-            ),
           child,
         ],
       ),

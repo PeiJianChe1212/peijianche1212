@@ -4,12 +4,15 @@ import '../ai/model_hub.dart';
 import '../models/activity_status.dart';
 import '../models/chat_message.dart';
 import '../models/character_settings.dart';
+import '../models/character_user_profile.dart';
 import '../conversation/conversation_engine.dart';
 import '../conversation/chat_reply_sanitizer.dart';
 import '../context_builder/context_build_result.dart';
 import '../prompt_composer/prompt_composer.dart';
 import '../prompt_composer/prompt_context.dart';
+import 'character_user_profile_storage_service.dart';
 import 'context_builder.dart';
+import 'memory2_chat_context_builder.dart';
 import 'memory_storage_service.dart';
 import 'user_profile_storage_service.dart';
 
@@ -56,6 +59,7 @@ class ProactiveMessageGenerationService {
 
     try {
       final userProfile = await UserProfileStorageService().loadProfile();
+      final characterUserProfile = await _loadCharacterUserProfile();
       final memory = await _compactMemory();
       final provider = await _modelHub.chatProvider();
       final conversationEngine = ConversationEngine.build(
@@ -94,6 +98,14 @@ class ProactiveMessageGenerationService {
                       {'role': 'user', 'content': userInstruction},
                     ],
                     systemPrompt: prompt,
+                  ),
+                )
+                .addContext(
+                  PromptContext.extension(
+                    id: 'character_user_profile',
+                    content: Memory2ChatContextBuilder
+                        .characterUserProfileSection(characterUserProfile),
+                    priority: PromptContextPriority.memory,
                   ),
                 )
                 .addContext(PromptContext.chatFlow(conversationEngine.prompt))
@@ -143,6 +155,16 @@ class ProactiveMessageGenerationService {
       });
     if (usable.isEmpty) return '';
     return usable.take(5).map((item) => '- ${item.content.trim()}').join('\n');
+  }
+
+  Future<CharacterUserProfile> _loadCharacterUserProfile() async {
+    try {
+      return await CharacterUserProfileStorageService(
+        characterId: characterId,
+      ).load();
+    } catch (_) {
+      return CharacterUserProfile(characterId: characterId);
+    }
   }
 
   String _taskRules(CharacterSettings settings) =>

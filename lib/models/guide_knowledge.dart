@@ -143,7 +143,7 @@ class GuideKnowledge {
       category: '角色',
       topic: '怎么删除角色？',
       keywords: ['删除角色', '永久删除'],
-      answer: '在角色管理底部选择“删除角色”，需要再次输入角色本名确认。',
+      answer: '在角色管理底部选择“删除角色”，经过两次确认后永久删除。',
     ),
     GuideKnowledgeEntry(
       category: '角色',

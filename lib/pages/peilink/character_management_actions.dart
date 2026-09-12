@@ -71,8 +71,8 @@ class CharacterManagementActions {
     final firstConfirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('删除${character.characterName}？'),
-        content: const Text('永久删除该角色及其独立数据，此操作无法撤销。'),
+        title: const Text('删除角色？'),
+        content: const Text('删除后，该角色及其相关本地数据将被删除。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -88,38 +88,38 @@ class CharacterManagementActions {
     );
     if (firstConfirmed != true || !context.mounted) return false;
 
-    var typedName = '';
+    var deleting = false;
     final secondConfirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('最后确认'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('请输入角色本名“${character.characterName}”确认删除：'),
-            const SizedBox(height: 12),
-            TextField(
-              autofocus: true,
-              onChanged: (value) => typedName = value.trim(),
-              decoration: const InputDecoration(border: OutlineInputBorder()),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text('确定永久删除「${character.characterName}」吗？'),
+          content: const Text('此操作无法撤销。'),
+          actions: [
+            TextButton(
+              onPressed: deleting
+                  ? null
+                  : () => Navigator.pop(dialogContext, false),
+              child: const Text('返回'),
+            ),
+            FilledButton(
+              onPressed: deleting
+                  ? null
+                  : () async {
+                      setDialogState(() => deleting = true);
+                      Navigator.pop(dialogContext, true);
+                    },
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: deleting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('永久删除'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              typedName == character.characterName,
-            ),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('永久删除'),
-          ),
-        ],
       ),
     );
     if (secondConfirmed != true) return false;

@@ -36,6 +36,7 @@ class PeiCharacterPackage {
     required this.character,
     required this.settings,
     this.avatarBytes,
+    this.socialAvatarBytes,
     this.portraitBytes,
     this.memory,
   });
@@ -43,6 +44,7 @@ class PeiCharacterPackage {
   final AiCharacter character;
   final CharacterSettings settings;
   final Uint8List? avatarBytes;
+  final Uint8List? socialAvatarBytes;
   final Uint8List? portraitBytes;
   final PeiMemoryPayload? memory;
 }
@@ -99,6 +101,8 @@ class PeiFileService {
       'openingGreeting': '',
       'media': {
         'avatar': await _encodeLocalImage(character.avatarPath),
+        if (character.socialAvatarPath.trim().isNotEmpty)
+          'socialAvatar': await _encodeLocalImage(character.socialAvatarPath),
         'portrait': await _encodeLocalImage(character.portraitPath),
       },
       'reserved': {
@@ -155,6 +159,9 @@ class PeiFileService {
           fallbackDefaults: CharacterSettings.genericDefaults(),
         ),
         avatarBytes: media is Map ? _decodeImage(media['avatar']) : null,
+        socialAvatarBytes: media is Map
+            ? _decodeImage(media['socialAvatar'])
+            : null,
         portraitBytes: media is Map ? _decodeImage(media['portrait']) : null,
         memory: version == 2 ? PeiMemoryPayload.parse(decoded['memory']) : null,
       );
@@ -191,12 +198,19 @@ class PeiFileService {
       id = 'character_${++sequence}';
     }
     var avatarPath = '';
+    var socialAvatarPath = '';
     var portraitPath = '';
     try {
       if (package.avatarBytes != null) {
         avatarPath = await _avatarStorage.saveAvatarBytes(
           characterId: id,
           bytes: package.avatarBytes!,
+        );
+      }
+      if (package.socialAvatarBytes != null) {
+        socialAvatarPath = await _avatarStorage.saveSocialAvatarBytes(
+          characterId: id,
+          bytes: package.socialAvatarBytes!,
         );
       }
       if (package.portraitBytes != null) {
@@ -210,6 +224,7 @@ class PeiFileService {
         characterName: importedName,
         remark: package.character.remark,
         avatarPath: avatarPath,
+        socialAvatarPath: socialAvatarPath,
         portraitPath: portraitPath,
         introduction: package.character.introduction,
         characterIntro: package.character.characterIntro,

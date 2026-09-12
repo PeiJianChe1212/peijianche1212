@@ -44,6 +44,21 @@ class GroupMessage {
   final GroupMessageSource sourceType;
   final String? sourceEventId;
 
+  GroupMessage copyWith({GroupMessageStatus? status}) => GroupMessage(
+        id: id,
+        groupId: groupId,
+        senderType: senderType,
+        senderId: senderId,
+        content: content,
+        messageType: messageType,
+        replyToMessageId: replyToMessageId,
+        mentionedMemberIds: mentionedMemberIds,
+        createdAt: createdAt,
+        status: status ?? this.status,
+        sourceType: sourceType,
+        sourceEventId: sourceEventId,
+      );
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'groupId': groupId,

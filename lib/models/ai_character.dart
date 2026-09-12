@@ -5,6 +5,7 @@ class AiCharacter {
     required this.remark,
     required this.createdAt,
     this.avatarPath = '',
+    this.socialAvatarPath = '',
     String? backgroundImage,
     String portraitPath = '',
     this.introduction = '',
@@ -22,6 +23,9 @@ class AiCharacter {
   final String characterName;
   final String remark;
   final String avatarPath;
+  final String socialAvatarPath;
+  String get effectiveSocialAvatarPath =>
+      socialAvatarPath.trim().isNotEmpty ? socialAvatarPath : avatarPath;
   final String backgroundImage;
   String get portraitPath => backgroundImage;
   final String introduction;
@@ -40,6 +44,7 @@ class AiCharacter {
     String? characterName,
     String? remark,
     String? avatarPath,
+    String? socialAvatarPath,
     String? backgroundImage,
     String? portraitPath,
     String? introduction,
@@ -57,6 +62,7 @@ class AiCharacter {
       characterName: characterName ?? this.characterName,
       remark: remark ?? this.remark,
       avatarPath: avatarPath ?? this.avatarPath,
+      socialAvatarPath: socialAvatarPath ?? this.socialAvatarPath,
       backgroundImage: backgroundImage ?? portraitPath ?? this.backgroundImage,
       introduction: introduction ?? this.introduction,
       characterIntro: characterIntro ?? this.characterIntro,
@@ -74,6 +80,7 @@ class AiCharacter {
     'characterName': characterName,
     'remark': remark,
     'avatarPath': avatarPath,
+    if (socialAvatarPath.isNotEmpty) 'socialAvatarPath': socialAvatarPath,
     'backgroundImage': backgroundImage,
     'introduction': introduction,
     'characterIntro': characterIntro,
@@ -95,6 +102,7 @@ class AiCharacter {
       characterName: rawName.isEmpty ? '未命名 AI' : rawName,
       remark: json['remark']?.toString().trim() ?? '',
       avatarPath: json['avatarPath']?.toString().trim() ?? '',
+      socialAvatarPath: json['socialAvatarPath']?.toString().trim() ?? '',
       backgroundImage:
           (json['backgroundImage'] ?? json['portraitPath'])
               ?.toString()

@@ -112,6 +112,47 @@ void main() {
     expect(result.userMemories.single.sourceMessageIds, ['m2']);
   });
 
+  test('event prompt rejects chat logs and requires one durable outcome', () {
+    final extractor = Memory2ModelExtractor();
+    addTearDown(extractor.dispose);
+    final prompt =
+        extractor
+                .buildMessages(
+                  Memory2ExtractionRequest(
+                    characterName: '角色',
+                    userName: '用户',
+                    messages: [
+                      ChatMessage(id: 'm1', role: 'user', content: '今天天气不错'),
+                    ],
+                  ),
+                )
+                .first['content']
+            as String;
+
+    expect(prompt, contains('普通聊天话题'));
+    expect(prompt, contains('已有确定结果'));
+    expect(prompt, contains('核心事件 + 结果 + 长期意义'));
+    expect(prompt, contains('同一件事时最多合成一条事件'));
+    expect(prompt, contains('用户说……角色说……'));
+    expect(prompt, contains('禁止按逐轮对话顺序复述'));
+  });
+
+  test('event parser bounds a single event without changing its sources', () {
+    final extractor = Memory2ModelExtractor();
+    addTearDown(extractor.dispose);
+    final result = extractor.parse(
+      '{"eventMemories":[{"content":"${'共同决定' * 100}","sourceMessageIds":["m1"]}],"userMemories":[]}',
+      allowedMessageIds: {'m1'},
+    );
+
+    expect(
+      result.eventMemories.single.content.length,
+      Memory2ModelExtractor.maximumEventCharacters,
+    );
+    expect(result.eventMemories.single.content, endsWith('…'));
+    expect(result.eventMemories.single.sourceMessageIds, ['m1']);
+  });
+
   test('extractor accepts schema without reason importance or confidence', () {
     final extractor = Memory2ModelExtractor();
     addTearDown(extractor.dispose);
@@ -175,8 +216,8 @@ void main() {
           extractor.buildMessages(request).first['content'] as String;
       expect(system, contains('喜欢拿铁，不喜欢美式'));
       expect(system, contains('剧情和 PVE，不喜欢 PVP'));
-      expect(system, contains('蓝色绣球'));
-      expect(system, contains('不要求是重大人生事件'));
+      expect(system, contains('普通聊天话题'));
+      expect(system, contains('核心事件 + 结果 + 长期意义'));
       expect(system, contains('只返回 JSON'));
       final schema = system.substring(
         system.indexOf('{'),

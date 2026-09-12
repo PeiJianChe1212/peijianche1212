@@ -77,16 +77,38 @@ ${buildDynamicSystemPrompt(
 ''';
   }
 
-  static String buildStyleExamplesPrompt(CharacterSettings settings) {
+  /// [maxExamples] 与 [maxCharacters] 用于控制样本数量，避免把全部示例塞进 prompt。
+  /// 只挑选少量代表性样本；相同内容去重；超预算时整条丢弃，不截半句。
+  static String buildStyleExamplesPrompt(
+    CharacterSettings settings, {
+    int maxExamples = 4,
+    int maxCharacters = 400,
+  }) {
     final examples = settings.parseExampleMessages();
     if (examples.isEmpty) return '';
 
-    final lines = examples.map((message) {
+    final selected = <Map<String, String>>[];
+    final seen = <String>{};
+    for (final message in examples) {
+      final content = (message['content'] ?? '').trim();
+      if (content.isEmpty || !seen.add(content)) continue;
+      selected.add(message);
+      if (selected.length >= maxExamples) break;
+    }
+    if (selected.isEmpty) return '';
+
+    final kept = <String>[];
+    var total = 0;
+    for (final message in selected) {
       final speaker = message['role'] == 'user'
           ? settings.userCallName
           : settings.characterName;
-      return '$speaker：${message['content'] ?? ''}';
-    }).join('\n');
+      final line = '$speaker：${message['content'] ?? ''}';
+      if (kept.isNotEmpty && total + line.length + 1 > maxCharacters) break;
+      kept.add(line);
+      total += line.length + 1;
+    }
+    if (kept.isEmpty) return '';
 
     return '''
 【语言风格样本｜STYLE_ONLY｜NON_FACTUAL】
@@ -96,7 +118,7 @@ ${buildDynamicSystemPrompt(
 只学习表达方式，不学习内容。
 
 <STYLE_EXAMPLES>
-$lines
+${kept.join('\n')}
 </STYLE_EXAMPLES>
 ''';
   }

@@ -179,6 +179,19 @@ class DeepSeekService {
       characterId: resolvedCharacterId,
     );
     if (promptExperiment == null) {
+      // 角色级「我的个人设定」独立加载，不与 Memory2 检索共用 try-catch。
+      // Memory2 检索失败不得导致角色级个人设定丢失。
+      try {
+        characterUserProfile = await _characterUserProfileLoader(
+          resolvedCharacterId,
+        );
+      } catch (error) {
+        // ignore: avoid_print
+        print(
+          '[CharacterUserProfile] characterId=$resolvedCharacterId '
+          'load failed: ${error.runtimeType}',
+        );
+      }
       try {
         memory2Retriever = _memory2RetrieverFactory(resolvedCharacterId);
         final latestUser = validConversation
@@ -190,9 +203,6 @@ class DeepSeekService {
               ? validConversation.sublist(0, validConversation.length - 1)
               : const [],
           now: DateTime.now(),
-        );
-        characterUserProfile = await _characterUserProfileLoader(
-          resolvedCharacterId,
         );
       } catch (error) {
         // Memory is optional context and must never block the chat request.
@@ -595,28 +605,47 @@ class DeepSeekService {
     return '我收到了，谢谢你。你的心意我记下了。';
   }
 
-  Future<String> composeImageMessage({required String userRequest}) async {
+  Future<String> composeImageMessage({
+    required String userRequest,
+    String? characterId,
+  }) async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
       return '给你。';
     }
 
     final characterSettings = await _characterStorage.loadSettings();
+    final resolvedId = characterId?.trim().isNotEmpty == true
+        ? characterId!.trim()
+        : await CharacterRegistryService().loadActiveCharacterId();
+    CharacterUserProfile characterUserProfile = CharacterUserProfile(
+      characterId: resolvedId,
+    );
+    try {
+      characterUserProfile = await _characterUserProfileLoader(resolvedId);
+    } catch (_) {
+      // 个人设定加载失败不影响随图消息，使用空值即可。
+    }
+    final profileSection = Memory2ChatContextBuilder
+        .characterUserProfileSection(characterUserProfile);
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
       messages: [
         {
           'role': 'system',
-          'content': ContextBuilder.build(
-            task: ContextTask.imageMessage,
-            settings: characterSettings,
-            taskRules: '''
+          'content': [
+            ContextBuilder.build(
+              task: ContextTask.imageMessage,
+              settings: characterSettings,
+              taskRules: '''
 你刚刚按照用户的要求生成并发送了一张图片。
 现在只写一句自然的随图消息，像聊天里把照片发过去时顺口说的话。
 不要解释生成过程，不要说“AI绘图”“模型”“提示词”，不要复述完整画面描述。
 通常 4 到 24 个字，最多两句。只输出消息正文。
 ''',
-          ),
+            ),
+            if (profileSection.isNotEmpty) profileSection,
+          ].join('\n\n'),
         },
         {'role': 'user', 'content': '用户原话：$userRequest'},
       ],

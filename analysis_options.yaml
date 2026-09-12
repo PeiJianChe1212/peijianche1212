@@ -8,6 +8,8 @@
 # The following line activates a set of recommended lints for Flutter apps,
 # packages, and plugins designed to encourage good coding practices.
 analyzer:
+  exclude:
+    - build/visual_polish_before/**
   errors:
     unused_field: ignore
 include: package:flutter_lints/flutter.yaml

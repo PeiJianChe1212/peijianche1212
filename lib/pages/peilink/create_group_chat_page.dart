@@ -75,9 +75,30 @@ class _CreateGroupChatPageState extends State<CreateGroupChatPage> {
     );
 
     setState(() => _saving = true);
-    await _storage.upsertGroup(group);
-    if (!mounted) return;
-    Navigator.pop(context, group);
+    try {
+      // 存储写入必须有上限，任何卡住都不能让用户停在“创建中”。
+      await _storage
+          .upsertGroup(group)
+          .timeout(const Duration(seconds: 12));
+      if (!mounted) return;
+      _saving = false;
+      // 结果类型保持 bool，兼容所有既有调用方的 Navigator.push<bool>。
+      Navigator.pop(context, true);
+    } catch (_) {
+      // 失败时做最小回滚，避免留下半创建群聊。
+      try {
+        await _storage
+            .deleteGroup(group.id)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // 回滚失败不覆盖主错误提示。
+      }
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('创建群聊失败，请稍后再试')),
+      );
+    }
   }
 
   @override
@@ -135,7 +156,8 @@ class _CreateGroupChatPageState extends State<CreateGroupChatPage> {
                   ),
                 ),
                 Expanded(
-                  child: Container(
+                  // Material 外壳保证 CheckboxListTile 的水波纹可见。
+                  child: Material(
                     color: Colors.white,
                     child: ListView.separated(
                       itemCount: _characters.length,

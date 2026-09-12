@@ -17,10 +17,12 @@ class PeiLinkProfileDrawer extends StatefulWidget {
   const PeiLinkProfileDrawer({
     super.key,
     required this.onOpenCharacterManagement,
+    required this.onOpenMyEcho,
     this.onProfileChanged,
   });
 
   final VoidCallback onOpenCharacterManagement;
+  final VoidCallback onOpenMyEcho;
   final ValueChanged<UserProfile>? onProfileChanged;
 
   @override
@@ -126,6 +128,11 @@ class _PeiLinkProfileDrawerState extends State<PeiLinkProfileDrawer> {
                 ),
               ),
               const _DrawerSectionLabel('功能入口'),
+              _DrawerTile(
+                icon: Icons.waves_rounded,
+                title: '我的 Echo',
+                onTap: widget.onOpenMyEcho,
+              ),
               _DrawerTile(
                 icon: Icons.people_outline_rounded,
                 title: '角色管理',

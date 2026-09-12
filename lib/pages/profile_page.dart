@@ -76,6 +76,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (picked == null) return;
       final path = await _storage.saveAvatarCopy(picked.path);
       if (path.isEmpty) return;
+      imageCache.evict(FileImage(File(path)));
       await _save(_profile.copyWith(avatarPath: path));
     } catch (error) {
       if (!mounted) return;

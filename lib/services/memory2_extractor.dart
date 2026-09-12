@@ -32,6 +32,7 @@ abstract interface class Memory2ExtractionGateway {
 }
 
 class Memory2ModelExtractor implements Memory2ExtractionGateway {
+  static const int maximumEventCharacters = 240;
   Memory2ModelExtractor({http.Client? client})
     : _client = client ?? http.Client(),
       _ownsClient = client == null;
@@ -86,7 +87,7 @@ class Memory2ModelExtractor implements Memory2ExtractionGateway {
             allowedMessageIds,
           );
           return ExtractedEventMemory(
-            content: _text(item['content']),
+            content: _truncate(_text(item['content']), maximumEventCharacters),
             sourceMessageIds: sources,
             occurredAt: DateTime.tryParse(_text(item['occurredAt'])),
           );
@@ -216,7 +217,8 @@ class Memory2ModelExtractor implements Memory2ExtractionGateway {
 当前用户：${request.userName}
 
 从本批对话中提取两类内容：
-1. eventMemories：用户与当前角色共同发生、共同讨论并形成完整互动的具体经历。它不要求是重大人生事件；只要用户以后可能自然提起“上次那件事”，就值得保存。它不是逐句摘要，连续话题应合成一个事件。例如用户买了一盆蓝色绣球，与角色讨论摆放位置后决定放在电脑桌旁，应保存为一条完整 EventMemory。不得把角色幻想或未出现的事情写成经历。
+1. eventMemories：只保存用户与当前角色之间有长期价值的共同事件。必须同时满足：发生了明确的共同事件、共同决定或共同完成的事情；已有确定结果；未来值得再次提及；对关系、偏好、约定或未来行为有长期意义。普通聊天话题、只有讨论但没有结果的互动、临时动作和日常寒暄一律不保存。连续对话围绕同一件事时最多合成一条事件，优先写成“核心事件 + 结果 + 长期意义”，内容不超过 $maximumEventCharacters 个字符。
+EventMemory 不是聊天摘要。禁止使用“用户说……角色说……”“随后……接着……之后……”等流水账结构，禁止按逐轮对话顺序复述，禁止只记录动作过程而没有长期结果。例如“用户说想吃草莓，角色说去买，之后两人去了超市”是错误写法；“两人一起去超市买了草莓和脆甜桃子；用户明确偏爱草莓，并喜欢脆甜口感的桃子”是正确写法。不得把角色幻想或未出现的事情写成经历。
 2. userMemories：用户明确表达、可在未来持续适用的稳定喜好、不喜欢、禁忌、习惯、工作生活方式、关系信息或互动偏好。明确的长期游戏偏好和工作习惯应保存。例如“我喜欢拿铁，不喜欢美式”是典型可保存 UserMemory；“我更喜欢剧情和 PVE，不喜欢 PVP”也应保存。不得从模糊表达推断健康、身份、家庭、关系或私密事实。
 
 忽略闲聊、笑声、天气、一次性饮食、临时情绪、无意义问答和角色单方面编造的内容。
@@ -246,6 +248,11 @@ ${existing.isEmpty ? '' : '\n$existing'}
       .join('\n');
 
   static String _text(dynamic value) => value?.toString().trim() ?? '';
+
+  static String _truncate(String value, int maximum) {
+    if (value.length <= maximum) return value;
+    return '${value.substring(0, maximum - 1).trimRight()}…';
+  }
 
   static List<String> _validSources(dynamic raw, Set<String> allowed) {
     if (raw is! List) return const [];

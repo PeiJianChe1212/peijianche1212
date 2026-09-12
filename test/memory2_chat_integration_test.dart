@@ -232,4 +232,181 @@ void main() {
       expect(systemPrompt, isNot(contains('【长期记忆汇总】')));
     },
   );
+
+  test(
+    'Memory2 retrieval failure does not drop character user profile',
+    () async {
+      late String systemPrompt;
+      final throwingRetriever = _ThrowingRetriever();
+      final service = DeepSeekService(
+        client: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map;
+          final messages = body['messages'] as List;
+          systemPrompt = (messages.first as Map)['content'].toString();
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode({
+                'choices': [
+                  {
+                    'message': {'content': '我记得你说过住在海边。'},
+                  },
+                ],
+              }),
+            ),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+        memory2RetrieverFactory: (_) => throwingRetriever,
+        characterUserProfileLoader: (_) async => const CharacterUserProfile(
+          characterId: 'role-a',
+          userName: '小海',
+          gender: '女',
+          personaDescription: '用户明确设定自己来自海边小城，喜欢冲浪。',
+        ),
+      );
+      addTearDown(service.dispose);
+
+      final reply = await service.sendMessage(
+        messages: [ChatMessage(role: 'user', content: '你还记得我住哪吗？')],
+        conversationMode: 'basic',
+        temperature: 0.7,
+        replyLength: 'standard',
+        initiative: 0.5,
+        intimacy: 0.5,
+        tsundere: 0.5,
+        characterId: 'role-a',
+      );
+
+      expect(reply, isNotEmpty);
+      expect(throwingRetriever.retrieveCalled, isTrue);
+      expect(systemPrompt, contains('【Memory 2.0｜仅作为已知事实，不得扩写】'));
+      expect(systemPrompt, contains('用户姓名：小海'));
+      expect(systemPrompt, contains('性别：女'));
+      expect(
+        systemPrompt,
+        contains('用户明确设定自己来自海边小城，喜欢冲浪。'),
+      );
+    },
+  );
+
+  test(
+    'two characters keep separate personal profiles without cross-contamination',
+    () async {
+      final profiles = <String, String>{};
+      await CharacterRegistryService().saveAllCharacters([
+        AiCharacter(
+          id: 'role-a',
+          characterName: '角色甲',
+          remark: '',
+          createdAt: DateTime.utc(2026, 1, 1),
+        ),
+        AiCharacter(
+          id: 'role-b',
+          characterName: '角色乙',
+          remark: '',
+          createdAt: DateTime.utc(2026, 1, 1),
+        ),
+      ]);
+      final service = DeepSeekService(
+        client: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map;
+          final messages = body['messages'] as List;
+          final system = (messages.first as Map)['content'].toString();
+          final userMsg = (messages.last as Map)['content'].toString();
+          profiles[userMsg] = system;
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode({
+                'choices': [
+                  {'message': {'content': '好的'}},
+                ],
+              }),
+            ),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }),
+        memory2RetrieverFactory: (_) => _FakeRetriever(
+          MemoryRetrievalResult(
+            memorySummary: MemorySummary(characterId: 'role-a'),
+            diagnostics: const MemoryRetrievalDiagnostics(
+              eventCandidates: 0,
+              userCandidates: 0,
+              legacyCandidates: 0,
+              recallIntent: false,
+              lifecycleRefreshSucceeded: true,
+            ),
+          ),
+        ),
+        characterUserProfileLoader: (id) async {
+          if (id == 'role-a') {
+            return const CharacterUserProfile(
+              characterId: 'role-a',
+              userName: '甲的用户',
+              personaDescription: '只有角色甲知道的秘密：喜欢猫。',
+            );
+          }
+          return const CharacterUserProfile(
+            characterId: 'role-b',
+            userName: '乙的用户',
+            personaDescription: '只有角色乙知道的秘密：喜欢狗。',
+          );
+        },
+      );
+      addTearDown(service.dispose);
+
+      await service.sendMessage(
+        messages: [ChatMessage(role: 'user', content: 'query-a')],
+        conversationMode: 'basic',
+        temperature: 0.7,
+        replyLength: 'standard',
+        initiative: 0.5,
+        intimacy: 0.5,
+        tsundere: 0.5,
+        characterId: 'role-a',
+      );
+      await service.sendMessage(
+        messages: [ChatMessage(role: 'user', content: 'query-b')],
+        conversationMode: 'basic',
+        temperature: 0.7,
+        replyLength: 'standard',
+        initiative: 0.5,
+        intimacy: 0.5,
+        tsundere: 0.5,
+        characterId: 'role-b',
+      );
+
+      final promptA = profiles['query-a']!;
+      final promptB = profiles['query-b']!;
+      expect(promptA, contains('甲的用户'));
+      expect(promptA, contains('喜欢猫'));
+      expect(promptA, isNot(contains('乙的用户')));
+      expect(promptA, isNot(contains('喜欢狗')));
+      expect(promptB, contains('乙的用户'));
+      expect(promptB, contains('喜欢狗'));
+      expect(promptB, isNot(contains('甲的用户')));
+      expect(promptB, isNot(contains('喜欢猫')));
+    },
+  );
+}
+
+class _ThrowingRetriever implements Memory2RetrieverGateway {
+  bool retrieveCalled = false;
+
+  @override
+  Future<MemoryRetrievalResult> retrieve({
+    required String currentMessage,
+    List<ChatMessage> recentMessages = const [],
+    required DateTime now,
+  }) async {
+    retrieveCalled = true;
+    throw StateError('simulated memory2 storage corruption');
+  }
+
+  @override
+  Future<void> recordInjectedEvents(
+    Iterable<String> eventIds, {
+    required DateTime now,
+  }) async {}
 }

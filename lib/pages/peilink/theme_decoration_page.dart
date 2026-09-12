@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../services/peilink_appearance_service.dart';
+import '../../widgets/chat/chat_bubble_surface.dart';
+import '../../widgets/chat/message_bubble.dart';
 import '../../theme/app_theme_background.dart';
 import '../../theme/chat_visual_theme.dart';
 import '../../theme/theme_background.dart';
+import '../../theme/theme_background_surface.dart';
 
 class ThemeDecorationPage extends StatefulWidget {
   const ThemeDecorationPage({super.key});
@@ -191,6 +194,7 @@ class _BubbleTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView(
+    key: const Key('bubble-theme-list'),
     padding: const EdgeInsets.all(16),
     children: ChatVisualThemeCatalog.bubbleThemes
         .map(
@@ -232,44 +236,48 @@ class _ThemePreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final background = appearance.background;
     final bubble = appearance.bubbleTheme;
-    final font = appearance.fontTheme;
-    return Container(
+    final font = appearance.fontTheme.effectiveFont;
+    return SizedBox(
       height: height,
-      decoration: BoxDecoration(
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0x22B77987)),
-        image: background.imagePath == null
-            ? null
-            : DecorationImage(
-                image: AssetImage(background.imagePath!),
-                fit: BoxFit.cover,
-                opacity: background.opacity,
-              ),
-        gradient: background.gradient,
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('主题预览', style: TextStyle(fontWeight: FontWeight.w700)),
-          const Spacer(),
-          _PreviewBubble(
-            text: '你好。',
-            color: bubble.aiBubbleColor,
-            theme: bubble,
-            font: font,
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _PreviewBubble(
-              text: '今天开心。',
-              color: bubble.userBubbleColor,
-              theme: bubble,
-              font: font,
+        child: ThemeBackgroundContainer(
+          background: background,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '主题预览',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: background.isDark
+                        ? Colors.white
+                        : const Color(0xFF353F51),
+                  ),
+                ),
+                const Spacer(),
+                _PreviewBubble(
+                  text: '你好。',
+                  isUser: false,
+                  theme: bubble,
+                  font: font,
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _PreviewBubble(
+                    text: '今天开心。',
+                    isUser: true,
+                    theme: bubble,
+                    font: font,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -278,29 +286,28 @@ class _ThemePreview extends StatelessWidget {
 class _PreviewBubble extends StatelessWidget {
   const _PreviewBubble({
     required this.text,
-    required this.color,
+    required this.isUser,
     required this.theme,
     required this.font,
   });
   final String text;
-  final Color color;
+  final bool isUser;
   final ChatBubbleTheme theme;
   final ChatFontTheme font;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(theme.borderRadius),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
-    ),
+  Widget build(BuildContext context) => ChatBubbleSurface(
+    theme: theme,
+    isUser: isUser,
     child: Text(
       text,
       style: TextStyle(
         fontFamily: font.fontFamily,
         fontFamilyFallback: font.fontFamilyFallback,
         fontWeight: font.fontWeight,
+        fontSize: 16,
+        height: 1.42,
+        color: MessageBubble.textColorForRole(isUser ? 'user' : 'assistant'),
       ),
     ),
   );
@@ -335,29 +342,38 @@ class _BackgroundChoice extends StatelessWidget {
                       : const Color(0xFFEAEAEA),
                   width: selected ? 2 : 1,
                 ),
-                gradient: item.gradient,
-                image: item.imagePath == null
-                    ? null
-                    : DecorationImage(
-                        image: AssetImage(item.imagePath!),
-                        fit: BoxFit.cover,
-                      ),
               ),
-              alignment: Alignment.bottomRight,
-              child: selected
-                  ? const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(
-                        Icons.check_circle,
-                        color: Color(0xFFFF8799),
-                        size: 19,
+              padding: const EdgeInsets.all(2),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ThemeBackgroundSurface(background: item),
+                    if (selected)
+                      const Align(
+                        alignment: Alignment.bottomRight,
+                        child: Padding(
+                          padding: EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.check_circle,
+                            color: Color(0xFFFF8799),
+                            size: 19,
+                          ),
+                        ),
                       ),
-                    )
-                  : null,
+                  ],
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 5),
-          Text(item.name, maxLines: 1, style: const TextStyle(fontSize: 11.5)),
+          Text(
+            item.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11.5),
+          ),
         ],
       ),
     ),
@@ -376,25 +392,78 @@ class _BubbleChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
+    key: ValueKey('bubble-choice-${item.id}'),
     color: selected ? const Color(0xFFFFF4F6) : Colors.white,
-    child: ListTile(
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
       onTap: onTap,
-      leading: Container(
-        width: 54,
-        height: 34,
-        decoration: BoxDecoration(
-          color: item.aiBubbleColor,
-          borderRadius: BorderRadius.circular(item.borderRadius),
-          border: Border.all(color: const Color(0xFFE7DDE0)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    item.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (selected)
+                  const Icon(
+                    Icons.check_circle,
+                    color: Color(0xFFFF8799),
+                    semanticLabel: '已选中',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              item.description,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF777777)),
+            ),
+            const SizedBox(height: 12),
+            BubbleThemePreview(theme: item),
+          ],
         ),
       ),
-      title: Text(item.name),
-      subtitle: Text(item.id == 'glass' ? '配合深色背景的轻玻璃效果' : '圆润、清晰，适合日常聊天'),
-      trailing: selected
-          ? const Icon(Icons.check_circle, color: Color(0xFFFF8799))
-          : const Icon(Icons.chevron_right),
     ),
   );
+}
+
+/// Uses the exact same shell, tail, padding and decoration as live messages.
+class BubbleThemePreview extends StatelessWidget {
+  const BubbleThemePreview({super.key, required this.theme});
+  final ChatBubbleTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final font = PeiLinkAppearanceScope.of(context).fontTheme.effectiveFont;
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _PreviewBubble(
+            text: '今天过得怎么样？',
+            isUser: false,
+            theme: theme,
+            font: font,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerRight,
+          child: _PreviewBubble(
+            text: '还不错呀～',
+            isUser: true,
+            theme: theme,
+            font: font,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _FontChoice extends StatelessWidget {
@@ -411,21 +480,31 @@ class _FontChoice extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     color: selected ? const Color(0xFFFFF4F6) : Colors.white,
     child: ListTile(
-      onTap: onTap,
+      key: ValueKey('font-choice-${item.id}'),
+      enabled: item.isAvailable,
+      onTap: item.isAvailable ? onTap : null,
       leading: const CircleAvatar(
         backgroundColor: Color(0xFFFFF0F2),
         child: Text('Aa'),
       ),
       title: Text(item.name),
-      trailing: Text(
-        '今天天气真好呀~',
-        style: TextStyle(
-          fontFamily: item.fontFamily,
-          fontFamilyFallback: item.fontFamilyFallback,
-          fontWeight: item.fontWeight,
-          color: selected ? const Color(0xFFFF6F88) : const Color(0xFF555555),
-        ),
-      ),
+      subtitle: !item.isAvailable
+          ? Text(selected ? '已选字体资源缺失，当前使用系统字体' : '字体资源未内置，暂不可用')
+          : null,
+      trailing: !item.isAvailable
+          ? const Text('暂无预览')
+          : Text(
+              '今天天气真好呀～',
+              key: ValueKey('font-preview-${item.id}'),
+              style: TextStyle(
+                fontFamily: item.fontFamily,
+                fontFamilyFallback: item.fontFamilyFallback,
+                fontWeight: item.fontWeight,
+                color: selected
+                    ? const Color(0xFFFF6F88)
+                    : const Color(0xFF555555),
+              ),
+            ),
     ),
   );
 }

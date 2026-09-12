@@ -13,6 +13,7 @@ Echo 是角色在 PeiLink 世界中发布的一条个人动态。内容来自已
 5. 只能改写已提供的事实，不得新增地点、人物、关系、事件、天气、工作安排、未来进展或共同经历。
 6. 不凭空制造吃醋、争宠、打架、宣示主权或角色间的认识与冲突。
 7. 只输出一条动态正文。不要输出 Prompt、规则、JSON、Markdown 标题、角色名前缀、舞台指令、模型解释或“Echo 正文：”。
+8. 禁止用括号描写动作、神态或舞台行为，例如“（指尖轻敲桌面）”；Echo 应直接写动态正文。
 ''';
 
   static String expressionProfile({required CharacterProfile profile}) {

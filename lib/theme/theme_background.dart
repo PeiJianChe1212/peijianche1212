@@ -1,5 +1,16 @@
 import 'package:flutter/material.dart';
 
+enum BackgroundPattern {
+  butterfly,
+  petals,
+  osmanthus,
+  ginkgo,
+  snow,
+  rain,
+  waves,
+  aurora,
+}
+
 @immutable
 class ThemeBackground {
   const ThemeBackground({
@@ -8,11 +19,13 @@ class ThemeBackground {
     required this.gradient,
     required this.opacity,
     this.imagePath,
+    this.pattern,
   }) : assert(opacity >= 0 && opacity <= 1);
 
   final String id;
   final String name;
   final String? imagePath;
+  final BackgroundPattern? pattern;
   final Gradient gradient;
   final double opacity;
 
@@ -32,6 +45,7 @@ class ThemeBackground {
     String? id,
     String? name,
     String? imagePath,
+    BackgroundPattern? pattern,
     Gradient? gradient,
     double? opacity,
   }) {
@@ -39,6 +53,7 @@ class ThemeBackground {
       id: id ?? this.id,
       name: name ?? this.name,
       imagePath: imagePath ?? this.imagePath,
+      pattern: pattern ?? this.pattern,
       gradient: gradient ?? this.gradient,
       opacity: opacity ?? this.opacity,
     );
