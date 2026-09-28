@@ -40,7 +40,14 @@ class _CharacterDetailPageState extends State<CharacterDetailPage> {
   }
 
   Future<void> _load() async {
-    final character = widget.character ?? await _registry.loadActiveCharacter();
+    var character = widget.character ?? await _registry.loadActiveCharacter();
+    if (widget.character != null) {
+      final characters = await _registry.loadCharacters();
+      character = characters.firstWhere(
+        (item) => item.id == widget.character!.id,
+        orElse: () => character,
+      );
+    }
     final settings = await CharacterSettingsStorageService(
       characterId: character.id,
     ).loadSettings();

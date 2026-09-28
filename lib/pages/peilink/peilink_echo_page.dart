@@ -34,6 +34,8 @@ import '../../services/shared_experience_storage_service.dart';
 import '../../services/relationship_growth_service.dart';
 import '../../services/user_profile_storage_service.dart';
 import '../../theme/app_theme_background.dart';
+import '../../widgets/theme/peilink_theme_scope.dart';
+import '../../widgets/theme/peilink_themed_avatar.dart';
 import '../../widgets/echo/echo_interaction_bar.dart';
 import '../../widgets/echo/echo_space_overview.dart';
 import '../../widgets/echo/ai_verified_badge.dart';
@@ -479,7 +481,6 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
     );
   }
 
-
   Future<void> _editSignature() async {
     final controller = TextEditingController(text: _echoProfile.signature);
     final value = await showDialog<String>(
@@ -647,47 +648,24 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
   }
 
   Widget _avatarForItem(EchoItem item, {double size = 46}) {
+    final frames = PeiLinkThemeScope.of(context).avatarFrameTheme;
     if (item.characterId == _userEchoId) {
       final path = _userProfile.avatarPath.trim();
-      if (path.isNotEmpty && File(path).existsSync()) {
-        return Image.file(
-          File(path),
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-        );
-      }
-      return Container(
-        width: size,
-        height: size,
-        color: const Color(0xFFE6EAED),
-        child: Icon(
-          Icons.person_rounded,
-          size: size * 0.45,
-          color: const Color(0xFF6F7D86),
-        ),
+      return PeiLinkThemedAvatar(
+        size: size,
+        role: PeiLinkAvatarRole.user,
+        imagePath: path,
+        frame: frames.user,
       );
     }
 
     final character = _characterForItem(item);
     final path = character?.effectiveSocialAvatarPath.trim() ?? '';
-    if (path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-      );
-    }
-    return Container(
-      width: size,
-      height: size,
-      color: const Color(0xFFE6EAED),
-      child: Icon(
-        Icons.auto_awesome_rounded,
-        size: size * 0.45,
-        color: const Color(0xFF6F7D86),
-      ),
+    return PeiLinkThemedAvatar(
+      size: size,
+      role: PeiLinkAvatarRole.character,
+      imagePath: path,
+      frame: frames.character,
     );
   }
 
@@ -700,23 +678,19 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
     final path = _isUserPage
         ? _userProfile.avatarPath.trim()
         : (_character?.effectiveSocialAvatarPath.trim() ?? '');
-    if (path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(
-        File(path),
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-      );
-    }
-    return Container(
-      width: size,
-      height: size,
-      color: const Color(0xFFE6EAED),
-      child: Icon(
-        _isUserPage ? Icons.person_rounded : Icons.auto_awesome_rounded,
-        size: size * 0.45,
-        color: const Color(0xFF6F7D86),
-      ),
+    return PeiLinkThemedAvatar(
+      size: size,
+      role: _isUserPage
+          ? PeiLinkAvatarRole.user
+          : PeiLinkAvatarRole.privateEcho,
+      imagePath: path,
+      frame: _isCharacterSpace
+          ? PeiLinkThemeScope.controllerOf(
+              context,
+            ).privateEchoTheme(_spaceCharacter?.id ?? '').avatarFrameTheme
+          : (_isUserPage
+                ? PeiLinkThemeScope.of(context).avatarFrameTheme.user
+                : PeiLinkThemeScope.of(context).avatarFrameTheme.character),
     );
   }
 
@@ -726,7 +700,11 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ThemeBackgroundContainer(
+    final themes = PeiLinkThemeScope.controllerOf(context);
+    final privateTheme = themes.privateEchoTheme(_spaceCharacter?.id ?? '');
+    final publicTheme = themes.chatTheme.publicEchoTheme;
+    Widget page = ThemeBackgroundContainer(
+      background: _isPublicTimeline ? publicTheme.background : null,
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
         child: Scaffold(
@@ -741,6 +719,27 @@ class _PeiLinkEchoPageState extends State<PeiLinkEchoPage> {
         ),
       ),
     );
+    if (_isPublicTimeline) {
+      page = Theme(
+        data: Theme.of(context).copyWith(
+          cardColor: publicTheme.cardColor,
+          iconTheme: IconThemeData(color: publicTheme.actionColor),
+          appBarTheme: AppBarTheme(
+            backgroundColor: publicTheme.topBarTheme.background,
+            foregroundColor: publicTheme.topBarTheme.foreground,
+            elevation: publicTheme.topBarTheme.elevation,
+          ),
+        ),
+        child: page,
+      );
+    }
+    return _isCharacterSpace
+        ? CharacterEchoThemeScope(
+            characterId: _spaceCharacter?.id ?? '',
+            theme: privateTheme,
+            child: page,
+          )
+        : page;
   }
 
   Widget _buildClassicEcho() {
@@ -1228,10 +1227,7 @@ class _CharacterSpaceHeader extends StatelessWidget {
               fit: StackFit.expand,
               clipBehavior: Clip.none,
               children: [
-                Material(
-                  color: Colors.transparent,
-                  child: cover,
-                ),
+                Material(color: Colors.transparent, child: cover),
                 const IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -1424,10 +1420,7 @@ class _UserSpaceHeader extends StatelessWidget {
             fit: StackFit.expand,
             clipBehavior: Clip.none,
             children: [
-              Material(
-                color: Colors.transparent,
-                child: cover,
-              ),
+              Material(color: Colors.transparent, child: cover),
               const IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -2819,10 +2812,7 @@ class _EchoLifeHeader extends StatelessWidget {
             fit: StackFit.expand,
             clipBehavior: Clip.none,
             children: [
-              Material(
-                color: Colors.transparent,
-                child: cover,
-              ),
+              Material(color: Colors.transparent, child: cover),
               const IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(

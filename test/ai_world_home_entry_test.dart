@@ -10,6 +10,7 @@ import 'package:peijianche_app/pages/home_page.dart';
 import 'package:peijianche_app/pages/peilink/peilink_echo_page.dart';
 import 'package:peijianche_app/services/character_registry_service.dart';
 import 'package:peijianche_app/services/home_character_storage_service.dart';
+import 'helpers/widget_test_cleanup.dart';
 
 /// Targeted coverage: AI World chat entry must follow the displayed character,
 /// and the three quick actions must stay visually/functionally equivalent.
@@ -80,7 +81,7 @@ void main() {
   );
 
   Future<void> pumpHome(WidgetTester tester) async {
-    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpWidget(const MaterialApp(home: HomePage(enableAmbientAnimation: false)));
     await settle(tester);
     while (tester.takeException() != null) {}
   }
@@ -105,6 +106,7 @@ void main() {
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await settle(tester, rounds: 8);
     while (tester.takeException() != null) {}
+    await disposeTestWidgetTree(tester);
   });
 
   testWidgets('切换展示角色为 q 后，聊天入口立即跟随 q', (tester) async {
@@ -119,6 +121,7 @@ void main() {
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await settle(tester, rounds: 8);
     while (tester.takeException() != null) {}
+    await disposeTestWidgetTree(tester);
   });
 
   testWidgets('三个快捷入口都存在且可点击，Echo 仍进入 Echo 页面', (tester) async {
@@ -137,5 +140,6 @@ void main() {
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await settle(tester, rounds: 8);
     while (tester.takeException() != null) {}
+    await disposeTestWidgetTree(tester);
   });
 }

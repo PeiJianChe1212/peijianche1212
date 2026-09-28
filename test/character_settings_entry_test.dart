@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peijianche_app/models/ai_character.dart';
+import 'package:peijianche_app/pages/peilink/character_creation_page.dart';
 import 'package:peijianche_app/pages/peilink/chat_settings_page.dart';
 
 void main() {
@@ -18,6 +19,7 @@ void main() {
       );
 
       expect(find.text('角色资料'), findsNothing);
+      expect(find.text('编辑角色设定'), findsOneWidget);
       expect(find.text('Memory'), findsOneWidget);
       expect(find.text('心声'), findsNothing);
       expect(find.text('导出角色'), findsOneWidget);
@@ -39,6 +41,15 @@ void main() {
       }
       expect(find.text('相处方式'), findsNothing);
       expect(find.text('人设'), findsNothing);
+
+      await tester.tap(find.text('编辑角色设定'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      final editPage = tester.widget<CharacterCreationPage>(
+        find.byType(CharacterCreationPage),
+      );
+      expect(editPage.character?.id, AiCharacter.placeholder().id);
+      expect(find.text('编辑角色设定'), findsWidgets);
     },
   );
 }

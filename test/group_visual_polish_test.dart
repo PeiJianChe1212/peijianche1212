@@ -282,6 +282,11 @@ void main() {
         tester.getBottomRight(find.byType(TextField)).dy,
         lessThanOrEqualTo(500),
       );
+      final lastMessage = find.text('还不错呀～😊');
+      expect(
+        tester.getBottomRight(lastMessage).dy,
+        lessThanOrEqualTo(tester.getTopLeft(find.byType(TextField)).dy),
+      );
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

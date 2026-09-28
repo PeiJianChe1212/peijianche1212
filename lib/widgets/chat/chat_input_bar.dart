@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_dimensions.dart';
 import '../../theme/app_text_styles.dart';
+import '../theme/peilink_theme_chrome.dart';
 
 class ChatInputBar extends StatelessWidget {
   const ChatInputBar({
@@ -102,7 +103,8 @@ class ChatInputBar extends StatelessWidget {
                       );
                     }
 
-                    return IconButton(
+                    return PeiLinkThemeIconButton(
+                      type: PeiLinkThemeIcon.more,
                       tooltip: isMorePanelOpen ? '收起功能栏' : '更多功能',
                       onPressed: isLoading ? null : onMore,
                       icon: AnimatedRotation(
@@ -112,12 +114,6 @@ class ChatInputBar extends StatelessWidget {
                           Icons.add_circle_outline_rounded,
                           size: 27,
                         ),
-                      ),
-                      color: const Color(0xFF6975CF),
-                      padding: const EdgeInsets.all(4),
-                      constraints: const BoxConstraints(
-                        minWidth: AppDimensions.inputControlHeight,
-                        minHeight: AppDimensions.inputControlHeight,
                       ),
                     );
                   },

@@ -2,6 +2,7 @@ import 'dart:convert';
 import '../models/chat_message.dart';
 import '../platform/storage/platform_storage.dart';
 import 'character_scope_service.dart';
+import 'internal_prompt_leak_guard.dart';
 
 class ChatStorageService {
   ChatStorageService({this.characterId, this.storage});
@@ -34,6 +35,7 @@ class ChatStorageService {
       return decoded
           .whereType<Map>()
           .map(ChatMessage.fromJson)
+          .map(_withoutInternalPrompt)
           .where(
             (message) =>
                 message.content.trim().isNotEmpty ||
@@ -57,7 +59,29 @@ class ChatStorageService {
     final (store, key) = await _location();
     await store.writeText(
       key,
-      jsonEncode(messages.map((message) => message.toJson()).toList()),
+      jsonEncode(
+        messages
+            .map(_withoutInternalPrompt)
+            .map((message) => message.toJson())
+            .toList(),
+      ),
+    );
+  }
+
+  static ChatMessage _withoutInternalPrompt(ChatMessage message) {
+    final metadata = Map<String, dynamic>.from(message.metadata)
+      ..remove('generationPrompt')
+      ..remove('internalPrompt');
+    final leakedVisibleText =
+        message.role == 'assistant' &&
+        message.type == MessageType.text &&
+        InternalPromptLeakGuard.looksInternal(message.content);
+    if (!leakedVisibleText && metadata.length == message.metadata.length) {
+      return message;
+    }
+    return message.copyWith(
+      content: leakedVisibleText ? '给你看。' : message.content,
+      metadata: metadata,
     );
   }
 

@@ -6,9 +6,52 @@ abstract final class PcmAudioCodec {
   static const providerSampleRate = 24000;
   static const bits = 16;
   static const channels = 1;
+
+  /// Phase 9 legacy (and Phase 11 `fixed_fallback`) capture length: 8 s.
+  ///
+  /// This stays the *exact* length contract of the fixed capture path and is
+  /// deliberately not used as the bound for Phase 11 dynamic VAD PCM.
   static const recordSeconds = 8;
   static const recordBytes = sampleRate * recordSeconds * 2;
   static const maxPlaybackBytes = 1024 * 1024;
+
+  // -------------------------------------------------------------------------
+  // Phase 11 dynamic VAD capture transport contract (firmware is frozen).
+  //
+  // Frozen firmware parameters (phase11 include/vad_config.h):
+  //   history_ms             = 2000 ms  rolling PCM retention (PCM only, it
+  //                                     never participates in VAD decisions)
+  //   maximum_recording_ms   = 8000 ms  measured from speech_start_ms
+  //   pre_roll_ms            = 200 ms
+  //   speech_confirm_blocks  = 6 x 10 ms onset confirmation
+  //   minimum_voiced_ms      = 300 ms
+  //
+  // `capture.samples` is assembled from exactly two sources:
+  //   1. the rolling history, copied once into the capture buffer on the
+  //      transition into `speaking`, bounded by history_ms (2000 ms);
+  //   2. one 10 ms block appended for every block processed while `speaking`,
+  //      until the engine reports `complete` or `max_duration`.
+  //
+  // maximum_recording_ms is counted from
+  //   speech_start_ms = candidate_onset_ms - pre_roll_ms,
+  // so the 8000 ms window starts 500 ms before the capture buffer is seeded:
+  // 200 ms pre-roll + 60 ms onset confirmation + 240 ms of voiced blocks are
+  // already inside that window when the history is copied. Only the remaining
+  // 7500 ms of speaking blocks are appended to the copied history.
+  //
+  // The largest legal (`max_duration`) capture is therefore
+  //   2000 ms history + 7500 ms speaking = 9500 ms.
+  //
+  // It is not 10000 ms: the 2 s history and the 8 s window overlap by 500 ms.
+  // The firmware's own capture buffer allows 10700 ms (8 s + 0.7 s end silence
+  // + 2 s history), which the frozen state machine can never fill.
+  // -------------------------------------------------------------------------
+  static const phase11HistoryMs = 2000;
+  static const phase11MaxDurationMs = 8000;
+  static const phase11MaxCaptureMs = 9500;
+  static const phase11MaxCaptureSamples =
+      sampleRate * phase11MaxCaptureMs ~/ 1000; // 152000
+  static const phase11MaxCaptureBytes = phase11MaxCaptureSamples * 2; // 304000
 
   static int crc32(List<int> bytes) {
     var crc = 0xffffffff;
@@ -21,8 +64,14 @@ abstract final class PcmAudioCodec {
     return (crc ^ 0xffffffff) & 0xffffffff;
   }
 
+  /// Wraps raw PCM16 mono into a canonical WAV container (cloud ASR upload).
+  ///
+  /// The accepted input is bounded by the Phase 11 dynamic capture contract
+  /// [phase11MaxCaptureBytes]: a legal VAD `max_duration` capture is longer
+  /// than the legacy 8 s fixed recording. Playback/TTS audio is a different
+  /// contract and is validated against [maxPlaybackBytes].
   static Uint8List wavFromPcm(Uint8List pcm) {
-    validatePcm(pcm, maximum: recordBytes);
+    validatePcm(pcm, maximum: phase11MaxCaptureBytes);
     final result = Uint8List(44 + pcm.length);
     final data = ByteData.sublistView(result);
     void ascii(int offset, String value) {

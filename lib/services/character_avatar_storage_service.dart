@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../platform/media/media_store.dart';
 import '../platform/media/media_store_factory.dart';
 import 'character_scope_service.dart';
+import 'avatar_image_cache.dart';
 
 class CharacterAvatarStorageService {
   const CharacterAvatarStorageService({this.mediaStore});
@@ -38,8 +39,11 @@ class CharacterAvatarStorageService {
       characterId,
     ).avatarDirectory();
     final target = File('${directory.path}/avatar.png');
+    AvatarImageCache.evictPath(target.path);
     await _removeFilesWithPrefix(directory, 'avatar.', exceptPath: target.path);
-    return _media.saveBytes(target.path, bytes);
+    final path = await _media.saveBytes(target.path, bytes);
+    AvatarImageCache.evictPath(path);
+    return path;
   }
 
   Future<String> savePendingAvatarBytes({

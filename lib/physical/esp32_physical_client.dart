@@ -60,7 +60,9 @@ class Esp32PhysicalClient {
     final result = Esp32Status.fromJson(payload);
     if (response.statusCode != 200 ||
         !result.ok ||
-        result.phase != 9 ||
+        (result.phase != 9 && result.phase != 11) ||
+        (result.phase == 11 &&
+            (result.captureMode != 'vad' || !result.fixedFallback)) ||
         result.state != 'idle' ||
         result.sampleRate != PcmAudioCodec.sampleRate ||
         result.bits != PcmAudioCodec.bits ||
@@ -82,8 +84,15 @@ class Esp32PhysicalClient {
       method: 'POST',
       uri: _uri(host, '/record'),
       headers: _headers(key),
-      timeout: const Duration(seconds: 20),
+      timeout: const Duration(seconds: 60),
     );
+    final captureMode = response.headers['x-capture-mode'];
+    final vadState = response.headers['x-vad-state'];
+    if (response.statusCode == 204 &&
+        captureMode == 'vad' &&
+        vadState == 'no_speech') {
+      throw const PhysicalNoSpeechException('未检测到可识别语音');
+    }
     if (response.statusCode != 200 ||
         response.headers['content-type']?.split(';').first !=
             'application/octet-stream') {
@@ -101,8 +110,26 @@ class Esp32PhysicalClient {
 
     final expectedCrc = header('x-audio-crc32', radix: 16);
     final actualCrc = PcmAudioCodec.crc32(pcm);
+    final isLegacyFixed = captureMode == null && vadState == null;
+    final isVadCapture =
+        captureMode == 'vad' &&
+        (vadState == 'complete' || vadState == 'max_duration');
+    final isFixedFallback =
+        captureMode == 'fixed_fallback' && vadState == 'error';
+    // Two distinct length contracts:
+    //   * Phase 9 legacy fixed capture / Phase 11 `fixed_fallback`: exactly the
+    //     8 s fixed recording (recordBytes).
+    //   * Phase 11 dynamic VAD (`complete` / `max_duration`): any even length
+    //     up to the firmware's derived dynamic capture maximum, which is
+    //     longer than 8 s (history + speaking window).
+    final lengthValid = isVadCapture
+        ? pcm.isNotEmpty &&
+              pcm.length.isEven &&
+              pcm.length <= PcmAudioCodec.phase11MaxCaptureBytes
+        : (isLegacyFixed || isFixedFallback) &&
+              pcm.length == PcmAudioCodec.recordBytes;
     if (header('content-length') != pcm.length ||
-        pcm.length != PcmAudioCodec.recordBytes ||
+        !lengthValid ||
         expectedCrc != actualCrc ||
         header('x-audio-sample-rate') != PcmAudioCodec.sampleRate ||
         header('x-audio-bits') != PcmAudioCodec.bits ||
@@ -115,7 +142,14 @@ class Esp32PhysicalClient {
         stats.hasExcessiveClipping) {
       throw const PhysicalInvalidRecordingException('录音音量质量检查失败');
     }
-    return PhysicalCapture(pcm: pcm, stats: stats, crc32: actualCrc);
+    return PhysicalCapture(
+      pcm: pcm,
+      stats: stats,
+      crc32: actualCrc,
+      captureMode: captureMode ?? 'fixed',
+      vadState: vadState,
+      recordingId: int.tryParse(response.headers['x-audio-recording-id'] ?? ''),
+    );
   }
 
   Future<void> play({
@@ -196,10 +230,16 @@ class PhysicalCapture {
     required this.pcm,
     required this.stats,
     required this.crc32,
+    this.captureMode = 'fixed',
+    this.vadState,
+    this.recordingId,
   });
   final Uint8List pcm;
   final PcmStats stats;
   final int crc32;
+  final String captureMode;
+  final String? vadState;
+  final int? recordingId;
 }
 
 class Esp32Status {
@@ -214,6 +254,8 @@ class Esp32Status {
     required this.maxPlaybackBytes,
     required this.rxErrors,
     required this.txErrors,
+    this.captureMode = 'fixed',
+    this.fixedFallback = false,
   });
   factory Esp32Status.fromJson(Map<String, dynamic> json) => Esp32Status(
     ok: json['ok'] == true,
@@ -226,6 +268,8 @@ class Esp32Status {
     maxPlaybackBytes: json['max_playback_bytes'] as int? ?? 0,
     rxErrors: json['rx_errors'] as int? ?? -1,
     txErrors: json['tx_errors'] as int? ?? -1,
+    captureMode: json['capture_mode']?.toString() ?? 'fixed',
+    fixedFallback: json['fixed_fallback'] == true,
   );
   final bool ok;
   final int phase,
@@ -237,6 +281,8 @@ class Esp32Status {
       rxErrors,
       txErrors;
   final String state;
+  final String captureMode;
+  final bool fixedFallback;
 }
 
 class PhysicalProtocolException implements Exception {
@@ -248,4 +294,8 @@ class PhysicalProtocolException implements Exception {
 
 class PhysicalInvalidRecordingException extends PhysicalProtocolException {
   const PhysicalInvalidRecordingException(super.message);
+}
+
+class PhysicalNoSpeechException extends PhysicalProtocolException {
+  const PhysicalNoSpeechException(super.message);
 }

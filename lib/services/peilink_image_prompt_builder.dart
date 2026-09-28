@@ -15,7 +15,7 @@ class PeiLinkImagePromptBuilder {
       '【图片主体】\n${intent.visualFocus.trim()}',
       if (intent.mood.trim().isNotEmpty)
         '【画面氛围】\n用构图、光影和环境表达“${intent.mood.trim()}”，不额外编造天气、时间、共同经历或剧情物件。',
-      '【人物出镜】\n${_presenceRule(intent.characterPresence)}',
+      '【人物出镜】\n${_presenceRule(intent)}',
     ];
 
     if (intent.characterPresence == PeiLinkCharacterPresence.required) {
@@ -54,13 +54,18 @@ $defaultStyle
   }
 
   static String _presenceRule(
-    PeiLinkCharacterPresence presence,
-  ) => switch (presence) {
+    PeiLinkVisualIntent intent,
+  ) => switch (intent.characterPresence) {
     PeiLinkCharacterPresence.none => '画面中不出现人物，不出现正脸、背影或人物剪影；只记录环境、物品或景色。',
     PeiLinkCharacterPresence.optional =>
       '人物不是必需主体；优先无人画面。如确有构图必要，只允许远景、背影、手部或被环境遮挡的局部人物。',
+    PeiLinkCharacterPresence.required
+        when intent.subject == PeiLinkVisualSubject.character ||
+            intent.subject == PeiLinkVisualSubject.selfie ||
+            intent.subject == PeiLinkVisualSubject.outfit =>
+      '只允许 requiredCharacterIds 中的角色出镜；角色本人必须出现并作为用户指定的视觉主体，不得用环境、道具或空镜替代人物。',
     PeiLinkCharacterPresence.required =>
-      '只允许 requiredCharacterIds 中的角色出镜；人物需要出现，但仅自拍、穿搭或明确人物主题可成为中心，其他情况优先手部、背影、局部侧脸、镜面局部或人物远景。',
+      '只允许 requiredCharacterIds 中的角色出镜；人物需要出现，但非明确人物主题时优先自然、克制的生活记录构图。',
   };
 
   static String _visualFacts(

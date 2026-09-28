@@ -78,6 +78,7 @@ class PhysicalSessionController extends ChangeNotifier {
     speechContractDiagnostics = null;
     ttsInputExact = null;
   }
+
   PhysicalCapture? _capture;
   AsrTranscribeStats? lastAsrStats;
   bool _deviceReady = false;
@@ -102,6 +103,7 @@ class PhysicalSessionController extends ChangeNotifier {
   void _throwIfDisposed() {
     if (_disposed) throw const _PhysicalDisposedException();
   }
+
   bool get canRecord =>
       _deviceReady &&
       (stage == PhysicalSessionStage.ready ||
@@ -114,6 +116,7 @@ class PhysicalSessionController extends ChangeNotifier {
   bool get canSynthesizeOnly => !isBusy && ttsReview == null;
   bool get canPlayReviewedOnly => !isBusy && ttsReview != null;
   List<PhysicalSessionTurn> get turns => _sessionMemory.turns;
+  PhysicalCapture? get latestCaptureForDiagnostics => _capture;
   int get turnCount => _sessionMemory.turnCount;
 
   void clearSession() {
@@ -158,7 +161,7 @@ class PhysicalSessionController extends ChangeNotifier {
     lastSpeechFilterNote = '';
     lastAsrStats = null;
     _capture = null;
-    await _run(PhysicalSessionStage.recording, '正在录音，请现在说话（固定 8 秒）…', () async {
+    await _run(PhysicalSessionStage.recording, '正在录音，请自然说话…', () async {
       final capture = await _device.record(
         host: settings.esp32Host,
         key: settings.requestKey,
@@ -277,7 +280,7 @@ class PhysicalSessionController extends ChangeNotifier {
   }
 
   /// Runs one complete Physical turn from the device-ready state:
-  /// status check -> 8s record -> ASR -> formal Core reply -> TTS ->
+  /// status check -> VAD/fixed-fallback record -> ASR -> formal Core reply -> TTS ->
   /// 24k-to-16k conversion -> /audio playback -> session append.
   ///
   /// Unlike the staged debug methods, this entry always synthesizes the text
@@ -338,41 +341,37 @@ class PhysicalSessionController extends ChangeNotifier {
       _capture = null;
       if (_disposed) return;
 
-      await _run(
-        PhysicalSessionStage.checking,
-        '正在准备实体对话…',
-        () async {
-          await _measureTurnPhase(
-            meter,
-            PhysicalE2EFailureStage.status,
-            () => _device.status(
-              host: settings.esp32Host,
-              key: settings.requestKey,
-            ),
-          );
-          _throwIfDisposed();
-          _deviceReady = true;
-          stage = PhysicalSessionStage.recording;
-          message = '正在录音，请现在说话（固定 8 秒）…';
-          notifyListeners();
+      await _run(PhysicalSessionStage.checking, '正在准备实体对话…', () async {
+        await _measureTurnPhase(
+          meter,
+          PhysicalE2EFailureStage.status,
+          () => _device.status(
+            host: settings.esp32Host,
+            key: settings.requestKey,
+          ),
+        );
+        _throwIfDisposed();
+        _deviceReady = true;
+        stage = PhysicalSessionStage.recording;
+        message = '正在录音，请自然说话…';
+        notifyListeners();
 
-          final capture = await _measureTurnPhase(
-            meter,
-            PhysicalE2EFailureStage.record,
-            () => _device.record(
-              host: settings.esp32Host,
-              key: settings.requestKey,
-            ),
-          );
-          _throwIfDisposed();
-          _capture = capture;
-          stage = PhysicalSessionStage.review;
-          message = '录音有效，正在继续 AI 对话…';
-          notifyListeners();
+        final capture = await _measureTurnPhase(
+          meter,
+          PhysicalE2EFailureStage.record,
+          () => _device.record(
+            host: settings.esp32Host,
+            key: settings.requestKey,
+          ),
+        );
+        _throwIfDisposed();
+        _capture = capture;
+        stage = PhysicalSessionStage.review;
+        message = '录音有效，正在继续 AI 对话…';
+        notifyListeners();
 
-          await _runTurnFromCapture(settings, capture, meter: meter);
-        },
-      );
+        await _runTurnFromCapture(settings, capture, meter: meter);
+      });
       if (!_disposed) {
         lastEndToEndTiming = meter.build();
         notifyListeners();
@@ -441,10 +440,7 @@ class PhysicalSessionController extends ChangeNotifier {
       () {
         final text = spokenReply;
         ttsInputExact = text;
-        return _tts.synthesize(
-          text: text,
-          apiKey: settings.volcengineApiKey,
-        );
+        return _tts.synthesize(text: text, apiKey: settings.volcengineApiKey);
       },
     );
     _throwIfDisposed();
@@ -561,6 +557,16 @@ class PhysicalSessionController extends ChangeNotifier {
   void _recoverFromFailure(PhysicalSessionStage failedStage, Object error) {
     _capture = null;
     ttsReview = null;
+    if (error is PhysicalNoSpeechException && _deviceReady) {
+      transcript = '';
+      displayReply = '';
+      spokenReply = '';
+      lastSpeechFilterNote = '';
+      _clearSpeechDiagnostics();
+      stage = PhysicalSessionStage.ready;
+      message = error.message;
+      return;
+    }
     if (failedStage == PhysicalSessionStage.recognizing) {
       // ASR did not produce a usable current transcript. Never show text from
       // the previous turn or partial diagnostics as if it belonged to this one.

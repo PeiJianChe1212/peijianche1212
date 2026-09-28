@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/peilink_theme_scope.dart';
+
 class EchoInteractionBar extends StatelessWidget {
   const EchoInteractionBar({
     super.key,
@@ -79,7 +81,10 @@ class _Action extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? const Color(0xFFE4869C) : const Color(0xFF849198);
+    final echoTheme = PeiLinkThemeScope.of(context).publicEchoTheme;
+    final color = active
+        ? echoTheme.selectedActionColor
+        : echoTheme.actionColor;
     return Expanded(
       child: Semantics(
         label: semanticLabel,

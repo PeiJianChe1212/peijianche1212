@@ -12,15 +12,21 @@ import 'package:peijianche_app/pages/peilink/add_ai_page.dart';
 import 'package:peijianche_app/pages/peilink/ai_creation_center_page.dart';
 import 'package:peijianche_app/pages/peilink/create_group_chat_page.dart';
 import 'package:peijianche_app/pages/peilink/group_chat_page.dart';
+import 'package:peijianche_app/pages/peilink/games/mini_game_lobby_page.dart';
 import 'package:peijianche_app/pages/peilink/peilink_home_page.dart';
+import 'package:peijianche_app/platform/storage/native_platform_storage.dart';
 import 'package:peijianche_app/services/character_registry_service.dart';
 import 'package:peijianche_app/services/group_chat_storage_service.dart';
 import 'package:peijianche_app/services/group_message_storage_service.dart';
 import 'package:peijianche_app/services/peilink_appearance_service.dart';
+import 'package:peijianche_app/services/peilink_theme_service.dart';
 import 'package:peijianche_app/theme/app_theme_background.dart';
 import 'package:peijianche_app/theme/chat_visual_theme.dart';
 import 'package:peijianche_app/theme/theme_background.dart';
 import 'package:peijianche_app/widgets/chat/chat_bubble_surface.dart';
+import 'package:peijianche_app/widgets/theme/peilink_theme_scope.dart';
+
+import 'helpers/widget_test_cleanup.dart';
 
 /// Phase G1 targeted coverage: entry menu + group chat visual/system sync.
 void main() {
@@ -44,9 +50,18 @@ void main() {
     PeiLinkRuntime.configure(PeiLinkBuild.unspecified);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
-    try {
-      if (await documents.exists()) await documents.delete(recursive: true);
-    } catch (_) {}
+    // Bounded retry for Windows file lock (errno 32).
+    for (var attempt = 0; attempt < 5; attempt++) {
+      try {
+        if (await documents.exists()) {
+          await documents.delete(recursive: true);
+        }
+        break;
+      } on FileSystemException {
+        if (attempt == 4) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 100 * (attempt + 1)));
+      }
+    }
   });
 
   Future<void> settle(WidgetTester tester, {int rounds = 30}) async {
@@ -156,21 +171,42 @@ void main() {
     });
   }
 
-  Future<PeiLinkAppearanceController> pumpGroup(WidgetTester tester) async {
+  /// Pump GroupChatPage with both global theme scope and appearance scope.
+  ///
+  /// Architecture (Batch 02/03):
+  ///   Global Chat Theme (PeiLinkThemeScope) → Group Chat background
+  ///   Appearance controller (PeiLinkAppearanceScope) → Bubble / Font
+  ///
+  /// Returns (appearanceController, themeController) for assertions and
+  /// proper disposal.
+  Future<(PeiLinkAppearanceController, PeiLinkThemeController)> pumpGroup(
+    WidgetTester tester,
+  ) async {
+    // Global chat theme: butterfly_fox drives the group background.
+    final themes = PeiLinkThemeController(
+      storage: NativePlatformStorage(documents.path),
+    );
+    await tester.runAsync(() => themes.selectChatTheme('butterfly_fox'));
+
+    // Appearance: bubble + font only.  Background is NOT set here because
+    // GroupChatPage reads its background from PeiLinkThemeScope.
     final controller = await appearanceFor(
       tester,
       bubble: ChatVisualThemeCatalog.journal,
       font: ChatVisualThemeCatalog.kai,
-      background: AppThemeBackground.starButterflyBlue,
     );
+
     await tester.pumpWidget(
-      PeiLinkAppearanceScope(
-        controller: controller,
-        child: const MaterialApp(home: GroupChatPage(groupId: 'group_1')),
+      PeiLinkThemeScope(
+        controller: themes,
+        child: PeiLinkAppearanceScope(
+          controller: controller,
+          child: const MaterialApp(home: GroupChatPage(groupId: 'group_1')),
+        ),
       ),
     );
     await settle(tester);
-    return controller;
+    return (controller, themes);
   }
 
   testWidgets('消息首页 + 展开两个选项，创建角色仍走原链路', (tester) async {
@@ -189,6 +225,7 @@ void main() {
     await settle(tester, rounds: 12);
     expect(find.text('创建角色'), findsOneWidget);
     expect(find.text('创建群聊'), findsOneWidget);
+    expect(find.text('小游戏'), findsOneWidget);
 
     await tester.tap(find.text('创建角色'));
     await settle(tester, rounds: 20);
@@ -213,6 +250,23 @@ void main() {
     expect(find.byType(CreateGroupChatPage), findsOneWidget);
   });
 
+  testWidgets('+ 菜单的小游戏进入独立 Lobby', (tester) async {
+    await tester.pumpWidget(
+      PeiLinkAppearanceScope(
+        controller: await appearanceFor(tester),
+        child: const MaterialApp(home: PeiLinkHomePage()),
+      ),
+    );
+    await settle(tester);
+    drainLegacyUiAsserts(tester);
+    await tester.tap(find.byKey(const ValueKey('peilink-create-entry')));
+    await settle(tester, rounds: 12);
+    await tester.tap(find.text('小游戏'));
+    await settle(tester, rounds: 20);
+    expect(find.byType(MiniGameLobbyPage), findsOneWidget);
+    expect(find.byKey(const ValueKey('mini-game-lobby')), findsOneWidget);
+  });
+
   testWidgets('旧 AddAiPage 群聊入口不再 ComingSoon', (tester) async {
     await tester.pumpWidget(
       PeiLinkAppearanceScope(
@@ -227,60 +281,69 @@ void main() {
     expect(find.textContaining('后面的版本开放'), findsNothing);
   });
 
-  testWidgets('群聊消费 bubble / font / background 装扮', (tester) async {
-    await seedGroup(tester);
-    final controller = await pumpGroup(tester);
+  testWidgets(
+    'group chat consumes global theme background and appearance bubble/font',
+    (tester) async {
+      await seedGroup(tester);
+      final (controller, themes) = await pumpGroup(tester);
 
-    // 背景跟随装扮体系
-    expect(find.byType(ThemeBackgroundContainer), findsWidgets);
-    expect(
-      find.byKey(const ValueKey('theme-background-star_butterfly_blue')),
-      findsOneWidget,
-    );
+      // --- Background: follows Global Chat Theme (PeiLinkThemeScope) ---
+      expect(find.byType(ThemeBackgroundContainer), findsWidgets);
+      expect(
+        find.byKey(const ValueKey('theme-background-butterfly_fox_background')),
+        findsOneWidget,
+        reason:
+            'Group Chat background must come from global butterfly_fox theme',
+      );
 
-    // 气泡使用用户当前主题
-    final surfaces = tester.widgetList<ChatBubbleSurface>(
-      find.byType(ChatBubbleSurface),
-    );
-    expect(surfaces, isNotEmpty);
-    for (final surface in surfaces) {
-      expect(surface.theme.id, controller.bubbleTheme.id);
-    }
-
-    // 正文使用当前装扮字体
-    final body = tester.widget<Text>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is Text &&
-            widget.textSpan != null &&
-            widget.textSpan!.toPlainText().contains('早，昨晚睡得还行。'),
-      ),
-    );
-    final leaves = <TextSpan>[];
-    void collect(InlineSpan span) {
-      if (span is! TextSpan) return;
-      if (span.text != null) leaves.add(span);
-      for (final child in span.children ?? const <InlineSpan>[]) {
-        collect(child);
+      // --- Bubble: uses Appearance controller theme ---
+      final surfaces = tester.widgetList<ChatBubbleSurface>(
+        find.byType(ChatBubbleSurface),
+      );
+      expect(surfaces, isNotEmpty);
+      for (final surface in surfaces) {
+        expect(surface.theme.id, controller.bubbleTheme.id);
       }
-    }
 
-    collect(body.textSpan!);
-    // 正文底色样式挂在根 span 上（与单聊一致），叶子只覆盖 @ / code 例外。
-    expect(
-      (body.textSpan! as TextSpan).style?.fontFamily,
-      'PeiLinkKai',
-      reason: '群聊正文必须消费装扮字体',
-    );
-    expect(
-      (body.textSpan! as TextSpan).style?.fontFamilyFallback,
-      isNotEmpty,
-    );
-  });
+      // --- Font: uses Appearance controller theme ---
+      final body = tester.widget<Text>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Text &&
+              widget.textSpan != null &&
+              widget.textSpan!.toPlainText().contains('早，昨晚睡得还行。'),
+        ),
+      );
+      final leaves = <TextSpan>[];
+      void collect(InlineSpan span) {
+        if (span is! TextSpan) return;
+        if (span.text != null) leaves.add(span);
+        for (final child in span.children ?? const <InlineSpan>[]) {
+          collect(child);
+        }
+      }
+
+      collect(body.textSpan!);
+      // 正文底色样式挂在根 span 上（与单聊一致），叶子只覆盖 @ / code 例外。
+      expect(
+        (body.textSpan! as TextSpan).style?.fontFamily,
+        'PeiLinkKai',
+        reason: '群聊正文必须消费装扮字体',
+      );
+      expect(
+        (body.textSpan! as TextSpan).style?.fontFamilyFallback,
+        isNotEmpty,
+      );
+
+      await disposeTestWidgetTree(tester);
+      themes.dispose();
+      controller.dispose();
+    },
+  );
 
   testWidgets('system 不套气泡，代码块保持 monospace', (tester) async {
     await seedGroup(tester);
-    await pumpGroup(tester);
+    final (_, themes) = await pumpGroup(tester);
 
     // 系统消息用中性样式，不进入气泡
     final systemText = tester.widget<Text>(find.text('阿澈加入了群聊'));
@@ -316,11 +379,12 @@ void main() {
       isTrue,
       reason: 'code block 必须保持 monospace',
     );
+
+    await disposeTestWidgetTree(tester);
+    themes.dispose();
   });
 
-  testWidgets('旧群聊数据（缺新字段）仍可读取，新消息仍写回原 storage', (
-    tester,
-  ) async {
+  testWidgets('旧群聊数据（缺新字段）仍可读取，新消息仍写回原 storage', (tester) async {
     await tester.runAsync(() async {
       final dir = Directory('${documents.path}/group_chats/legacy_group');
       await dir.create(recursive: true);

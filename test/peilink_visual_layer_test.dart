@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peijianche_app/models/character_profile.dart';
 import 'package:peijianche_app/models/chat_image_scene_intent.dart';
+import 'package:peijianche_app/models/chat_message.dart';
 import 'package:peijianche_app/models/echo_image_intent.dart';
 import 'package:peijianche_app/models/peilink_character_visual_profile.dart';
 import 'package:peijianche_app/models/peilink_visual_intent.dart';
@@ -35,6 +36,252 @@ void main() {
     expect(result.subject, ChatImageSubject.selfie);
     expect(result.characterPresence, ChatCharacterPresence.required);
     expect(result.requiredCharacterIds, ['role-a']);
+  });
+
+  test('Chat explicit character request requires the current character', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看你',
+      characterId: 'role-a',
+    );
+    expect(result.subject, ChatImageSubject.character);
+    expect(result.characterPresence, ChatCharacterPresence.required);
+    expect(result.requiredCharacterIds, ['role-a']);
+  });
+
+  test('Chat body detail keeps the character and requested focus', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看老公腹肌',
+      characterId: 'role-a',
+    );
+    final prompt = ChatImageGenerationService.buildPrompt(
+      intent: result,
+      visualProfile: visualProfile,
+    );
+    expect(result.subject, ChatImageSubject.characterDetail);
+    expect(result.characterPresence, ChatCharacterPresence.required);
+    expect(prompt, contains('腹肌'));
+    expect(prompt, contains('角色本人必须出现'));
+    expect(prompt, isNot(contains('画面中不出现人物')));
+    expect(prompt, contains('匀称'));
+    expect(prompt, contains('蓝色'));
+  });
+
+  test('Chat hand and earring requests are character details', () {
+    for (final request in ['看看你的手', '给我看看新耳钉']) {
+      final result = chatIntent.resolve(
+        userRequest: request,
+        characterId: 'role-a',
+      );
+      expect(result.subject, ChatImageSubject.characterDetail);
+      expect(result.characterPresence, ChatCharacterPresence.required);
+    }
+  });
+
+  test('Chat character object request preserves both subjects', () {
+    for (final request in ['你拿着花给我看看', '把花放在腹肌边上给我看看']) {
+      final result = chatIntent.resolve(
+        userRequest: request,
+        characterId: 'role-a',
+      );
+      final prompt = ChatImageGenerationService.buildPrompt(
+        intent: result,
+        visualProfile: visualProfile,
+      );
+      expect(result.subject, ChatImageSubject.characterObject);
+      expect(result.characterPresence, ChatCharacterPresence.required);
+      expect(prompt, contains('花'));
+      expect(prompt, contains('角色本人和指定物品必须同时清晰出现'));
+      expect(prompt, isNot(contains('画面中不出现人物')));
+    }
+  });
+
+  test('Chat room request remains person-free', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看你房间',
+      characterId: 'role-a',
+    );
+    expect(result.subject, ChatImageSubject.environment);
+    expect(result.characterPresence, ChatCharacterPresence.none);
+  });
+
+  test('Chat pure flower request remains person-free', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看那束花',
+      characterId: 'role-a',
+    );
+    expect(result.subject, ChatImageSubject.object);
+    expect(result.characterPresence, ChatCharacterPresence.none);
+  });
+
+  test('Chat follow-up resolves outfit from recent conversation', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看',
+      characterId: 'role-a',
+      recentMessages: [
+        ChatMessage(role: 'assistant', content: '我刚换了件新衬衫。'),
+        ChatMessage(role: 'user', content: '给我看看'),
+      ],
+    );
+    expect(result.subject, ChatImageSubject.outfit);
+    expect(result.characterPresence, ChatCharacterPresence.required);
+  });
+
+  test('Chat follow-up resolves environment from recent conversation', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看',
+      characterId: 'role-a',
+      recentMessages: [
+        ChatMessage(role: 'assistant', content: '窗外下雪了。'),
+        ChatMessage(role: 'user', content: '给我看看'),
+      ],
+    );
+    expect(result.subject, ChatImageSubject.environment);
+    expect(result.characterPresence, ChatCharacterPresence.none);
+  });
+
+  test('contextual character details retain person and exact visual focus', () {
+    for (final scenario in const [
+      ('最近腹肌练得还不错。', '给我看看嘛', '腹肌'),
+      ('新打了个耳钉。', '看看', '耳钉'),
+      ('手上沾了点颜料。', '让我看看', '手上'),
+    ]) {
+      final result = chatIntent.resolve(
+        userRequest: scenario.$2,
+        characterId: 'role-a',
+        recentMessages: [ChatMessage(role: 'assistant', content: scenario.$1)],
+      );
+      final prompt = ChatImageGenerationService.buildPrompt(
+        intent: result,
+        visualProfile: visualProfile,
+      );
+      expect(result.subject, ChatImageSubject.characterDetail);
+      expect(result.characterPresence, ChatCharacterPresence.required);
+      expect(result.visualFocus, contains(scenario.$3));
+      expect(prompt, contains(scenario.$3));
+      expect(prompt, isNot(contains('画面中不出现人物')));
+    }
+  });
+
+  test('contextual character state can require the character', () {
+    final result = chatIntent.resolve(
+      userRequest: '让我看看',
+      characterId: 'role-a',
+      recentMessages: [ChatMessage(role: 'assistant', content: '我现在这样挺狼狈的。')],
+    );
+    expect(result.subject, ChatImageSubject.character);
+    expect(result.characterPresence, ChatCharacterPresence.required);
+  });
+
+  test('contextual character-object retains person object and relation', () {
+    for (final context in ['我正拿着你送的花。', '猫现在趴我怀里。']) {
+      final result = chatIntent.resolve(
+        userRequest: '给我看看嘛',
+        characterId: 'role-a',
+        recentMessages: [ChatMessage(role: 'assistant', content: context)],
+      );
+      final prompt = ChatImageGenerationService.buildPrompt(
+        intent: result,
+        visualProfile: visualProfile,
+      );
+      expect(result.subject, ChatImageSubject.characterObject);
+      expect(result.characterPresence, ChatCharacterPresence.required);
+      expect(result.visualFocus, contains(context.replaceAll('。', '')));
+      expect(prompt, contains('角色本人和指定物品必须同时清晰出现'));
+      expect(prompt, isNot(contains('画面中不出现人物')));
+    }
+  });
+
+  test(
+    'follow-up particles preserve outfit environment and object behavior',
+    () {
+      for (final scenario in const [
+        ('我刚换了件新衬衫。', ChatImageSubject.outfit, ChatCharacterPresence.required),
+        ('窗外下雪了。', ChatImageSubject.environment, ChatCharacterPresence.none),
+        ('我买了束花。', ChatImageSubject.object, ChatCharacterPresence.none),
+      ]) {
+        final result = chatIntent.resolve(
+          userRequest: '给我看看嘛',
+          characterId: 'role-a',
+          recentMessages: [
+            ChatMessage(role: 'assistant', content: scenario.$1),
+          ],
+        );
+        expect(result.subject, scenario.$2);
+        expect(result.characterPresence, scenario.$3);
+      }
+    },
+  );
+
+  test('nearest effective visual context wins over older context', () {
+    final detail = chatIntent.resolve(
+      userRequest: '给我看看嘛',
+      characterId: 'role-a',
+      recentMessages: [
+        ChatMessage(role: 'assistant', content: '窗外下雪了。'),
+        ChatMessage(role: 'assistant', content: '我最近腹肌练出来了。'),
+      ],
+    );
+    expect(detail.subject, ChatImageSubject.characterDetail);
+    expect(detail.visualFocus, contains('腹肌'));
+
+    final outfit = chatIntent.resolve(
+      userRequest: '看看',
+      characterId: 'role-a',
+      recentMessages: [
+        ChatMessage(role: 'assistant', content: '我买了束花。'),
+        ChatMessage(role: 'assistant', content: '我刚换了件衬衫。'),
+      ],
+    );
+    expect(outfit.subject, ChatImageSubject.outfit);
+    expect(outfit.characterPresence, ChatCharacterPresence.required);
+  });
+
+  test('explicit visual subject overrides contextual environment', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看你的手',
+      characterId: 'role-a',
+      recentMessages: [ChatMessage(role: 'assistant', content: '窗外下雪了。')],
+    );
+    expect(result.subject, ChatImageSubject.characterDetail);
+    expect(result.characterPresence, ChatCharacterPresence.required);
+  });
+
+  test('particle follow-up without visual context remains ambient', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看嘛',
+      characterId: 'role-a',
+      recentMessages: [ChatMessage(role: 'assistant', content: '今天过得还不错。')],
+    );
+    expect(result.subject, ChatImageSubject.ambient);
+    expect(result.characterPresence, ChatCharacterPresence.none);
+  });
+
+  test('Chat follow-up prefers the nearest relevant context', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看',
+      characterId: 'role-a',
+      recentMessages: [
+        ChatMessage(role: 'assistant', content: '我买了一束花。'),
+        ChatMessage(role: 'user', content: '外面怎么样？'),
+        ChatMessage(role: 'assistant', content: '窗外下雪了。'),
+        ChatMessage(role: 'user', content: '给我看看'),
+      ],
+    );
+    expect(result.subject, ChatImageSubject.environment);
+    expect(result.visualFocus, contains('窗外下雪了'));
+  });
+
+  test('Chat subjectless follow-up remains ambient and person-free', () {
+    final result = chatIntent.resolve(
+      userRequest: '给我看看',
+      characterId: 'role-a',
+      recentMessages: [
+        ChatMessage(role: 'assistant', content: '今天过得还不错。'),
+        ChatMessage(role: 'user', content: '给我看看'),
+      ],
+    );
+    expect(result.subject, ChatImageSubject.ambient);
+    expect(result.characterPresence, ChatCharacterPresence.none);
   });
 
   test('Chat desktop request stays person-free', () {

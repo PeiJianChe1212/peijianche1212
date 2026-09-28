@@ -33,6 +33,8 @@ class GuideKnowledge {
     'Echo',
     'PeiLink Life',
     '纪念日',
+    '群聊',
+    '外观',
     '数据与重置',
     'API 与模型',
   ];
@@ -120,18 +122,30 @@ class GuideKnowledge {
       keywords: ['聊天背景', '背景'],
       answer: '进入当前角色的聊天设置，在“当前聊天”中选择“设置当前聊天背景”。',
     ),
+    GuideKnowledgeEntry(
+      category: '聊天',
+      topic: '怎么重新生成或回溯消息？',
+      keywords: ['重新生成', '回溯到这里', '怎么回溯消息', '长按消息', '撤回后续'],
+      answer: '长按聊天消息可选择“重新生成”或“回溯到这里”。确认后，重新生成会替换对应回复；回溯会保留当前消息并删除它之后的聊天。',
+    ),
+    GuideKnowledgeEntry(
+      category: '聊天',
+      topic: '怎么发送、查看或保存聊天图片？',
+      keywords: ['发送图片', '查看图片', '保存图片', '图片怎么保存', '图片预览', '缩放图片', '相册'],
+      answer: '点输入框旁的“＋”选择图片并发送。点击聊天中的用户图片或角色生成图片可全屏查看、缩放，并用右上角按钮保存到系统相册。',
+    ),
 
     GuideKnowledgeEntry(
       category: '角色',
       topic: '角色设置在哪里？',
-      keywords: ['角色设置', '人物设置'],
-      answer: '可以从聊天设置进入当前角色详情；角色创建时填写的人设会继续保存在当前角色中。',
+      keywords: ['角色设置', '人物设置', '编辑角色设定', '修改人设', '怎么修改角色人设'],
+      answer: '进入聊天设置，在“角色管理”中选择“编辑角色设定”，即可修改创建时填写的人设并保存。',
     ),
     GuideKnowledgeEntry(
       category: '角色',
       topic: '“我的个人设定”是什么？',
       keywords: ['我的个人设定', '个人设定', '角色眼中的我'],
-      answer: '它描述你在当前角色世界里的身份，只属于这个角色，不会修改侧边栏中的真实个人资料。目前不要把它当作已经进入聊天模型的资料。',
+      answer: '它描述你在当前角色世界里的身份，只属于这个角色，不会修改侧边栏中的真实个人资料；保存后会用于该角色之后的对话。',
     ),
     GuideKnowledgeEntry(
       category: '角色',
@@ -174,25 +188,26 @@ class GuideKnowledge {
       category: 'Memory',
       topic: '怎么新增记忆？',
       keywords: ['新增记忆', '添加记忆'],
-      answer: '进入角色的 Memory 页面，在对应分类右侧点击“＋”并填写内容。',
+      answer:
+          '进入聊天设置，在“角色管理”中打开 Memory。你可以在“Ta 心中的我”添加关于你的记忆，或在“经历过的事”中选择“添加经历”。',
     ),
     GuideKnowledgeEntry(
       category: 'Memory',
       topic: '什么是长期记忆？',
       keywords: ['长期记忆'],
-      answer: '长期记忆是已经确认保存的内容，可以编辑、置顶、归档或删除。',
+      answer: 'Memory 中关于你的认识、共同经历和记忆汇总会长期保存在当前角色范围内；其中的内容可按页面现有操作编辑、固定或删除。',
     ),
     GuideKnowledgeEntry(
       category: 'Memory',
-      topic: '什么是待审核记忆？',
-      keywords: ['待审核', '候选记忆'],
-      answer: '从聊天中整理出的内容会先进入待审核列表。只有你确认后，才会写入长期 Memory。',
+      topic: '自动记忆是什么？',
+      keywords: ['自动记忆', '自动整理', '候选记忆'],
+      answer: '开启“自动记忆”后，角色会在聊天一段时间后整理值得记住的内容。你仍可在 Memory 页面查看和管理这些记忆。',
     ),
     GuideKnowledgeEntry(
       category: 'Memory',
-      topic: '从当前聊天整理记忆是什么？',
-      keywords: ['分析聊天', '整理记忆', '提取记忆'],
-      answer: '它分析当前角色最近的聊天，找出可能值得长期保存的内容，并送入待审核列表，不会自动永久写入。',
+      topic: '记忆汇总是什么？',
+      keywords: ['记忆汇总', '更新总结', '整理记忆'],
+      answer: '记忆汇总是一份长期保留的相处总结。你可以手动编辑，也可以点“更新总结”让 AI 根据当前角色的记忆重新整理。',
     ),
     GuideKnowledgeEntry(
       category: 'Memory',
@@ -320,6 +335,26 @@ class GuideKnowledge {
     ),
 
     GuideKnowledgeEntry(
+      category: '群聊',
+      topic: '怎么创建群聊？',
+      keywords: ['创建群聊', '怎么创建群聊', '多人聊天', '多个角色一起聊'],
+      answer: '点击消息首页右上角“＋”，选择“创建群聊”，填写群名称并选择至少两个角色后创建。',
+    ),
+    GuideKnowledgeEntry(
+      category: '群聊',
+      topic: '群聊可以设置什么？',
+      keywords: ['群聊设置', '群名称', '群成员', '群聊身份', '退出群聊'],
+      answer: '从群聊右上角进入“群聊设置”，可以管理成员、我的群聊身份、群名称、消息免打扰、置顶、清空记录或删除并退出群聊。',
+    ),
+
+    GuideKnowledgeEntry(
+      category: '外观',
+      topic: '主题和聊天气泡在哪里设置？',
+      keywords: ['主题装扮', '个性装扮', '聊天气泡', '聊天气泡在哪', '字体', '背景'],
+      answer: '打开消息首页左上角的个人侧栏，选择“主题装扮”。在“个性装扮”中可以分别选择背景、聊天气泡和字体。',
+    ),
+
+    GuideKnowledgeEntry(
       category: '数据与重置',
       topic: '删除聊天记录会保留什么？',
       keywords: ['清空聊天', '删聊天', 'chat history'],
@@ -406,6 +441,6 @@ class GuideKnowledge {
     for (final entry in entries) {
       if (entry.matches(normalized)) return entry.answer;
     }
-    return '这个问题暂时不在公开功能说明里。可以换个关键词，或通过“帮助与反馈”告诉我们。';
+    return '这个问题暂时不在公开功能说明里。可以换个关键词，或通过“反馈与建议”告诉我们。';
   }
 }

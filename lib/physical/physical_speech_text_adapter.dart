@@ -29,47 +29,231 @@ abstract final class PhysicalSpeechTextAdapter {
     }
     final output = <String>[];
     {
-      var line = source;
-      final quoted = <String>[];
-      while (line.isNotEmpty) {
-        if (line.startsWith('（') || line.startsWith('(')) {
-          final end = _leadingParenthesisEnd(line);
-          if (end == null) {
-            notes.add('unbalanced_leading_action');
-            line = '';
-            break;
+      // Every complete quoted span of the whole reply is considered in original
+      // order, and the text between quotes is judged separately. Gap text is
+      // never spoken: only quotations that sit between structural boundaries
+      // (actions, punctuation, narration colon) are promoted to speech.
+      final stripped = _stripLeadingActionBlocks(source);
+      if (stripped.unbalanced) notes.add('unbalanced_leading_action');
+      if (stripped.removed) notes.add('leading_action_removed');
+      final spans = _quotedSpans(source);
+      // A quotation inside a stage direction is not spoken dialogue: it must
+      // not become a span, and it must not split the surrounding action block
+      // into a fake introducer for the next real utterance.
+      final actionMask = _actionRegionMask(source);
+      final dialogueSpans = spans
+          .where((span) => !actionMask[span.start])
+          .toList(growable: false);
+      if (dialogueSpans.isNotEmpty) {
+        final gaps = _gapsBetweenQuotes(source, dialogueSpans);
+        for (var index = 0; index < dialogueSpans.length; index++) {
+          final content = dialogueSpans[index].content.trim();
+          if (content.isEmpty || _isStandaloneNarration(content)) {
+            continue;
           }
-          notes.add('leading_action_removed');
-          line = line.substring(end).trimLeft();
-          continue;
+          // Gap roles are distinct. The gap before a quotation introduces it
+          // (structural glue or a narration clause that names speech). The gap
+          // between two quotations belongs to the *next* quotation, so it must
+          // never drop the preceding one. Only the trailing gap still has to be
+          // a boundary, which keeps sentence-glued quotations unspoken.
+          if (!_gapIntroducesSpeech(gaps[index])) continue;
+          if (index == dialogueSpans.length - 1 &&
+              !_gapIsStructural(gaps[index + 1])) {
+            continue;
+          }
+          output.add(content);
         }
-        final close = line.startsWith('“')
-            ? '”'
-            : line.startsWith('"')
-            ? '"'
-            : null;
-        if (close == null) break;
-        final end = line.indexOf(close, 1);
-        if (end < 0) {
-          notes.add('unbalanced_quote');
-          line = '';
-          break;
+        if (output.isEmpty) {
+          notes.add('unsafe_quoted_dialogue');
+        } else {
+          notes.add('quote_extracted');
         }
-        quoted.add(line.substring(1, end).trim());
-        notes.add('quote_extracted');
-        line = line.substring(end + 1).trimLeft();
-      }
-      if (quoted.isNotEmpty) {
-        // Once a quoted utterance is identified, unquoted trailing narration
-        // is not promoted to speech. Parentheses inside dialogue remain intact.
-        output.addAll(quoted.where((text) => text.isNotEmpty));
-      } else if (line.isNotEmpty) {
-        final adapted = fromCoreReplyDetailed(line, restoreEmptyResult: false);
+      } else if (_startsWithQuoteOpener(stripped.text)) {
+        // A dangling opening quote is ambiguous: never guess or promote text.
+        notes.add('unbalanced_quote');
+      } else if (stripped.text.isNotEmpty) {
+        // No quoted dialogue: normal prose. A complete parenthesised block that
+        // stands as its own sentence is a stage direction and is dropped;
+        // parentheticals inside a sentence stay verbatim.
+        final prose = _stripStandaloneActionRegions(stripped.text, notes);
+        final adapted = fromCoreReplyDetailed(
+          prose,
+          restoreEmptyResult: false,
+        );
         output.add(adapted.text);
         notes.add(adapted.note);
       }
     }
     return result(_joinNatural(output));
+  }
+
+  /// Removes the parenthesised action blocks that may introduce the reply.
+  static ({String text, bool removed, bool unbalanced})
+  _stripLeadingActionBlocks(String value) {
+    var text = value;
+    var removed = false;
+    while (text.startsWith('（') || text.startsWith('(')) {
+      final end = _leadingParenthesisEnd(text);
+      if (end == null) {
+        return (text: '', removed: removed, unbalanced: true);
+      }
+      removed = true;
+      text = text.substring(end).trimLeft();
+    }
+    return (text: text, removed: removed, unbalanced: false);
+  }
+
+  /// Text before/between/after the quoted spans, in original order.
+  static List<String> _gapsBetweenQuotes(
+    String source,
+    List<_QuoteSpan> spans,
+  ) {
+    final gaps = <String>[];
+    var cursor = 0;
+    for (final span in spans) {
+      gaps.add(source.substring(cursor, span.start));
+      cursor = span.end;
+    }
+    gaps.add(source.substring(cursor));
+    return gaps;
+  }
+
+  /// True when [gap] is structural glue that may sit next to a spoken quote:
+  /// empty text, parenthesised or cued action blocks, punctuation only,
+  /// standalone narration, a narration colon introducer, or a clause that has
+  /// already terminated. The gap itself is never read aloud.
+  static bool _gapIsStructural(String gap) {
+    var rest = gap.trim();
+    if (rest.isEmpty) return true;
+    while (rest.startsWith('（') || rest.startsWith('(')) {
+      final end = _leadingParenthesisEnd(rest);
+      if (end == null) return false;
+      rest = rest.substring(end).trimLeft();
+    }
+    if (rest.isEmpty) return true;
+    final withoutActions = _removeActionBlocks(rest).trim();
+    if (withoutActions.isEmpty) return true;
+    if (_onlyPunctuation.hasMatch(withoutActions)) return true;
+    if (_standaloneNarration.hasMatch(withoutActions)) return true;
+    if (_narrationColonPrefix.hasMatch(withoutActions)) return true;
+    return _clauseBoundaryEnd.hasMatch(withoutActions);
+  }
+
+  /// True when [gap] reads as the introduction of the quotation that follows
+  /// it: structural glue, or a narration clause that names speech even when it
+  /// happens to carry no closing punctuation.
+  static bool _gapIntroducesSpeech(String gap) =>
+      _gapIsStructural(gap) || _gapHasSpeechCue(gap);
+
+  static bool _gapHasSpeechCue(String gap) {
+    final withoutActions = _removeActionBlocks(gap.trim());
+    if (withoutActions.trim().isEmpty) return false;
+    // Descriptive verbs introduce a quoted term, not spoken dialogue
+    // (e.g. 他念出“蜜雪冰城”三个字), so they never open a speech span.
+    if (_quotedTermOnly.hasMatch(withoutActions)) return false;
+    return _speechCue.hasMatch(withoutActions);
+  }
+
+  /// Balanced stage-direction regions (parentheses, brackets, asterisks) in
+  /// source order. Unbalanced openers are ignored, which keeps the existing
+  /// conservative behaviour.
+  static List<(int, int)> _actionRegions(String source) {
+    final regions = <(int, int)>[];
+    for (final pair in _actionRegionPairs) {
+      _collectActionRegions(source, pair.$1, pair.$2, regions);
+    }
+    regions.sort((left, right) => left.$1.compareTo(right.$1));
+    return regions;
+  }
+
+  static void _collectActionRegions(
+    String source,
+    String open,
+    String close,
+    List<(int, int)> regions,
+  ) {
+    if (open == close) {
+      var cursor = 0;
+      while (cursor < source.length) {
+        final start = source.indexOf(open, cursor);
+        if (start < 0) return;
+        final end = source.indexOf(close, start + open.length);
+        if (end < 0) return;
+        regions.add((start, end + close.length));
+        cursor = end + close.length;
+      }
+      return;
+    }
+    final stack = <int>[];
+    for (var index = 0; index < source.length; index++) {
+      if (source.startsWith(open, index)) {
+        stack.add(index);
+        index += open.length - 1;
+        continue;
+      }
+      if (source.startsWith(close, index) && stack.isNotEmpty) {
+        final start = stack.removeLast();
+        if (stack.isEmpty) {
+          regions.add((start, index + close.length));
+        }
+        index += close.length - 1;
+      }
+    }
+  }
+
+  /// Marks every code unit inside a balanced stage-direction region.
+  static List<bool> _actionRegionMask(String source) {
+    final mask = List<bool>.filled(source.length, false);
+    for (final region in _actionRegions(source)) {
+      for (var index = region.$1; index < region.$2; index++) {
+        mask[index] = true;
+      }
+    }
+    return mask;
+  }
+
+  /// Removes stage-direction regions that stand as their own sentence: the
+  /// character before the block is a sentence boundary or the text begins
+  /// there. Embedded parentheticals such as `我明天（周三）来。` are kept.
+  static String _stripStandaloneActionRegions(
+    String text,
+    List<String> notes,
+  ) {
+    final regions = _actionRegions(text);
+    if (regions.isEmpty) return text;
+    final buffer = StringBuffer();
+    var cursor = 0;
+    var removed = false;
+    for (final region in regions) {
+      if (region.$1 < cursor) continue;
+      if (!_isStandaloneActionRegion(text, region.$1)) continue;
+      buffer.write(text.substring(cursor, region.$1));
+      cursor = region.$2;
+      removed = true;
+    }
+    if (!removed) return text;
+    buffer.write(text.substring(cursor));
+    notes.add('standalone_action_block_removed');
+    return buffer.toString();
+  }
+
+  static bool _isStandaloneActionRegion(String text, int start) {
+    var index = start - 1;
+    while (index >= 0 && (text[index] == ' ' || text[index] == '\t')) {
+      index--;
+    }
+    if (index < 0) return true;
+    return _sentenceBoundaryBefore.contains(text[index]);
+  }
+
+  static const _sentenceBoundaryBefore = '。！？!?…；;\n\r';
+
+  static bool _startsWithQuoteOpener(String value) {
+    final text = value.trimLeft();
+    for (final pair in _QuoteScanner._pairs) {
+      if (text.startsWith(pair.$1)) return true;
+    }
+    return false;
   }
 
   static int? _leadingParenthesisEnd(String value) {
@@ -255,6 +439,29 @@ abstract final class PhysicalSpeechTextAdapter {
   );
 
   static final RegExp _onlyPunctuation = RegExp(r'^[\s，。！？、：:；;…\-—~～]+$');
+
+  /// A clause that has already terminated (or a dialogue colon) directly before
+  /// or after a quotation boundary.
+  static final RegExp _clauseBoundaryEnd = RegExp(r'[，,。！？!?、；;：:…]$');
+
+  /// Narration that names speech without necessarily ending in punctuation.
+  static final RegExp _speechCue = RegExp(
+    r'补(?:了)?(?:一)?句|接(?:着)?(?:说|道)?|继续(?:说|道)?|开口|说|道|问|答|嘟囔|嘟哝|喊|叫',
+  );
+
+  /// Descriptive quotation markers: they introduce a quoted term, not dialogue.
+  static final RegExp _quotedTermOnly = RegExp(
+    r'念出|念着|写着|写的是|写下|标注|署名|标题',
+  );
+
+  /// Balanced stage-direction regions that are never spoken dialogue.
+  static const _actionRegionPairs = <(String, String)>[
+    ('（', '）'),
+    ('(', ')'),
+    ('【', '】'),
+    ('[', ']'),
+    ('*', '*'),
+  ];
 
   static final RegExp _actionBlockPattern = RegExp(
     r'（([^（）]{1,80})）|\(([^()]{1,80})\)|'

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peijianche_app/pages/home_page.dart';
+import 'helpers/widget_test_cleanup.dart';
 
 void main() {
   testWidgets('Life desktop renders its fixed widget layout', (tester) async {
@@ -9,19 +10,22 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpWidget(
+      const MaterialApp(home: HomePage(enableAmbientAnimation: false)),
+    );
     await tester.pump();
 
     await tester.fling(find.byType(PageView), const Offset(-300, 0), 1000);
     await tester.pump(const Duration(seconds: 1));
 
     expect(find.text('PEILINK LIFE'), findsOneWidget);
-    expect(find.text('\u7eaa\u5ff5\u65e5'), findsOneWidget);
-    expect(find.text('\u4e16\u754c\u72b6\u6001'), findsOneWidget);
-    expect(find.text('\u6700\u8fd1\u52a8\u6001'), findsOneWidget);
-    expect(find.text('\u751f\u6d3b\u5e94\u7528'), findsOneWidget);
-    expect(find.text('\u76f8\u518c'), findsOneWidget);
-    expect(find.text('\u8bbe\u7f6e'), findsOneWidget);
+    expect(find.text('纪念日'), findsOneWidget);
+    expect(find.text('世界状态'), findsOneWidget);
+    expect(find.text('最近动态'), findsOneWidget);
+    expect(find.text('生活应用'), findsOneWidget);
+    expect(find.text('相册'), findsOneWidget);
+    expect(find.text('设置'), findsOneWidget);
+    await disposeTestWidgetTree(tester);
   });
 
   for (final size in <Size>[
@@ -38,7 +42,12 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       await tester.pumpWidget(
-        const MaterialApp(home: HomePage(initialHasVisibleCharacter: false)),
+        const MaterialApp(
+          home: HomePage(
+            initialHasVisibleCharacter: false,
+            enableAmbientAnimation: false,
+          ),
+        ),
       );
       await tester.pump();
       expect(find.text('还没有角色'), findsOneWidget);
@@ -53,6 +62,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('应用空间'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await disposeTestWidgetTree(tester);
     });
   }
 
@@ -70,7 +80,10 @@ void main() {
           ).copyWith(textScaler: const TextScaler.linear(1.25)),
           child: child!,
         ),
-        home: const HomePage(initialHasVisibleCharacter: false),
+        home: const HomePage(
+          initialHasVisibleCharacter: false,
+          enableAmbientAnimation: false,
+        ),
       ),
     );
     await tester.pump();
@@ -85,5 +98,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('应用空间'), findsOneWidget);
     expect(tester.takeException(), isNull);
+    await disposeTestWidgetTree(tester);
   });
 }

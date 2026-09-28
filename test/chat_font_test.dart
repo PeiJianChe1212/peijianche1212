@@ -7,6 +7,8 @@ import 'package:peijianche_app/services/peilink_appearance_service.dart';
 import 'package:peijianche_app/theme/chat_visual_theme.dart';
 import 'package:peijianche_app/widgets/chat/renderers/text_message_renderer.dart';
 
+import 'helpers/widget_test_cleanup.dart';
+
 Iterable<TextSpan> leaves(InlineSpan span) sync* {
   if (span is TextSpan) {
     if (span.text != null) yield span;
@@ -26,7 +28,18 @@ void main() {
   });
   tearDown(() async {
     controller.dispose();
-    await dir.delete(recursive: true);
+    // Bounded retry for Windows file lock (errno 32).
+    for (var attempt = 0; attempt < 10; attempt++) {
+      try {
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+        return;
+      } on FileSystemException {
+        if (attempt == 9) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+      }
+    }
   });
 
   test(
@@ -129,6 +142,9 @@ void main() {
         expect(restored.fontTheme.id, 'system');
         restored.dispose();
       });
+
+      // Explicit widget tree unmount before teardown deletes temp dir.
+      await disposeTestWidgetTree(tester);
     },
   );
 
@@ -200,6 +216,8 @@ void main() {
           leaves(reset.textSpan!).first.style!.fontFamily,
           role == 'user' || role == 'assistant' ? 'sans-serif' : null,
         );
+
+        await disposeTestWidgetTree(tester);
       },
     );
   }

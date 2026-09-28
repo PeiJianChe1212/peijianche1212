@@ -13,6 +13,7 @@ import 'package:peijianche_app/pages/peilink/calendar_page.dart';
 import 'package:peijianche_app/pages/peilink/peilink_echo_page.dart';
 import 'package:peijianche_app/pages/peilink/peilink_home_page.dart';
 import 'package:peijianche_app/services/user_profile_storage_service.dart';
+import 'helpers/widget_test_cleanup.dart';
 
 void main() {
   const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
@@ -181,6 +182,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     expect(find.byType(PeiLinkHomePage, skipOffstage: false), findsOneWidget);
+    await disposeTestWidgetTree(tester);
   });
 
   test('User 首次资料使用空状态默认值', () async {

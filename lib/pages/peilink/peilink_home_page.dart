@@ -9,6 +9,10 @@ import '../../services/character_registry_service.dart';
 import '../../services/developer_environment_service.dart';
 import '../../services/user_profile_storage_service.dart';
 import '../../theme/app_theme_background.dart';
+import '../../theme/peilink_theme_config.dart';
+import '../../widgets/theme/peilink_theme_scope.dart';
+import '../../widgets/ai_identity_badge.dart';
+import '../../services/usage_timer_service.dart';
 import '../../theme/app_dimensions.dart';
 import '../../theme/app_text_styles.dart';
 import 'ai_creation_center_page.dart';
@@ -20,6 +24,7 @@ import 'relationship_hub_page.dart';
 import 'peilink_echo_page.dart';
 import 'peilink_guide_page.dart';
 import 'peilink_profile_drawer.dart';
+import 'games/mini_game_lobby_page.dart';
 
 class PeiLinkHomePage extends StatefulWidget {
   const PeiLinkHomePage({super.key});
@@ -28,7 +33,7 @@ class PeiLinkHomePage extends StatefulWidget {
   State<PeiLinkHomePage> createState() => _PeiLinkHomePageState();
 }
 
-class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
+class _PeiLinkHomePageState extends State<PeiLinkHomePage> with RouteAware {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _profileStorage = UserProfileStorageService();
 
@@ -58,8 +63,35 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
   @override
   void initState() {
     super.initState();
+    // Route visibility handled by RouteAware
     _loadProfile();
     _loadPhysicalUiAccess();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      if (route != null) {
+        UsageTimerService.instance.routeObserver.subscribe(this, route);
+      }
+    });
+  }
+
+
+  @override
+  void didPush() => UsageTimerService.instance.onInteractiveRouteVisible();
+
+  @override
+  void didPopNext() => UsageTimerService.instance.onInteractiveRouteVisible();
+
+  @override
+  void didPushNext() => UsageTimerService.instance.onInteractiveRouteHidden();
+
+  @override
+  void didPop() => UsageTimerService.instance.onInteractiveRouteHidden();
+
+  @override
+  void dispose() {
+    // Route visibility handled by RouteAware
+    super.dispose();
   }
 
   Future<void> _loadPhysicalUiAccess() async {
@@ -138,6 +170,13 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
     setState(() => _chatsRevision += 1);
   }
 
+  Future<void> _openMiniGames() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => const MiniGameLobbyPage()),
+    );
+  }
+
   Future<void> _openCharacterManagementFromDrawer() async {
     Navigator.pop(context);
     final registry = CharacterRegistryService();
@@ -167,10 +206,12 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
     final avatarPath = _profile.avatarPath.trim();
     final avatarFile = avatarPath.isEmpty ? null : File(avatarPath);
     final hasAvatar = avatarFile?.existsSync() == true;
+    final navigationTheme = PeiLinkThemeScope.of(context).navigationTheme;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: ThemeBackgroundContainer(
+        background: PeiLinkThemeScope.of(context).chatBackground,
         child: Scaffold(
           key: _scaffoldKey,
           extendBody: true,
@@ -254,6 +295,7 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
                     ),
                   ),
                 ),
+                const AiIdentityBadge.compact(),
                 if (_physicalUiEnabled) ...[
                   const SizedBox(height: 1),
                   const Row(
@@ -289,6 +331,7 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
                   onSelected: (value) {
                     if (value == 'character') _showCreateMenu();
                     if (value == 'group') _openCreateGroup();
+                    if (value == 'games') _openMiniGames();
                   },
                   itemBuilder: (_) => const [
                     PopupMenuItem(
@@ -313,6 +356,18 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
                           color: Color(0xFFF2994A),
                         ),
                         title: Text('创建群聊'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'games',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.sports_esports_rounded,
+                          color: Color(0xFF6480B8),
+                        ),
+                        title: Text('小游戏'),
                       ),
                     ),
                   ],
@@ -349,21 +404,24 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                 child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.76),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.72),
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x29152D3D),
-                        blurRadius: 18,
-                        offset: Offset(0, 6),
-                      ),
-                    ],
-                  ),
+                  decoration:
+                      (navigationTheme.decoration is BoxDecoration
+                              ? navigationTheme.decoration as BoxDecoration
+                              : const BoxDecoration())
+                          .copyWith(
+                            color: navigationTheme.background,
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(color: navigationTheme.border),
+                            boxShadow: [
+                              BoxShadow(
+                                color: navigationTheme.shadow,
+                                blurRadius: 18,
+                                offset: Offset(0, 6),
+                              ),
+                            ],
+                          ),
                   child: _PeiLinkNavigationBar(
+                    theme: navigationTheme,
                     currentIndex: _currentIndex,
                     onChanged: (index) => setState(() => _currentIndex = index),
                   ),
@@ -379,11 +437,13 @@ class _PeiLinkHomePageState extends State<PeiLinkHomePage> {
 
 class _PeiLinkNavigationBar extends StatelessWidget {
   const _PeiLinkNavigationBar({
+    required this.theme,
     required this.currentIndex,
     required this.onChanged,
   });
 
   final int currentIndex;
+  final PeiLinkNavigationTheme theme;
   final ValueChanged<int> onChanged;
 
   static const _items = [
@@ -414,7 +474,7 @@ class _PeiLinkNavigationBar extends StatelessWidget {
                     curve: Curves.easeOutCubic,
                     decoration: BoxDecoration(
                       color: selected
-                          ? const Color(0xFFDDE8FA).withValues(alpha: 0.86)
+                          ? theme.selectedBackground
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(18),
                       border: selected
@@ -424,25 +484,29 @@ class _PeiLinkNavigationBar extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          selected ? item.$2 : item.$1,
-                          size: AppDimensions.bottomNavigationIcon,
-                          color: selected
-                              ? const Color(0xFF526DA5)
-                              : const Color(0xFF66737B),
+                        _NavigationIcon(
+                          fallback: selected ? item.$2 : item.$1,
+                          assetDirectory: theme.iconAssetDirectory,
+                          assetName: switch (index) {
+                            0 => 'messages',
+                            1 => 'bond',
+                            _ => 'echo',
+                          },
+                          selected: selected,
+                          color: selected ? theme.selected : theme.unselected,
                         ),
                         const SizedBox(height: 2),
                         Text(
                           item.$3,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: selected
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: selected
-                                ? const Color(0xFF405B91)
-                                : const Color(0xFF66737B),
-                          ),
+                          style:
+                              (selected
+                                      ? theme.selectedLabelStyle
+                                      : theme.unselectedLabelStyle)
+                                  .copyWith(
+                                    color: selected
+                                        ? theme.selected
+                                        : theme.unselected,
+                                  ),
                         ),
                       ],
                     ),
@@ -453,6 +517,39 @@ class _PeiLinkNavigationBar extends StatelessWidget {
           );
         }),
       ),
+    );
+  }
+}
+
+class _NavigationIcon extends StatelessWidget {
+  const _NavigationIcon({
+    required this.fallback,
+    required this.assetName,
+    required this.selected,
+    required this.color,
+    this.assetDirectory,
+  });
+  final IconData fallback;
+  final String assetName;
+  final bool selected;
+  final Color color;
+  final String? assetDirectory;
+
+  @override
+  Widget build(BuildContext context) {
+    final directory = assetDirectory;
+    final fallbackIcon = Icon(
+      fallback,
+      size: AppDimensions.bottomNavigationIcon,
+      color: color,
+    );
+    if (directory == null || directory.isEmpty) return fallbackIcon;
+    return Image.asset(
+      '$directory/${assetName}_${selected ? 'selected' : 'unselected'}.png',
+      width: AppDimensions.bottomNavigationIcon,
+      height: AppDimensions.bottomNavigationIcon,
+      color: color,
+      errorBuilder: (_, _, _) => fallbackIcon,
     );
   }
 }

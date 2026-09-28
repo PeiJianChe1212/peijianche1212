@@ -8,6 +8,7 @@ import '../chat_model_provider.dart';
 import '../../platform/provider/http_provider_transport.dart';
 import '../../platform/provider/provider_transport.dart';
 
+import '../../services/third_party_consent_service.dart';
 class ChatEmptyResponseException implements Exception {
   const ChatEmptyResponseException({
     required this.finishReason,
@@ -51,6 +52,11 @@ class OpenAiCompatibleChatProvider extends ChatModelProvider {
       throw StateError('请先在“设置 → 模型与 API”中填写并保存聊天模型配置。');
     }
 
+    await ThirdPartyConsentService.instance.requireConsent(
+      settings.provider,
+      settings.baseUrl,
+      ConsentPurpose.chat,
+    );
     final body = <String, dynamic>{
       'model': settings.model,
       'messages': messages,

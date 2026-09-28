@@ -26,6 +26,7 @@ import '../services/chat_image_request_router_service.dart';
 import '../services/chat_image_storage_service.dart';
 import '../services/chat_storage_service.dart';
 import '../services/deepseek_service.dart';
+import '../services/api_settings_storage_service.dart';
 import '../services/initiative_service.dart';
 import '../services/life_trace_service.dart';
 import '../services/session_reset_service.dart';
@@ -38,11 +39,17 @@ import 'peilink/chat_settings_page.dart';
 import 'peilink/character_user_profile_page.dart';
 import '../widgets/chat/chat_input_area.dart';
 import '../theme/app_theme_background.dart';
+import '../theme/peilink_theme_config.dart';
 import '../widgets/chat/message_renderer.dart';
 import '../widgets/chat/red_packet_send_dialog.dart';
 import '../widgets/chat/renderers/red_packet_message_renderer.dart';
 import '../widgets/peilink/relationship_badge.dart';
+import '../widgets/theme/peilink_theme_scope.dart';
+import '../widgets/theme/peilink_themed_avatar.dart';
 import '../widgets/peilink/role_status_mark.dart';
+import '../widgets/ai_identity_badge.dart';
+import '../services/usage_timer_service.dart';
+import '../services/third_party_consent_service.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, this.backDestinationBuilder});
@@ -54,7 +61,7 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
+class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteAware {
   final List<ChatMessage> _messages = [];
   final ActivityService _activityService = const ActivityService();
   final TextEditingController _controller = TextEditingController();
@@ -114,6 +121,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _syncImageTaskState();
     _initializeApp();
     _recordCurrentActivity();
+    // Route visibility handled by RouteAware callbacks
     _activityVisibilityTimer = Timer(const Duration(seconds: 24), () {
       if (mounted) setState(() => _showActivitySubtitle = false);
     });
@@ -123,6 +131,35 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       setState(() => _now = now);
       await _recordCurrentActivity(now: now);
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      if (route != null) {
+        UsageTimerService.instance.routeObserver.subscribe(this, route);
+      }
+    });
+  }
+
+  @override
+  // --- RouteAware: visibility-driven usage timer ---
+  @override
+  void didPush() {
+    UsageTimerService.instance.onInteractiveRouteVisible();
+  }
+
+  @override
+  void didPopNext() {
+    UsageTimerService.instance.onInteractiveRouteVisible();
+  }
+
+  @override
+  void didPushNext() {
+    UsageTimerService.instance.onInteractiveRouteHidden();
+  }
+
+  @override
+  void didPop() {
+    UsageTimerService.instance.onInteractiveRouteHidden();
   }
 
   @override
@@ -138,6 +175,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _imageTaskManager.removeListener(_onImageTaskChanged);
     UserProfileStorageService.changes.removeListener(_onUserProfileChanged);
     _chatImageRequestRouter.dispose();
+    // Route visibility handled by RouteAware callbacks
     super.dispose();
   }
 
@@ -295,12 +333,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _showSnack('还没有配置模型与 API，请先到设置中填写。');
       return;
     }
+    // Third-party data flow consent
+    final apiSettings = await ApiSettingsStorageService().loadSettings();
+    if (!mounted) return;
+    final agreed = await ThirdPartyConsentService.instance.requestConsentIfNeeded(
+      context,
+      apiSettings.provider,
+      apiSettings.baseUrl,
+      ConsentPurpose.chat,
+    );
+    if (!agreed) return;
 
     if (_pendingImagePath != null) {
       await _sendPendingImage(userMessage);
       return;
     }
-    _hideActivitySubtitle();
     setState(() {
       _messages.add(ChatMessage(role: 'user', content: userMessage));
       _controller.clear();
@@ -950,7 +997,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     final confirmed = await _confirmTimelineChange(
       title: '重新生成这条回复？',
       content: regenerateFrom == _messages.length - 1
-          ? '当前回复会被替换。'
+          ? '当前回复会被替换，之后的对话内容可能受到影响。'
           : '这一组回复和它之后的聊天都会被移除，再从这里重新生成。',
       confirmText: '重新生成',
     );
@@ -968,13 +1015,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   Future<void> _rollbackTo(int index) async {
     if (_isLoading || index < 0 || index >= _messages.length - 1) {
-      if (index == _messages.length - 1) _showSnack('已经在这里了');
       return;
     }
 
     final confirmed = await _confirmTimelineChange(
       title: '回溯到这里？',
-      content: '这一条之后的 ${_messages.length - index - 1} 条消息会被删除，且无法恢复。',
+      content: '保留当前这条消息，删除它之后的 ${_messages.length - index - 1} 条聊天内容，且无法恢复。',
       confirmText: '回溯',
     );
     if (!confirmed || !mounted) return;
@@ -1004,7 +1050,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     });
     await _saveMessages();
     _scrollToBottom();
-    _showSnack(editableMessage == null ? '已经回到这里' : '已恢复上一条消息，可以直接修改');
   }
 
   Future<bool> _confirmTimelineChange({
@@ -1014,19 +1059,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: Text(content),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(confirmText),
-          ),
-        ],
+      builder: (dialogContext) => TimelineChangeConfirmationDialog(
+        title: title,
+        content: content,
+        confirmText: confirmText,
       ),
     );
     return result == true;
@@ -1065,7 +1101,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       final path = _activeCharacter.effectiveSocialAvatarPath.trim();
       final file = path.isEmpty ? null : File(path);
       if (file != null && file.existsSync()) {
-        return _SquareAvatar(size: size, image: FileImage(file));
+        return _SquareAvatar(
+          size: size,
+          image: FileImage(file),
+          role: PeiLinkAvatarRole.character,
+          frame: PeiLinkThemeScope.of(context).avatarFrameTheme.character,
+        );
       }
       return _AvatarPlaceholder(size: size);
     }
@@ -1077,6 +1118,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       return _SquareAvatar(
         size: size,
         image: FileImage(avatarFile),
+        role: PeiLinkAvatarRole.user,
+        frame: PeiLinkThemeScope.of(context).avatarFrameTheme.user,
         alignment: const Alignment(0, -0.05),
       );
     }
@@ -1138,7 +1181,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Widget _buildChatContent() {
+    final topBar = PeiLinkThemeScope.of(context).topBarTheme;
     return ThemeBackgroundContainer(
+      background: PeiLinkThemeScope.of(context).chatBackground,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -1174,7 +1219,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                 color: Colors.black54,
                               ),
                             )
-                          : _ChatIdentityStatus(
+                          : Column(children: [
+                              const AiIdentityBadge.compact(),
+                              const SizedBox(height: 2),
+                              _ChatIdentityStatus(
                               relationship: _activeCharacter.relationship,
                               status: _resolvedActivity == null
                                   ? MessageListStatus.online
@@ -1182,13 +1230,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                       _resolvedActivity!,
                                     ),
                             ),
+                              ]),
                     ],
-                  ),
                 ),
+              ),
               ],
             ),
           ),
-          backgroundColor: Colors.transparent,
+          backgroundColor: topBar.background,
+          foregroundColor: topBar.foreground,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           centerTitle: false,
@@ -1278,6 +1328,79 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 }
 
+@visibleForTesting
+class TimelineChangeConfirmationDialog extends StatelessWidget {
+  const TimelineChangeConfirmationDialog({
+    super.key,
+    required this.title,
+    required this.content,
+    required this.confirmText,
+  });
+
+  final String title;
+  final String content;
+  final String confirmText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 34),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              content,
+              style: const TextStyle(
+                color: Color(0xFF67616F),
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF6F6878),
+                      minimumSize: const Size.fromHeight(44),
+                    ),
+                    child: const Text('取消'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF7658DE),
+                      minimumSize: const Size.fromHeight(44),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(confirmText),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ChatIdentityStatus extends StatelessWidget {
   const _ChatIdentityStatus({required this.relationship, required this.status});
 
@@ -1311,11 +1434,15 @@ class _SquareAvatar extends StatelessWidget {
   const _SquareAvatar({
     required this.size,
     required this.image,
+    required this.role,
+    this.frame,
     this.alignment = Alignment.center,
   });
 
   final double size;
   final ImageProvider image;
+  final PeiLinkAvatarRole role;
+  final AvatarFrameSpec? frame;
   final Alignment alignment;
 
   @override
@@ -1334,11 +1461,14 @@ class _SquareAvatar extends StatelessWidget {
             offset: const Offset(0, 2),
           ),
         ],
-        image: DecorationImage(
-          image: image,
-          fit: BoxFit.cover,
-          alignment: alignment,
-        ),
+      ),
+      child: PeiLinkThemedAvatar(
+        size: size,
+        role: role,
+        shape: BoxShape.rectangle,
+        borderRadius: BorderRadius.circular(12),
+        image: Image(image: image, fit: BoxFit.cover, alignment: alignment),
+        frame: frame,
       ),
     );
   }

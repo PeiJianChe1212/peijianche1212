@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'chat_input_bar.dart';
 import 'chat_more_panel.dart';
+import '../theme/peilink_theme_chrome.dart';
 
 class ChatInputArea extends StatelessWidget {
   const ChatInputArea({
@@ -41,70 +42,72 @@ class ChatInputArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (pendingImagePath?.isNotEmpty == true)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 6, 14, 4),
-              child: Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.file(
-                      File(pendingImagePath!),
-                      width: 72,
-                      height: 72,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: IconButton.filled(
-                      visualDensity: VisualDensity.compact,
-                      iconSize: 16,
-                      onPressed: onRemovePendingImage,
-                      icon: const Icon(Icons.close),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ChatInputBar(
-          controller: controller,
-          focusNode: focusNode,
-          isLoading: isLoading,
-          onSend: onSend,
-          onMore: onMore,
-          isMorePanelOpen: isMorePanelOpen,
-          onInputTap: onInputTap,
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topCenter,
-          child: isMorePanelOpen
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
+    return PeiLinkThemeChatComposer(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (pendingImagePath?.isNotEmpty == true)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 4),
+                child: Stack(
                   children: [
-                    const Divider(height: 1, color: Color(0xFFE2E2E2)),
-                    ChatMorePanel(
-                      closeOnSelection: false,
-                      onUserPersona: onUserPersona,
-                      onPickImage: onPickImage,
-                      onRedPacket: onRedPacket,
-                      onChangeAvatar: onChangeAvatar,
-                      onUnavailable: onUnavailable,
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(pendingImagePath!),
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: IconButton.filled(
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 16,
+                        onPressed: onRemovePendingImage,
+                        icon: const Icon(Icons.close),
+                      ),
                     ),
                   ],
-                )
-              : const SizedBox.shrink(),
-        ),
-      ],
+                ),
+              ),
+            ),
+          ChatInputBar(
+            controller: controller,
+            focusNode: focusNode,
+            isLoading: isLoading,
+            onSend: onSend,
+            onMore: onMore,
+            isMorePanelOpen: isMorePanelOpen,
+            onInputTap: onInputTap,
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: isMorePanelOpen
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Divider(height: 1, color: Color(0xFFE2E2E2)),
+                      ChatMorePanel(
+                        closeOnSelection: false,
+                        onUserPersona: onUserPersona,
+                        onPickImage: onPickImage,
+                        onRedPacket: onRedPacket,
+                        onChangeAvatar: onChangeAvatar,
+                        onUnavailable: onUnavailable,
+                      ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
     );
   }
 }

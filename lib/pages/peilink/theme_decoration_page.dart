@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../services/peilink_appearance_service.dart';
+import '../../services/peilink_theme_service.dart';
 import '../../widgets/chat/chat_bubble_surface.dart';
 import '../../widgets/chat/message_bubble.dart';
 import '../../theme/app_theme_background.dart';
 import '../../theme/chat_visual_theme.dart';
 import '../../theme/theme_background.dart';
 import '../../theme/theme_background_surface.dart';
+import '../../theme/peilink_theme_config.dart';
+import '../../widgets/theme/peilink_theme_scope.dart';
+import '../../widgets/theme/peilink_themed_avatar.dart';
 
 class ThemeDecorationPage extends StatefulWidget {
   const ThemeDecorationPage({super.key});
@@ -22,7 +26,7 @@ class _ThemeDecorationPageState extends State<ThemeDecorationPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -34,8 +38,9 @@ class _ThemeDecorationPageState extends State<ThemeDecorationPage>
   @override
   Widget build(BuildContext context) {
     final appearance = PeiLinkAppearanceScope.of(context);
+    final themes = PeiLinkThemeScope.controllerOf(context);
     return AnimatedBuilder(
-      animation: appearance,
+      animation: Listenable.merge([appearance, themes]),
       builder: (context, _) => Scaffold(
         backgroundColor: const Color(0xFFFCFAFA),
         appBar: AppBar(
@@ -53,7 +58,9 @@ class _ThemeDecorationPageState extends State<ThemeDecorationPage>
             tabs: const [
               Tab(text: '推荐'),
               Tab(text: '背景'),
+              Tab(text: '头像框'),
               Tab(text: '聊天气泡'),
+              Tab(text: '底部导航'),
               Tab(text: '字体'),
             ],
           ),
@@ -61,9 +68,11 @@ class _ThemeDecorationPageState extends State<ThemeDecorationPage>
         body: TabBarView(
           controller: _tabs,
           children: [
-            _RecommendTab(appearance: appearance, tabs: _tabs),
-            _BackgroundTab(appearance: appearance),
-            _BubbleTab(appearance: appearance),
+            _RecommendTab(appearance: appearance, themes: themes, tabs: _tabs),
+            _BackgroundTab(themes: themes),
+            _AvatarFrameTab(themes: themes),
+            _BubbleTab(appearance: appearance, themes: themes),
+            _BottomNavigationTab(themes: themes),
             _FontTab(appearance: appearance),
           ],
         ),
@@ -73,45 +82,66 @@ class _ThemeDecorationPageState extends State<ThemeDecorationPage>
 }
 
 class _RecommendTab extends StatelessWidget {
-  const _RecommendTab({required this.appearance, required this.tabs});
+  const _RecommendTab({
+    required this.appearance,
+    required this.themes,
+    required this.tabs,
+  });
 
   final PeiLinkAppearanceController appearance;
+  final PeiLinkThemeController themes;
   final TabController tabs;
 
   @override
   Widget build(BuildContext context) {
+    final catalog = themes.registry.chatThemes;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
-        _ThemePreview(appearance: appearance, height: 280),
-        const SizedBox(height: 14),
+        const Text(
+          '当前主题',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        PeiLinkThemePreviewCard(theme: themes.chatTheme, large: true),
+        const SizedBox(height: 20),
+        const Text(
+          '主题装扮',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        for (final theme in catalog) ...[
+          PeiLinkThemePreviewCard(
+            key: ValueKey('theme-card-${theme.id}'),
+            theme: theme,
+            applied: themes.selectedChatThemeId == theme.id,
+            onApply: () async {
+              await themes.applyFullTheme(theme.id);
+              await appearance.followThemeBubble();
+            },
+          ),
+          const SizedBox(height: 12),
+        ],
         Row(
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${appearance.background.name}主题',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '背景、气泡与字体可自由搭配',
-                    style: TextStyle(color: Color(0xFF888888), fontSize: 13),
-                  ),
-                ],
+            const Expanded(
+              child: Text('气泡', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            TextButton(
+              key: const ValueKey('bubble-follow-theme'),
+              onPressed:
+                  appearance.bubbleThemeMode == BubbleThemeMode.followTheme
+                  ? null
+                  : appearance.followThemeBubble,
+              child: Text(
+                appearance.bubbleThemeMode == BubbleThemeMode.followTheme
+                    ? '跟随主题 · 使用中'
+                    : '切换为跟随主题',
               ),
             ),
-            FilledButton(
-              onPressed: () {},
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFFF8799),
-              ),
-              child: const Text('当前使用'),
+            TextButton(
+              onPressed: () => tabs.animateTo(3),
+              child: const Text('自定义'),
             ),
           ],
         ),
@@ -135,7 +165,7 @@ class _RecommendTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        _SectionTitle(title: '聊天气泡推荐', onAll: () => tabs.animateTo(2)),
+        _SectionTitle(title: '聊天气泡推荐', onAll: () => tabs.animateTo(3)),
         const SizedBox(height: 10),
         ...ChatVisualThemeCatalog.bubbleThemes
             .take(3)
@@ -162,9 +192,134 @@ class _RecommendTab extends StatelessWidget {
   }
 }
 
+class PeiLinkThemePreviewCard extends StatelessWidget {
+  const PeiLinkThemePreviewCard({
+    super.key,
+    required this.theme,
+    this.applied = false,
+    this.large = false,
+    this.onApply,
+  });
+  final PeiLinkThemeConfig theme;
+  final bool applied;
+  final bool large;
+  final VoidCallback? onApply;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: .82),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(
+        color: applied ? const Color(0xFF6988C7) : const Color(0xFFE0E6F0),
+      ),
+    ),
+    child: Column(
+      children: [
+        SizedBox(
+          height: large ? 210 : 150,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: ThemeBackgroundContainer(
+              background: theme.chatBackground,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    Container(
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: theme.topBarTheme.background,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    const Spacer(),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        width: 100,
+                        height: 30,
+                        decoration: theme.defaultBubbleTheme.decoration(
+                          isUser: false,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        width: 86,
+                        height: 30,
+                        decoration: theme.defaultBubbleTheme.decoration(
+                          isUser: true,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        PeiLinkThemedAvatar(
+                          size: 30,
+                          role: PeiLinkAvatarRole.character,
+                          frame: theme.avatarFrameTheme.character,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: theme.bottomBarTheme.background,
+                              border: Border.all(
+                                color: theme.bottomBarTheme.border,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    theme.name,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    theme.subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF758198),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            FilledButton(
+              onPressed: applied ? null : onApply,
+              child: Text(applied ? '使用中' : '应用'),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
 class _BackgroundTab extends StatelessWidget {
-  const _BackgroundTab({required this.appearance});
-  final PeiLinkAppearanceController appearance;
+  const _BackgroundTab({required this.themes});
+  final PeiLinkThemeController themes;
 
   @override
   Widget build(BuildContext context) => GridView.builder(
@@ -175,13 +330,22 @@ class _BackgroundTab extends StatelessWidget {
       crossAxisSpacing: 12,
       mainAxisSpacing: 12,
     ),
-    itemCount: AppThemeBackground.builtInPack.length,
+    itemCount: themes.registry.backgroundRegistry.ids.length + 1,
     itemBuilder: (context, index) {
-      final item = AppThemeBackground.builtInPack[index];
+      if (index == 0) {
+        return _ComponentChoice(
+          title: '跟随主题',
+          selected: themes.backgroundOverrideId == null,
+          onTap: () => themes.setBackgroundOverride(null),
+          icon: Icons.auto_awesome_rounded,
+        );
+      }
+      final id = themes.registry.backgroundRegistry.ids[index - 1];
+      final item = themes.registry.backgroundRegistry.resolve(id)!;
       return _BackgroundChoice(
         item: item,
-        selected: appearance.background.id == item.id,
-        onTap: () => appearance.setBackground(item),
+        selected: themes.backgroundOverrideId == id,
+        onTap: () => themes.setBackgroundOverride(id),
         large: true,
       );
     },
@@ -189,22 +353,140 @@ class _BackgroundTab extends StatelessWidget {
 }
 
 class _BubbleTab extends StatelessWidget {
-  const _BubbleTab({required this.appearance});
+  const _BubbleTab({required this.appearance, required this.themes});
   final PeiLinkAppearanceController appearance;
+  final PeiLinkThemeController themes;
 
   @override
   Widget build(BuildContext context) => ListView(
     key: const Key('bubble-theme-list'),
     padding: const EdgeInsets.all(16),
-    children: ChatVisualThemeCatalog.bubbleThemes
-        .map(
-          (item) => _BubbleChoice(
-            item: item,
+    children: [
+      _ComponentChoice(
+        title: '跟随主题',
+        selected: appearance.bubbleThemeMode == BubbleThemeMode.followTheme,
+        onTap: () async {
+          await appearance.followThemeBubble();
+          try {
+            await themes.setBubbleOverride(null);
+          } catch (_) {
+            // Widget tests and preview hosts may not provide platform storage.
+          }
+        },
+        icon: Icons.auto_awesome_rounded,
+      ),
+      ...ChatVisualThemeCatalog.bubbleThemes.map(
+        (item) => _BubbleChoice(
+          item: item,
             selected: appearance.bubbleTheme.id == item.id,
-            onTap: () => appearance.setBubbleTheme(item),
+            onTap: () async {
+              await appearance.setBubbleTheme(item);
+              try {
+                await themes.setBubbleOverride(item.id);
+              } catch (_) {
+                // The existing bubble selector remains the source of truth.
+              }
+            },
+        ),
+      ),
+    ],
+  );
+}
+
+class _AvatarFrameTab extends StatelessWidget {
+  const _AvatarFrameTab({required this.themes});
+  final PeiLinkThemeController themes;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(16),
+    children: [
+      _ComponentChoice(
+        title: '跟随主题',
+        selected: themes.avatarFrameOverrideId == null,
+        onTap: () => themes.setAvatarFrameOverride(null),
+        icon: Icons.auto_awesome_rounded,
+      ),
+      for (final id in themes.registry.avatarFrameRegistry.ids)
+        _ComponentChoice(
+          title: id == 'default' ? '默认 / 无头像框' : '蝶梦白狐',
+          selected: themes.avatarFrameOverrideId == id,
+          onTap: () => themes.setAvatarFrameOverride(id),
+          preview: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PeiLinkThemedAvatar(
+                size: 46,
+                role: PeiLinkAvatarRole.user,
+                frame: themes.registry.avatarFrameRegistry.resolve(id)?.user,
+              ),
+              const SizedBox(width: 8),
+              PeiLinkThemedAvatar(
+                size: 46,
+                role: PeiLinkAvatarRole.character,
+                frame: themes.registry.avatarFrameRegistry
+                    .resolve(id)
+                    ?.character,
+              ),
+            ],
           ),
-        )
-        .toList(),
+        ),
+    ],
+  );
+}
+
+class _BottomNavigationTab extends StatelessWidget {
+  const _BottomNavigationTab({required this.themes});
+  final PeiLinkThemeController themes;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(16),
+    children: [
+      _ComponentChoice(
+        title: '跟随主题',
+        selected: themes.bottomNavigationOverrideId == null,
+        onTap: () => themes.setBottomNavigationOverride(null),
+        icon: Icons.auto_awesome_rounded,
+      ),
+      for (final id in themes.registry.bottomNavigationRegistry.ids)
+        _ComponentChoice(
+          title: id == 'default' ? '默认' : '蝶梦白狐',
+          selected: themes.bottomNavigationOverrideId == id,
+          onTap: () => themes.setBottomNavigationOverride(id),
+          icon: id == 'default'
+              ? Icons.navigation_rounded
+              : Icons.flutter_dash_rounded,
+        ),
+    ],
+  );
+}
+
+class _ComponentChoice extends StatelessWidget {
+  const _ComponentChoice({
+    required this.title,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+    this.preview,
+  });
+  final String title;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final Widget? preview;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: selected ? const Color(0xFFF1F6FF) : Colors.white,
+    child: ListTile(
+      onTap: onTap,
+      leading: preview ?? Icon(icon, color: const Color(0xFF5878B4)),
+      title: Text(title),
+      trailing: selected
+          ? const Icon(Icons.check_circle, color: Color(0xFF5878B4))
+          : null,
+    ),
   );
 }
 
@@ -227,6 +509,8 @@ class _FontTab extends StatelessWidget {
   );
 }
 
+// Kept for the existing background/font preview tabs.
+// ignore: unused_element
 class _ThemePreview extends StatelessWidget {
   const _ThemePreview({required this.appearance, required this.height});
   final PeiLinkAppearanceController appearance;

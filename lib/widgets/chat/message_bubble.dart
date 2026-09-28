@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/chat_message.dart';
-import '../../services/peilink_appearance_service.dart';
+import '../../theme/effective_bubble_theme.dart';
 import 'chat_bubble_surface.dart';
 
 /// 聊天消息的通用气泡外壳。
@@ -25,7 +25,7 @@ class MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final textColor = textColorForRole(message.role);
     final isRedPacket = message.type == MessageType.redPacket;
-    final bubbleTheme = PeiLinkAppearanceScope.of(context).bubbleTheme;
+    final bubbleTheme = effectiveBubbleTheme(context);
     return GestureDetector(
       onLongPress: onLongPress,
       child: ConstrainedBox(

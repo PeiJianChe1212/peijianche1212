@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,17 +6,25 @@ import 'package:flutter/services.dart';
 import '../../models/ai_character.dart';
 import '../../models/group_chat.dart';
 import '../../models/group_message.dart';
+import '../../models/group_user_profile.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/group_chat_storage_service.dart';
 import '../../services/group_conversation_coordinator.dart';
 import '../../services/group_memory_service.dart';
+import '../../services/group_user_profile_storage_service.dart';
 import '../../services/group_message_storage_service.dart';
+import '../../services/api_settings_storage_service.dart';
+import '../../services/third_party_consent_service.dart';
 import '../../services/peilink_appearance_service.dart';
 import '../../theme/app_theme_background.dart';
 import '../../theme/chat_visual_theme.dart';
+import '../../theme/effective_bubble_theme.dart';
 import '../../widgets/chat/chat_bubble_surface.dart';
 import '../../widgets/chat/chat_more_panel.dart';
 import '../../widgets/group/group_visuals.dart';
+import '../../widgets/group/group_avatar.dart';
+import '../../widgets/theme/peilink_theme_scope.dart';
+import '../../widgets/theme/peilink_themed_avatar.dart';
 import '../chat_page.dart';
 import 'group_chat_settings_page.dart';
 import 'group_user_profile_page.dart';
@@ -31,7 +38,8 @@ class GroupChatPage extends StatefulWidget {
   State<GroupChatPage> createState() => _GroupChatPageState();
 }
 
-class _GroupChatPageState extends State<GroupChatPage> {
+class _GroupChatPageState extends State<GroupChatPage>
+    with WidgetsBindingObserver {
   final GroupChatStorageService _groupStorage = GroupChatStorageService();
   final GroupConversationCoordinator _coordinator =
       GroupConversationCoordinator();
@@ -51,16 +59,40 @@ class _GroupChatPageState extends State<GroupChatPage> {
   int _replyGeneration = 0;
   int _lastMentionPopupLength = -1;
   bool _showMorePanel = false;
+  String _userAvatarPath = '';
+  bool _wasNearBottom = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    CharacterRegistryService.changes.addListener(_load);
+    _scrollController.addListener(_rememberScrollPosition);
     _load();
+  }
+
+  void _rememberScrollPosition() {
+    if (!_scrollController.hasClients) return;
+    _wasNearBottom =
+        _scrollController.position.maxScrollExtent -
+            _scrollController.position.pixels <=
+        80;
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (_wasNearBottom) {
+      _scrollToBottom(delay: const Duration(milliseconds: 80));
+    }
   }
 
   @override
   void dispose() {
     _replyGeneration++;
+    WidgetsBinding.instance.removeObserver(this);
+    CharacterRegistryService.changes.removeListener(_load);
+    _scrollController.removeListener(_rememberScrollPosition);
     _controller.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
@@ -72,6 +104,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
       _groupStorage.loadGroup(widget.groupId),
       _messageStorage.loadMessages(),
       CharacterRegistryService().loadCharacters(),
+      GroupUserProfileStorageService(groupId: widget.groupId).loadResolved(),
     ]);
     if (!mounted) return;
     final characters = results[2] as List<AiCharacter>;
@@ -81,6 +114,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
       _characters = {
         for (final character in characters) character.id: character,
       };
+      _userAvatarPath = (results[3] as GroupUserProfile).avatarPath;
       _loading = false;
     });
     _scrollToBottom();
@@ -91,6 +125,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
     final group = _group;
     if (content.isEmpty || group == null) return;
     _closeMorePanel();
+    // Third-party consent
+    final apiSettings = await ApiSettingsStorageService().loadSettings();
+    if (!mounted) return;
+    final agreed = await ThirdPartyConsentService.instance.requestConsentIfNeeded(
+      context,
+      apiSettings.provider,
+      apiSettings.baseUrl,
+      ConsentPurpose.chat,
+    );
+    if (!agreed) return;
 
     // 用户插话即废止旧回合。已经落地的消息保留，尚未开始的回复停止。
     final generation = ++_replyGeneration;
@@ -440,14 +484,17 @@ class _GroupChatPageState extends State<GroupChatPage> {
     await _load();
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-      );
+  void _scrollToBottom({Duration delay = Duration.zero}) {
+    Future<void>.delayed(delay, () {
+      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) return;
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        );
+      });
     });
   }
 
@@ -458,6 +505,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
         ? null
         : _characters[_typingCharacterId];
     final appearance = PeiLinkAppearanceScope.of(context);
+    final bubbleTheme = effectiveBubbleTheme(context);
+    final groupTopBar = PeiLinkThemeScope.of(context).groupTopBarTheme;
     // 系统返回键优先关闭扩展面板，再退出页面（与单聊一致）。
     return PopScope(
       canPop: !_showMorePanel,
@@ -465,17 +514,38 @@ class _GroupChatPageState extends State<GroupChatPage> {
         if (!didPop) _closeMorePanel();
       },
       child: ThemeBackgroundContainer(
+        background: PeiLinkThemeScope.of(context).groupBackground,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           appBar: AppBar(
-            backgroundColor: Colors.white.withValues(alpha: 0.94),
+            backgroundColor: groupTopBar.background,
+            foregroundColor: groupTopBar.foreground,
             surfaceTintColor: Colors.transparent,
             titleSpacing: 0,
             toolbarHeight: 44 + MediaQuery.textScalerOf(context).scale(14),
             // 主标题只放群名，人数降为副信息，避免标题被拼接过长。
             title: Row(
               children: [
-                _GroupHeaderAvatar(path: group?.avatarPath ?? ''),
+                if (group != null)
+                  GroupAvatar(
+                    key: const ValueKey('group-header-avatar'),
+                    size: 36,
+                    customAvatarPath: group.avatarPath,
+                    members: groupAvatarMembers(
+                      userAvatarPath: _userAvatarPath,
+                      characters: group.memberCharacterIds.map((id) {
+                        final character = _characters[id];
+                        return GroupAvatarMember(
+                          id: id,
+                          avatarPath:
+                              character?.effectiveSocialAvatarPath ?? '',
+                          isUser: false,
+                        );
+                      }),
+                    ),
+                  )
+                else
+                  const SizedBox(width: 36, height: 36),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -575,7 +645,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                                           ],
                                         ),
                                       ],
-                                      bubbleTheme: appearance.bubbleTheme,
+                                      bubbleTheme: bubbleTheme,
                                       fontTheme:
                                           appearance.fontTheme.effectiveFont,
                                       onLongPress: () =>
@@ -1323,57 +1393,22 @@ class _CharacterAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final path = character?.avatarPath.trim() ?? '';
-    final file = path.isEmpty ? null : File(path);
-    final exists = file?.existsSync() == true;
-    return CircleAvatar(
-      radius: 21,
-      backgroundColor: const Color(0xFFD9E4EA),
-      backgroundImage: exists ? FileImage(file!) : null,
-      child: exists
-          ? null
-          : Text(
-              (character?.displayName.trim().isNotEmpty == true
-                      ? character!.displayName.trim()[0]
-                      : '群')
-                  .toUpperCase(),
-              style: const TextStyle(
-                color: Color(0xFF4E6A78),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-    );
-  }
-}
-
-class _GroupHeaderAvatar extends StatelessWidget {
-  const _GroupHeaderAvatar({required this.path});
-  final String path;
-  @override
-  Widget build(BuildContext context) {
-    final file = path.isEmpty ? null : File(path);
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE4E9FB), Color(0xFFEDE5F5)],
+    return PeiLinkThemedAvatar(
+      size: 42,
+      role: PeiLinkAvatarRole.character,
+      imagePath: character?.effectiveSocialAvatarPath ?? '',
+      frame: PeiLinkThemeScope.of(context).avatarFrameTheme.character,
+      fallback: Text(
+        (character?.displayName.trim().isNotEmpty == true
+                ? character!.displayName.trim()[0]
+                : '群')
+            .toUpperCase(),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFF4E6A78),
+          fontWeight: FontWeight.w600,
         ),
-        borderRadius: BorderRadius.circular(12),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: file?.existsSync() == true
-          ? Image.file(
-              file!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  const Icon(Icons.groups_rounded, color: GroupVisuals.accent),
-            )
-          : const Icon(
-              Icons.groups_rounded,
-              color: GroupVisuals.accent,
-              size: 23,
-            ),
     );
   }
 }

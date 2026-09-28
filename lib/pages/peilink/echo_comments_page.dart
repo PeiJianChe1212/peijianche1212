@@ -14,6 +14,8 @@ import '../../services/echo_comment_interaction_service.dart';
 import '../../services/echo_comment_author_service.dart';
 import '../../services/echo_comment_reaction_storage_service.dart';
 import '../../widgets/echo/ai_verified_badge.dart';
+import '../../widgets/theme/peilink_theme_scope.dart';
+import '../../widgets/theme/peilink_themed_avatar.dart';
 import 'peilink_echo_page.dart';
 
 class EchoCommentsPage extends StatefulWidget {
@@ -331,7 +333,10 @@ class _EchoCommentsPageState extends State<EchoCommentsPage> {
                                 userAvatarPath: widget.userProfile.avatarPath,
                                 characterName: _characterName,
                                 characterAvatarPath:
-                                    widget.character?.effectiveSocialAvatarPath ?? '',
+                                    widget
+                                        .character
+                                        ?.effectiveSocialAvatarPath ??
+                                    '',
                                 resolvedCharacter:
                                     EchoCommentAuthorService.characterFor(
                                       comment,
@@ -845,39 +850,26 @@ class _CommentAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final file = path.isEmpty ? null : File(path);
-    final hasFile = file != null && file.existsSync();
     final fallback = fallbackName.trim().isEmpty
         ? (isCharacter ? '角' : '我')
         : fallbackName.trim().substring(0, 1);
 
-    return ClipOval(
-      child: Container(
-        width: 38,
-        height: 38,
-        color: const Color(0xFFE8E8E8),
-        alignment: Alignment.center,
-        child: hasFile
-            ? Image.file(
-                file,
-                width: 38,
-                height: 38,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Text(
-                  fallback,
-                  style: const TextStyle(
-                    color: Color(0xFF777777),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              )
-            : Text(
-                fallback,
-                style: const TextStyle(
-                  color: Color(0xFF777777),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+    final config = PeiLinkThemeScope.of(context);
+    return PeiLinkThemedAvatar(
+      key: const ValueKey('echo-comment-themed-avatar'),
+      size: 38,
+      role: isCharacter ? PeiLinkAvatarRole.character : PeiLinkAvatarRole.user,
+      imagePath: path,
+      frame: isCharacter
+          ? config.avatarFrameTheme.character
+          : config.avatarFrameTheme.user,
+      fallback: Text(
+        fallback,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFF777777),
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

@@ -6,7 +6,7 @@ class FeedbackSubmissionService {
   static const MethodChannel _channel = MethodChannel('peilink/external_url');
   static const String formUrl = String.fromEnvironment(
     'PEILINK_FEEDBACK_FORM_URL',
-    defaultValue: 'https://wj.qq.com/',
+    defaultValue: 'https://my.feishu.cn/share/base/shrcnqI8zztnRpy423JaPUqtUid',
   );
   static const String appVersion = String.fromEnvironment(
     'PEILINK_APP_VERSION',

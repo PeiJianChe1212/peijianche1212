@@ -6,11 +6,13 @@ import 'package:flutter/foundation.dart';
 import '../conversation/reply_segment_parser.dart';
 import '../models/ai_character.dart';
 import '../models/chat_message.dart';
+import '../platform/storage/platform_storage.dart';
 import 'chat_image_generation_service.dart';
 import 'chat_storage_service.dart';
 import 'character_settings_storage_service.dart';
 import 'deepseek_service.dart';
 import 'multimodal_service.dart';
+import 'internal_prompt_leak_guard.dart';
 
 /// Owns image work after it has been committed to a conversation.
 class ChatImageTaskManager extends ChangeNotifier {
@@ -49,26 +51,15 @@ class ChatImageTaskManager extends ChangeNotifier {
       final caption = await _deepSeekService.composeImageMessage(
         userRequest: userRequest,
         characterId: character.id,
+        recentMessages: recentMessages,
       );
-      final imageMessage = ChatMessage(
-        role: 'assistant',
-        type: MessageType.image,
-        content: caption,
-        source: 'generated_image',
-        metadata: {
-          'imagePath': generated.imagePath,
-          'generationPrompt': generated.prompt,
-          'generatedBy': 'image_generation_router',
-          'taskId': taskId,
-        },
+      final generatedMessages = await persistGeneratedImageTimeline(
+        characterId: character.id,
+        imagePath: generated.imagePath,
+        caption: caption,
+        taskId: taskId,
       );
-      final storage = ChatStorageService(characterId: character.id);
-      final messages = await storage.loadMessages();
-      if (!messages.any((item) => item.metadata['taskId'] == taskId)) {
-        messages.add(imageMessage);
-        await storage.saveMessages(messages);
-      }
-      _complete(taskId, imageMessage.id);
+      _complete(taskId, generatedMessages.last.id);
     } on TimeoutException {
       _fail(taskId, '图片生成超时了，这次先不发图。');
     } on SocketException {
@@ -236,6 +227,60 @@ class ChatImageTaskManager extends ChangeNotifier {
     _state = value;
     notifyListeners();
   }
+}
+
+List<ChatMessage> buildGeneratedImageTimelineMessages({
+  required String imagePath,
+  required String caption,
+  required String taskId,
+}) {
+  final imageMessage = ChatMessage(
+    role: 'assistant',
+    type: MessageType.image,
+    content: '',
+    source: 'generated_image',
+    metadata: {
+      'imagePath': imagePath,
+      'generatedBy': 'image_generation_router',
+      'taskId': taskId,
+    },
+  );
+  final normalizedCaption = InternalPromptLeakGuard.visibleText(caption);
+  return [
+    imageMessage,
+    if (normalizedCaption.isNotEmpty)
+      ChatMessage(
+        role: 'assistant',
+        type: MessageType.text,
+        content: normalizedCaption,
+        source: 'generated_image_caption',
+        metadata: {'taskId': taskId},
+      ),
+  ];
+}
+
+Future<List<ChatMessage>> persistGeneratedImageTimeline({
+  required String characterId,
+  required String imagePath,
+  required String caption,
+  required String taskId,
+  PlatformStorage? storage,
+}) async {
+  final generatedMessages = buildGeneratedImageTimelineMessages(
+    imagePath: imagePath,
+    caption: caption,
+    taskId: taskId,
+  );
+  final chatStorage = ChatStorageService(
+    characterId: characterId,
+    storage: storage,
+  );
+  final messages = await chatStorage.loadMessages();
+  if (!messages.any((item) => item.metadata['taskId'] == taskId)) {
+    messages.addAll(generatedMessages);
+    await chatStorage.saveMessages(messages);
+  }
+  return generatedMessages;
 }
 
 enum ChatImageTaskStatus { idle, running, completed, failed }

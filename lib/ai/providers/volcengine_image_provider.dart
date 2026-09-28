@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../models/ai_capability.dart';
 import '../../models/api_settings.dart';
 import '../image_model_provider.dart';
+import '../../services/third_party_consent_service.dart';
 
 class VolcengineImageProvider extends ImageModelProvider {
   VolcengineImageProvider({required this.settings, http.Client? client})
@@ -34,6 +35,11 @@ class VolcengineImageProvider extends ImageModelProvider {
       throw StateError('请先在“设置 → 模型与 API”中配置豆包图片模型。');
     }
 
+    await ThirdPartyConsentService.instance.requireConsent(
+      AIProvider.volcengine,
+      settings.imageBaseUrl,
+      ConsentPurpose.imageGeneration,
+    );
     final cleanedPrompt = prompt.trim();
     if (cleanedPrompt.isEmpty) throw ArgumentError('生图描述不能为空。');
 

@@ -8,6 +8,8 @@ import '../theme/app_theme_background.dart';
 import '../theme/chat_visual_theme.dart';
 import '../theme/theme_background.dart';
 
+enum BubbleThemeMode { followTheme, custom }
+
 class PeiLinkAppearanceController extends ChangeNotifier {
   PeiLinkAppearanceController._({this._fileProvider});
 
@@ -21,10 +23,12 @@ class PeiLinkAppearanceController extends ChangeNotifier {
   ThemeBackground _background = AppThemeBackground.current;
   ChatBubbleTheme _bubbleTheme = ChatVisualThemeCatalog.qqRounded;
   ChatFontTheme _fontTheme = ChatVisualThemeCatalog.systemFont;
+  BubbleThemeMode _bubbleThemeMode = BubbleThemeMode.followTheme;
 
   ThemeBackground get background => _background;
   ChatBubbleTheme get bubbleTheme => _bubbleTheme;
   ChatFontTheme get fontTheme => _fontTheme;
+  BubbleThemeMode get bubbleThemeMode => _bubbleThemeMode;
 
   Future<File> _file() async {
     if (_fileProvider != null) return _fileProvider();
@@ -40,6 +44,9 @@ class PeiLinkAppearanceController extends ChangeNotifier {
       if (decoded is! Map) return;
       _background = _backgroundById(decoded['backgroundId']?.toString());
       _bubbleTheme = _bubbleById(decoded['bubbleThemeId']?.toString());
+      _bubbleThemeMode = decoded['bubbleThemeMode'] == 'followTheme'
+          ? BubbleThemeMode.followTheme
+          : BubbleThemeMode.custom;
       _fontTheme = _fontById(decoded['fontThemeId']?.toString());
       notifyListeners();
     } catch (_) {}
@@ -53,6 +60,13 @@ class PeiLinkAppearanceController extends ChangeNotifier {
 
   Future<void> setBubbleTheme(ChatBubbleTheme value) async {
     _bubbleTheme = value;
+    _bubbleThemeMode = BubbleThemeMode.custom;
+    notifyListeners();
+    await _save();
+  }
+
+  Future<void> followThemeBubble() async {
+    _bubbleThemeMode = BubbleThemeMode.followTheme;
     notifyListeners();
     await _save();
   }
@@ -70,6 +84,7 @@ class PeiLinkAppearanceController extends ChangeNotifier {
         jsonEncode({
           'backgroundId': _background.id,
           'bubbleThemeId': _bubbleTheme.id,
+          'bubbleThemeMode': _bubbleThemeMode.name,
           'fontThemeId': _fontTheme.id,
         }),
         flush: true,

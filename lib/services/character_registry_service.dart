@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../config/peilink_runtime.dart';
 
 import '../models/ai_character.dart';
@@ -11,6 +12,7 @@ class CharacterRegistryService {
   final PlatformStorage? storage;
   static const String _registryFileName = 'character_registry.json';
   static const String _activeFileName = 'active_character.json';
+  static final ValueNotifier<int> changes = ValueNotifier<int>(0);
 
   Future<PlatformStorage> _platformStorage() =>
       storage == null ? PeiLinkRuntime.storage() : Future.value(storage);
@@ -92,6 +94,7 @@ class CharacterRegistryService {
       characters.add(character);
     }
     await saveAllCharacters(characters);
+    changes.value++;
   }
 
   Future<void> updateCharacter(AiCharacter character) =>

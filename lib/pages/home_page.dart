@@ -37,9 +37,20 @@ import 'peilink/peilink_home_page.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, this.initialHasVisibleCharacter});
+  const HomePage({
+    super.key,
+    this.initialHasVisibleCharacter,
+    this.enableAmbientAnimation = true,
+  });
 
   final bool? initialHasVisibleCharacter;
+
+  /// Controls the infinite `_DesktopBackground` ambient animation.
+  ///
+  /// Defaults to `true` so the production app keeps its visual effect.
+  /// Widget tests must pass `false` to avoid `pumpAndSettle` hanging
+  /// forever on the repeating animation.
+  final bool enableAmbientAnimation;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -498,7 +509,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         backgroundColor: HomeVisualTokens.backgroundMiddle,
         body: Stack(
           children: [
-            const Positioned.fill(child: _DesktopBackground()),
+            Positioned.fill(child: _DesktopBackground(enabled: widget.enableAmbientAnimation)),
             Positioned.fill(
               child: PageView.builder(
                 controller: _pageController,
@@ -1940,7 +1951,9 @@ class _DesktopIconGroup extends StatelessWidget {
 }
 
 class _DesktopBackground extends StatefulWidget {
-  const _DesktopBackground();
+  const _DesktopBackground({this.enabled = true});
+
+  final bool enabled;
 
   @override
   State<_DesktopBackground> createState() => _DesktopBackgroundState();
@@ -1956,7 +1969,10 @@ class _DesktopBackgroundState extends State<_DesktopBackground>
     _controller = AnimationController(
       vsync: this,
       duration: HomeVisualTokens.motionAmbient,
-    )..repeat(reverse: true);
+    );
+    if (widget.enabled) {
+      _controller.repeat(reverse: true);
+    }
   }
 
   @override

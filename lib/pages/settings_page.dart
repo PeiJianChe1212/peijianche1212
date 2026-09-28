@@ -1,39 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../config/peilink_settings_sections_registry.dart';
 import '../design_system/peilink_design_system.dart';
+import '../services/feedback_form_launcher.dart';
 import 'api_settings_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
-
-  static const MethodChannel _channel = MethodChannel('peilink/external_url');
-  static const String _feedbackFormUrl = 'https://wj.qq.com/s2/27544350/qi8v/';
-
-  Future<void> _openFeedbackForm(BuildContext context) async {
-    try {
-      final opened = await _channel.invokeMethod<bool>(
-        'open',
-        _feedbackFormUrl,
-      );
-      if (opened != true && context.mounted) {
-        PeiLinkFeedback.show(
-          context,
-          '无法打开反馈问卷',
-          type: PeiLinkFeedbackType.warning,
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        PeiLinkFeedback.show(
-          context,
-          '打开失败：$e',
-          type: PeiLinkFeedbackType.error,
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +43,7 @@ class SettingsPage extends StatelessWidget {
             child: PeiLinkSettingsTile(
               icon: Icons.feedback_outlined,
               title: '反馈与建议',
-              subtitle: '前往腾讯问卷提交反馈',
+              subtitle: '前往飞书表单提交反馈',
               showArrow: false,
               iconColor: PeiLinkColors.success,
               iconBackground: const Color(0xFFE8F5E9),
@@ -79,7 +52,7 @@ class SettingsPage extends StatelessWidget {
                 color: PeiLinkColors.textTertiary,
                 size: 20,
               ),
-              onTap: () => _openFeedbackForm(context),
+              onTap: () => FeedbackFormLauncher.open(context),
             ),
           ),
           const SizedBox(height: PeiLinkSpacing.lg),

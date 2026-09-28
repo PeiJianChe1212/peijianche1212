@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import '../../models/guide_knowledge.dart';
+import '../../services/feedback_form_launcher.dart';
 
 import '../api_settings_page.dart';
-import '../feedback_page.dart';
 import 'ai_creation_center_page.dart';
 
 class PeiLinkGuidePage extends StatefulWidget {
@@ -43,6 +43,8 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
       'Echo' => Icons.waves_rounded,
       'PeiLink Life' => Icons.auto_awesome_rounded,
       '纪念日' => Icons.favorite_border_rounded,
+      '群聊' => Icons.groups_2_outlined,
+      '外观' => Icons.palette_outlined,
       '数据与重置' => Icons.restart_alt_rounded,
       'API 与模型' => Icons.psychology_rounded,
       _ => Icons.help_outline_rounded,
@@ -232,11 +234,12 @@ class _PeiLinkGuidePageState extends State<PeiLinkGuidePage> {
         ),
         const SizedBox(height: 10),
         _GuideActionCard(
-          title: '帮助与反馈',
-          subtitle: '提交 Bug、建议或体验问题',
+          key: const ValueKey('guide-feedback-entry'),
+          title: '反馈与建议',
+          subtitle: '前往飞书表单提交反馈',
           icon: Icons.help_outline_rounded,
           tint: const Color(0xFFEAF4FA),
-          onTap: () => _openPage(const FeedbackPage()),
+          onTap: () => FeedbackFormLauncher.open(context),
         ),
         const SizedBox(height: 22),
         const Text(
@@ -348,6 +351,7 @@ class _CategoryChip extends StatelessWidget {
 
 class _GuideActionCard extends StatelessWidget {
   const _GuideActionCard({
+    super.key,
     required this.title,
     required this.subtitle,
     required this.icon,

@@ -3,9 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../models/ai_character.dart';
+import '../../services/character_registry_service.dart';
+import '../../services/chat_export_service.dart';
 import '../../theme/app_theme_background.dart';
 import '../../widgets/peilink/relationship_badge.dart';
 import '../memory_page.dart';
+import 'character_creation_page.dart';
 import 'character_detail_page.dart';
 import 'character_management_actions.dart';
 import 'theme_decoration_page.dart';
@@ -20,22 +23,49 @@ class ChatSettingsPage extends StatefulWidget {
 }
 
 class _ChatSettingsPageState extends State<ChatSettingsPage> {
+  late AiCharacter _character = widget.character;
+
+  @override
+  void initState() {
+    super.initState();
+    CharacterRegistryService.changes.addListener(_reloadCharacter);
+  }
+
+  @override
+  void dispose() {
+    CharacterRegistryService.changes.removeListener(_reloadCharacter);
+    super.dispose();
+  }
+
+  Future<void> _reloadCharacter() async {
+    final characters = await CharacterRegistryService().loadCharacters();
+    final index = characters.indexWhere((item) => item.id == _character.id);
+    if (mounted && index >= 0) setState(() => _character = characters[index]);
+  }
+
   Future<void> _open(Widget page) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    await _reloadCharacter();
   }
 
   Future<void> _clearChat() async {
     final changed = await CharacterManagementActions.clearChat(
       context,
-      widget.character,
+      _character,
     );
     if (changed && mounted) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _exportChat() async {
+    final scaffold = ScaffoldMessenger.of(context);
+    final result = await const ChatExportService().exportChat(character: _character);
+    scaffold.showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   Future<void> _restartCharacter() async {
     final changed = await CharacterManagementActions.restart(
       context,
-      widget.character,
+      _character,
     );
     if (changed && mounted) Navigator.of(context).pop(true);
   }
@@ -43,7 +73,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
   Future<void> _deleteCharacter() async {
     final deleted = await CharacterManagementActions.deleteCharacter(
       context,
-      widget.character,
+      _character,
     );
     if (deleted && mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
@@ -51,7 +81,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
   }
 
   ImageProvider? get _avatarProvider {
-    final path = widget.character.avatarPath.trim();
+    final path = _character.avatarPath.trim();
     if (path.isNotEmpty && File(path).existsSync()) {
       return FileImage(File(path));
     }
@@ -76,7 +106,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
               children: [
                 ListTile(
                   onTap: () =>
-                      _open(CharacterDetailPage(character: widget.character)),
+                      _open(CharacterDetailPage(character: _character)),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14,
                     vertical: 6,
@@ -90,11 +120,11 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                         : null,
                   ),
                   title: Text(
-                    widget.character.displayName,
+                    _character.displayName,
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: RelationshipBadge(
-                    relationship: widget.character.relationship,
+                    relationship: _character.relationship,
                   ),
                   trailing: const Icon(Icons.chevron_right_rounded),
                 ),
@@ -104,14 +134,20 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
             _GlassSection(
               children: [
                 _tile(
+                  '编辑角色设定',
+                  Icons.edit_note_rounded,
+                  () =>
+                      _open(CharacterCreationPage(character: _character)),
+                ),
+                _tile(
                   'Memory',
                   Icons.inbox_outlined,
-                  () => _open(MemoryPage(characterId: widget.character.id)),
+                  () => _open(MemoryPage(characterId: _character.id)),
                 ),
                 _tile(
                   '导出角色',
                   Icons.output_rounded,
-                  () => _open(CharacterDetailPage(character: widget.character)),
+                  () => _open(CharacterDetailPage(character: _character)),
                 ),
               ],
             ),
@@ -123,6 +159,7 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
                   Icons.wallpaper_rounded,
                   () => _open(const ThemeDecorationPage()),
                 ),
+                _tile('导出聊天记录', Icons.download_rounded, _exportChat),
                 _tile('删除聊天记录', Icons.delete_outline_rounded, _clearChat),
               ],
             ),

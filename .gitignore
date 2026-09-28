@@ -61,3 +61,5 @@ linux/flutter/ephemeral/
 windows/flutter/ephemeral/
 macos/Flutter/ephemeral/
 ios/Flutter/ephemeral/
+
+release_archive/

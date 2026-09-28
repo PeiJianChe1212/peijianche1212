@@ -57,6 +57,7 @@ import 'memory2_retriever.dart';
 import 'memory_diagnostics_service.dart';
 import 'transient_event_reply_guard.dart';
 import 'user_profile_storage_service.dart';
+import 'internal_prompt_leak_guard.dart';
 
 class MemoryExtractionScope {
   const MemoryExtractionScope({
@@ -103,9 +104,6 @@ class DeepSeekService {
   final ApiSettingsStorageService _apiStorage = ApiSettingsStorageService();
   final Memory2RetrieverFactory _memory2RetrieverFactory;
   final CharacterUserProfileLoader _characterUserProfileLoader;
-  final CharacterSettingsStorageService _characterStorage =
-      CharacterSettingsStorageService();
-
   Future<bool> get hasApiKey async =>
       (await _apiStorage.loadSettings()).isConfigured;
 
@@ -506,8 +504,7 @@ class DeepSeekService {
         .reversed
         .take(3)
         .toList();
-    final contractActive =
-        physicalSpeechContract?.trim().isNotEmpty ?? false;
+    final contractActive = physicalSpeechContract?.trim().isNotEmpty ?? false;
     final guarded = contractActive
         ? await generate(modelContext.messages)
         : useFullPeiLinkPrompt
@@ -574,10 +571,7 @@ class DeepSeekService {
 
     final caption = message.content.trim();
     if (message.role == 'assistant') {
-      final prompt =
-          message.metadata['generationPrompt']?.toString().trim() ?? '';
       final parts = <String>['[角色刚刚发送了一张图片]'];
-      if (prompt.isNotEmpty) parts.add('图片场景：$prompt');
       if (caption.isNotEmpty) parts.add('角色随图说：$caption');
       return parts.join('\n');
     }
@@ -608,16 +602,19 @@ class DeepSeekService {
   Future<String> composeImageMessage({
     required String userRequest,
     String? characterId,
+    List<ChatMessage> recentMessages = const [],
   }) async {
     final apiSettings = await _apiStorage.loadSettings();
     if (!apiSettings.isConfigured) {
-      return '给你。';
+      return '给你看。';
     }
 
-    final characterSettings = await _characterStorage.loadSettings();
     final resolvedId = characterId?.trim().isNotEmpty == true
         ? characterId!.trim()
         : await CharacterRegistryService().loadActiveCharacterId();
+    final characterSettings = await CharacterSettingsStorageService(
+      characterId: resolvedId,
+    ).loadSettings();
     CharacterUserProfile characterUserProfile = CharacterUserProfile(
       characterId: resolvedId,
     );
@@ -626,8 +623,23 @@ class DeepSeekService {
     } catch (_) {
       // 个人设定加载失败不影响随图消息，使用空值即可。
     }
-    final profileSection = Memory2ChatContextBuilder
-        .characterUserProfileSection(characterUserProfile);
+    final profileSection =
+        Memory2ChatContextBuilder.characterUserProfileSection(
+          characterUserProfile,
+        );
+    final recentContext = recentMessages
+        .where(
+          (message) =>
+              (message.role == 'user' || message.role == 'assistant') &&
+              message.content.trim().isNotEmpty,
+        )
+        .toList();
+    final visibleContext = recentContext.length > 6
+        ? recentContext.sublist(recentContext.length - 6)
+        : recentContext;
+    final conversationSection = visibleContext.isEmpty
+        ? ''
+        : '最近对话（仅用于延续角色语气、关系状态和对话连贯性，不得继续回答上一轮图片请求）：\n${visibleContext.map((message) => '${message.role == 'user' ? '用户' : '角色'}：${message.content.trim()}').join('\n')}';
     final provider = await _modelHub.chatProvider();
     final raw = await provider.complete(
       messages: [
@@ -638,23 +650,76 @@ class DeepSeekService {
               task: ContextTask.imageMessage,
               settings: characterSettings,
               taskRules: '''
-你刚刚按照用户的要求生成并发送了一张图片。
-现在只写一句自然的随图消息，像聊天里把照片发过去时顺口说的话。
-不要解释生成过程，不要说“AI绘图”“模型”“提示词”，不要复述完整画面描述。
-通常 4 到 24 个字，最多两句。只输出消息正文。
+只为当前这一次生成并发送的图片写配文；当前用户请求的优先级高于最近对话。
+保持简短、自然且语义完整，通常为 1 到 2 个短句，不展开长篇描述。
+可以写完整对白，也可以写与当前请求及图片一致的括号动作加对白。
+不重新解释图片内容，不复述用户原话，不要继续回答上一轮已经完成的图片请求。
+不要使用“喏”“刚拍的”“你要的”“这就是”等固定开场。
+不要说“AI绘图”“模型”“提示词”。只输出消息正文，不加引号或标签。
 ''',
             ),
             if (profileSection.isNotEmpty) profileSection,
+            if (conversationSection.isNotEmpty) conversationSection,
           ].join('\n\n'),
         },
-        {'role': 'user', 'content': '用户原话：$userRequest'},
+        {
+          'role': 'user',
+          'content': '当前这一次图片的用户请求（最高优先级）：$userRequest\n只回应本次请求，不要继续上一轮图片请求。',
+        },
       ],
       temperature: 0.72,
       maxTokens: 80,
       topP: 0.86,
     );
-    final cleaned = _cleanReply(raw).replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
-    return cleaned.isEmpty ? '给你。' : cleaned;
+    final cleaned = _cleanReply(raw)
+        .replaceAll(RegExp(r'\r\n?'), '\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+    return sanitizeImageCaption(cleaned, userRequest: userRequest);
+  }
+
+  static String sanitizeImageCaption(
+    String value, {
+    required String userRequest,
+  }) {
+    if (InternalPromptLeakGuard.looksInternal(value)) return '给你看。';
+    var cleaned = value.trim().replaceFirst(RegExp(r'^喏[，,、。！!～~\s]*'), '');
+    cleaned = cleaned.replaceFirst(RegExp(r'^刚拍的[，,、。！!～~\s]*'), '');
+    if (cleaned.isEmpty) return '给你看。';
+    if (RegExp(r'^(你要的|这就是)').hasMatch(cleaned)) return '给你看。';
+
+    final normalizedRequest = userRequest.replaceAll(
+      RegExp(r'[\s，,。！!？?～~]'),
+      '',
+    );
+    final normalizedCaption = cleaned.replaceAll(RegExp(r'[\s，,。！!？?～~]'), '');
+    if (normalizedRequest.isNotEmpty &&
+        normalizedCaption.contains(normalizedRequest)) {
+      return '给你看。';
+    }
+
+    final normalizedGeneric = cleaned.replaceAll(RegExp(r'[\s，,。！!？?～~]'), '');
+    if (const {'你看看', '看看', '给你'}.contains(normalizedGeneric) ||
+        normalizedGeneric.startsWith('你看看怎么样')) {
+      return '给你看。';
+    }
+
+    return _limitAbnormallyLongImageCaption(cleaned);
+  }
+
+  static String _limitAbnormallyLongImageCaption(String value) {
+    const maxRunes = 160;
+    final runes = value.runes.toList(growable: false);
+    if (runes.length <= maxRunes) return value;
+
+    final prefix = String.fromCharCodes(runes.take(maxRunes));
+    var safeEnd = -1;
+    for (final punctuation in const ['。', '！', '？', '!', '?']) {
+      final index = prefix.lastIndexOf(punctuation);
+      if (index > safeEnd) safeEnd = index;
+    }
+    if (safeEnd < 20) return '给你看。';
+    return prefix.substring(0, safeEnd + 1).trimRight();
   }
 
   Future<List<PendingMemory>> extractMemories({

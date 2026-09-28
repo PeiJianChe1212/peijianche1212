@@ -1,4 +1,14 @@
-enum ChatImageSubject { object, environment, selfie, outfit, character, other }
+enum ChatImageSubject {
+  object,
+  environment,
+  selfie,
+  outfit,
+  character,
+  characterDetail,
+  characterObject,
+  ambient,
+  other,
+}
 
 enum ChatCharacterPresence { none, required }
 

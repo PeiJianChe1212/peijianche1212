@@ -1,8 +1,13 @@
 package com.peilink.app
 
 import android.content.Intent
+import android.content.ContentValues
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
+import java.io.File
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -46,6 +51,59 @@ class MainActivity : FlutterActivity() {
                 "save" -> savePeiFile(call.arguments as? Map<*, *>, result)
                 else -> result.notImplemented()
             }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "peilink/chat_image_gallery"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "save" -> saveChatImage(call.arguments as? Map<*, *>, result)
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun saveChatImage(arguments: Map<*, *>?, result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            result.error("UNSUPPORTED_ANDROID", "需要 Android 10 或更高版本", null)
+            return
+        }
+        val sourcePath = arguments?.get("path") as? String
+        val source = sourcePath?.let(::File)
+        if (source == null || !source.isFile) {
+            result.error("MISSING_IMAGE", "图片文件不存在", null)
+            return
+        }
+
+        val extension = source.extension.lowercase().ifBlank { "jpg" }
+        val mimeType = when (extension) {
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            else -> "image/jpeg"
+        }
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "PeiLink_${System.currentTimeMillis()}.$extension")
+            put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/PeiLink")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        var uri: Uri? = null
+        try {
+            uri = contentResolver.insert(collection, values)
+                ?: throw IllegalStateException("无法创建相册图片")
+            contentResolver.openOutputStream(uri, "w")?.use { output ->
+                source.inputStream().use { input -> input.copyTo(output) }
+            } ?: throw IllegalStateException("无法写入相册图片")
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+            result.success(true)
+        } catch (error: Exception) {
+            uri?.let { contentResolver.delete(it, null, null) }
+            result.error("SAVE_FAILED", error.message, null)
         }
     }
 

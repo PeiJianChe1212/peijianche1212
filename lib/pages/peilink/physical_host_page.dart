@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design_system/peilink_design_system.dart';
+import '../../dev_only/physical_pcm_capture_diagnostics.dart';
 import '../../dev_only/physical_speech_diagnostics_card.dart';
 import '../../models/ai_character.dart';
 import '../../physical/doubao_speech_clients.dart';
@@ -43,6 +44,8 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
   double _gain = 0.18;
   bool _loading = true;
   bool _saving = false;
+  PhysicalPcmCaptureDiagnostics? _pcmCaptureDiagnostics;
+  String? _pcmCaptureDiagnosticError;
 
   @override
   void initState() {
@@ -89,6 +92,26 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
 
   void _refresh() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _recordWithPcmDiagnostics() async {
+    setState(() {
+      _pcmCaptureDiagnostics = null;
+      _pcmCaptureDiagnosticError = null;
+    });
+    await _controller.record(_settings);
+    final capture = _controller.latestCaptureForDiagnostics;
+    if (!mounted || capture == null) return;
+    try {
+      final diagnostics = await PhysicalPcmCaptureDiagnosticWriter.save(
+        capture,
+      );
+      if (!mounted) return;
+      setState(() => _pcmCaptureDiagnostics = diagnostics);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _pcmCaptureDiagnosticError = error.toString());
+    }
   }
 
   @override
@@ -250,6 +273,26 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
                           const SizedBox(height: 12),
                           PhysicalAsrStatsCard(stats: stats),
                         ],
+                        if (_pcmCaptureDiagnostics case final diagnostics?) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Start-clipping WAV diagnostics\n'
+                            'capture_id=${diagnostics.captureId}\n'
+                            'PCM bytes=${diagnostics.pcmBytes}  '
+                            'duration=${diagnostics.durationMs}ms  '
+                            'gain=${diagnostics.appliedGain.toStringAsFixed(2)}x\n'
+                            'RAW: ${diagnostics.rawWavPath}\n'
+                            'GAIN: ${diagnostics.gainWavPath}',
+                            key: const ValueKey(
+                              'physical-start-clipping-wav-diagnostics',
+                            ),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                        if (_pcmCaptureDiagnosticError case final error?) ...[
+                          const SizedBox(height: 12),
+                          Text('WAV diagnostics failed: $error'),
+                        ],
                         if (_controller.transcript.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Text('识别文本：${_controller.transcript}'),
@@ -301,7 +344,7 @@ class _PhysicalHostPageState extends State<_PhysicalHostContent> {
                         const SizedBox(height: 8),
                         FilledButton.icon(
                           onPressed: _controller.canRecord
-                              ? () => _controller.record(_settings)
+                              ? _recordWithPcmDiagnostics
                               : null,
                           icon: const Icon(Icons.mic_none),
                           label: const Text('开始 8 秒录音'),

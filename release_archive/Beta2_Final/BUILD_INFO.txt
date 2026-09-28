@@ -1,0 +1,51 @@
+PeiLink Android Beta2 Final.1
+
+Freeze date: 2026-09-14 (Asia/Shanghai)
+versionName: 0.6.8
+versionCode: 18
+applicationId: com.peilink.app
+flavor: user
+build mode: release
+Final commit: beta2-final.1^{commit}
+Final tag: beta2-final.1 (annotated)
+Parent Beta2 Final commit: a2b1cf6ea3da19c892f7b898cb6819f65c45e45f
+Parent Beta2 Final tag: beta2-final (preserved)
+
+APK file: PeiLink-Beta2-Final-user-release.apk
+APK size: 115111511 bytes (109.78 MiB)
+APK SHA-256: 94857B8B04E97F84CE1C0C5A8EF5EFECB3A2E5BC165C9582B6D2C41AA191C635
+APK source path: G:\Development\PeiLink\build\app\outputs\flutter-apk\app-user-release.apk
+
+Flutter test result: PASS, 1016 tests
+flutter analyze result: 4 known non-blocking diagnostics (3 info, 1 warning); no new diagnostics
+Release build result: PASS, assembleUserRelease
+signing status: PASS; release certificate CN=PeiLink Android Release, O=PeiLink; RSA 4096; APK Signature Scheme v2
+
+Android package verification:
+- user release package: com.peilink.app
+- versionName 0.6.8 / versionCode 18
+- minSdk 24 / targetSdk 36 / compileSdk 36
+- launcher: com.peilink.app.MainActivity
+- native ABIs: arm64-v8a, armeabi-v7a, x86_64
+- INTERNET permission present
+- no broad storage permission
+- no android:debuggable flag
+- ImagePicker FileProvider is not exported
+- network security configuration present
+- no test files or test entry points found in APK
+- no plaintext production API key found in app source or application AOT
+
+Device acceptance:
+- Xiaomi MI 9 SE / Android 11 API 30 / MIUI 12.5.4 / 6 GB RAM
+- Beta2 core physical-device acceptance completed
+- Guide Final content and both formal feedback entries accepted on device
+
+Post-freeze correction:
+- Guide feedback now reuses the same formal Tencent questionnaire flow as Settings
+- Guide search, Memory guidance, character editing path, image operations, timeline operations, group chat, and appearance guidance updated to match Beta2 user UI
+- legacy FeedbackPage is no longer referenced by a formal entry and remains undeleted pending any future cleanup decision
+
+Git freeze note:
+- beta2-final remains fixed at a2b1cf6ea3da19c892f7b898cb6819f65c45e45f
+- beta2-final.1 resolves to the post-freeze Guide Final Fix commit containing this file
+- no version bump, amend, reset, rebase, or remote push was performed

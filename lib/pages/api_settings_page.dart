@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../config/peilink_runtime.dart';
 import '../ai/image_generation/image_generation_adapter.dart';
 import '../models/api_settings.dart';
+import 'consent_management_page.dart';
 import '../models/api_settings_form_state.dart';
 import '../models/ai_capability_health.dart';
 import '../models/image_generation_settings.dart';
@@ -2131,6 +2132,8 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
         KeyedSubtree(key: _visionCardKey, child: _visionCard()),
         const SizedBox(height: 16),
         KeyedSubtree(key: _imageCardKey, child: _imageGenerationCard()),
+        const SizedBox(height: 16),
+        _consentManagementCard(),
         if (PeiLinkRuntime.developerToolsEnabled) ...[
           const SizedBox(height: 16),
           _developerDiagnosticsCard(),
@@ -2139,6 +2142,20 @@ class _ApiSettingsPageState extends State<ApiSettingsPage> {
     );
   }
 
+  Widget _consentManagementCard() {
+    return _glassCard(
+      child: ListTile(
+        leading: const Icon(Icons.shield_outlined),
+        title: const Text('第三方数据授权'),
+        subtitle: const Text('查看或撤回对第三方 AI 服务的数据授权'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ConsentManagementPage()),
+        ),
+      ),
+    );
+  }
   Widget _developerDiagnosticsCard() {
     final diagnostics = _capabilityStatusService.diagnostics(
       chatSettings: _currentSettings(),

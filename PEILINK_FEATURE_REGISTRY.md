@@ -293,7 +293,7 @@
 - **状态：** 已完成 / 已展示
 - **入口：** 设置、Guide
 - **主要文件：** `lib/pages/feedback_page.dart`、`lib/services/feedback_submission_service.dart`、`lib/pages/settings_page.dart`、Android `MainActivity.kt`
-- **作用：** App 内提交反馈；另可通过平台通道打开腾讯问卷。
+- **作用：** App 内提交反馈；另可通过平台通道打开飞书表单。
 - **用户是否可见：** 是
 
 ---
@@ -335,7 +335,7 @@ PeiLinkHomePage
 │  ├─ 收藏 → MemoryPage → MemoryReviewPage
 │  ├─ 相册 → PeiLinkEchoPage
 │  ├─ 主题装扮 → ThemeDecorationPage
-│  └─ 设置 → SettingsPage → API / 帮助反馈 / 外部问卷
+│  └─ 设置 → SettingsPage → API / 帮助反馈 / 外部飞书表单
 ├─ 顶部新增 → AiCreationCenterPage
 │  ├─ 创建角色 → CharacterCreationPage
 │  ├─ 导入角色 → CharacterImportPage

@@ -47,8 +47,24 @@ Size backgroundCoverRenderSize(Size sourceSize, Size viewportSize) {
   return Size(sourceSize.width * scale, sourceSize.height * scale);
 }
 
+@visibleForTesting
+CharacterProfile mergeCharacterProfileEdits(
+  CharacterProfile current,
+  Map<String, String> edits,
+) {
+  final json = Map<String, dynamic>.from(current.toJson())..addAll(edits);
+  return CharacterProfile.fromJson(json, current.characterId);
+}
+
 class CharacterCreationPage extends StatefulWidget {
-  const CharacterCreationPage({super.key});
+  const CharacterCreationPage({super.key, this.character});
+
+  /// When supplied, the existing character is updated in place. The character
+  /// id and all character-scoped runtime data remain untouched.
+  final AiCharacter? character;
+
+  bool get isEditing => character != null;
+
   @override
   State<CharacterCreationPage> createState() => _CharacterCreationPageState();
 }
@@ -83,9 +99,64 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
   String _backgroundSource = '';
   Uint8List? _avatarBytes;
   Uint8List? _backgroundBytes;
+  CharacterSettings? _existingSettings;
+  CharacterProfile? _existingProfile;
+  bool _loading = false;
   bool _saving = false;
 
   String value(String key) => _controllers[key]!.text.trim();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isEditing) _loadExistingCharacter();
+  }
+
+  Future<void> _loadExistingCharacter() async {
+    setState(() => _loading = true);
+    final character = widget.character!;
+    final settings = await CharacterSettingsStorageService(
+      characterId: character.id,
+    ).loadSettings();
+    final profile = await CharacterProfileStorageService(
+      characterId: character.id,
+    ).load(character: character, legacySettings: settings);
+    if (!mounted) return;
+    final values = <String, String>{
+      'name': profile.name.trim().isEmpty
+          ? character.characterName
+          : profile.name,
+      'age': profile.age,
+      'gender': profile.gender,
+      'height': profile.height,
+      'identity': profile.identity,
+      'core': settings.coreProfile,
+      'intro': character.characterIntro,
+      'backgroundStory': profile.backgroundStory,
+      'worldview': profile.worldview,
+      'appearance': profile.overallAppearance.trim().isEmpty
+          ? settings.introduction
+          : profile.overallAppearance,
+      'personality': profile.personalityDescription,
+      'clothing': profile.clothingStyle,
+      'speakingStyle': profile.speakingStyle,
+      'relationships': profile.characterRelationships,
+      'interests': profile.interests,
+      'dislikes': profile.dislikes,
+      'possessions': profile.possessions,
+      'abilities': profile.specialAbilities,
+    };
+    for (final entry in values.entries) {
+      _controllers[entry.key]!.text = entry.value;
+    }
+    setState(() {
+      _existingSettings = settings;
+      _existingProfile = profile;
+      _avatarSource = character.avatarPath;
+      _backgroundSource = character.backgroundImage;
+      _loading = false;
+    });
+  }
 
   @override
   void dispose() {
@@ -238,115 +309,211 @@ class _CharacterCreationPageState extends State<CharacterCreationPage> {
     }
   }
 
+  Future<void> _saveExisting() async {
+    if (_saving || _loading) return;
+    final character = widget.character!;
+    final settings = _existingSettings;
+    final profile = _existingProfile;
+    if (settings == null || profile == null) return;
+    if (value('name').isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请填写名称')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final avatar = _avatarBytes == null
+          ? character.avatarPath
+          : await _storage.saveAvatarBytes(
+              characterId: character.id,
+              bytes: _avatarBytes!,
+            );
+      final background = _backgroundBytes == null
+          ? character.backgroundImage
+          : await _storage.savePortraitBytes(
+              characterId: character.id,
+              bytes: _backgroundBytes!,
+            );
+      final updatedCharacter = character.copyWith(
+        characterName: value('name'),
+        avatarPath: avatar,
+        backgroundImage: background,
+        introduction: value('appearance'),
+        characterIntro: value('intro'),
+        persona: value('core'),
+      );
+      final updatedSettings = settings.copyWith(
+        characterName: value('name'),
+        introduction: value('appearance'),
+        coreProfile: value('core'),
+      );
+      final updatedProfile = mergeCharacterProfileEdits(profile, {
+        'name': value('name'),
+        'age': value('age'),
+        'gender': value('gender'),
+        'height': value('height'),
+        'identity': value('identity'),
+        'overallAppearance': value('appearance'),
+        'personalityDescription': value('personality'),
+        'clothingStyle': value('clothing'),
+        'worldview': value('worldview'),
+        'backgroundStory': value('backgroundStory'),
+        'characterRelationships': value('relationships'),
+        'interests': value('interests'),
+        'dislikes': value('dislikes'),
+        'possessions': value('possessions'),
+        'specialAbilities': value('abilities'),
+        'speakingStyle': value('speakingStyle'),
+      });
+
+      await CharacterRegistryService().updateCharacter(updatedCharacter);
+      await CharacterSettingsStorageService(
+        characterId: character.id,
+      ).saveSettings(updatedSettings);
+      await CharacterProfileStorageService(
+        characterId: character.id,
+      ).save(updatedProfile);
+      if (mounted) Navigator.pop(context, true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('保存失败，请稍后再试')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: const Color(0xFFF8F7FF),
     appBar: AppBar(
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
-      title: const Column(
+      title: Column(
         children: [
-          Text('创建角色', style: TextStyle(fontWeight: FontWeight.w800)),
           Text(
-            '创造属于你的 AI 伙伴',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+            widget.isEditing ? '编辑角色设定' : '创建角色',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          Text(
+            widget.isEditing ? '修改角色的原始人物设定' : '创造属于你的 AI 伙伴',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
           ),
         ],
       ),
       centerTitle: true,
     ),
-    body: Stack(
-      children: [
-        const Positioned(
-          right: 24,
-          top: 6,
-          child: Icon(Icons.flutter_dash, size: 54, color: Color(0x227A66DF)),
-        ),
-        ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 120),
-          children: [
-            _section('角色形象', Icons.auto_awesome, [_imageFields()]),
-            _section('基础资料', Icons.person_outline, [
-              _row([
-                _field('name', '名称', required: true),
-                _field('age', '年龄', required: true),
-              ]),
-              _row([
-                _field('gender', '性别', required: true),
-                _field('height', '身高', required: true, suffix: 'cm'),
-              ]),
-              _field('identity', '身份', required: true),
-              _field('core', '核心人设', required: true, lines: 4),
-              _field('intro', '角色简介', lines: 2, hint: '用于角色资料页公开展示的简短介绍…'),
-            ]),
-            _section('世界设定', Icons.public, [
-              _field(
-                'backgroundStory',
-                '背景经历',
-                required: true,
-                lines: 5,
-                hint: '成长经历、重要事件、过去的生活等…',
-              ),
-              _field(
-                'worldview',
-                '世界观',
-                required: true,
-                lines: 5,
-                hint: '所处世界背景、时代设定、世界规则等…',
-              ),
-            ]),
-            _section('角色特点', Icons.star_border_rounded, [
-              _field('appearance', '外貌', required: true, lines: 4),
-              _field('personality', '性格', required: true, lines: 4),
-              _field('clothing', '穿着', lines: 3),
-              _field('speakingStyle', '说话风格', lines: 3),
-            ]),
-            _section('关系与生活', Icons.groups_outlined, [
-              _field(
-                'relationships',
-                '角色关系',
-                lines: 4,
-                hint: '好友、家人、宿敌、重要人物等…',
-              ),
-              _field('interests', '兴趣爱好', lines: 4),
-              _field('dislikes', '讨厌的事（东西）', lines: 4),
-              _field('possessions', '持有物品', lines: 4),
-            ]),
-            _section('高级设定', Icons.auto_fix_high, [
-              _field('abilities', '特殊能力', lines: 4, hint: '魔法、异能、修为、技能等特殊能力…'),
-            ]),
-          ],
-        ),
-        Positioned(
-          left: 18,
-          right: 18,
-          bottom: 18,
-          child: SafeArea(
-            child: SizedBox(
-              height: 54,
-              child: FilledButton(
-                onPressed: _saving ? null : _create,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF7658DE),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(17),
-                  ),
+    body: _loading
+        ? const Center(child: CircularProgressIndicator())
+        : Stack(
+            children: [
+              const Positioned(
+                right: 24,
+                top: 6,
+                child: Icon(
+                  Icons.flutter_dash,
+                  size: 54,
+                  color: Color(0x227A66DF),
                 ),
-                child: _saving
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        '✦  创建角色',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+              ),
+              ListView(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 120),
+                children: [
+                  _section('角色形象', Icons.auto_awesome, [_imageFields()]),
+                  _section('基础资料', Icons.person_outline, [
+                    _row([
+                      _field('name', '名称', required: true),
+                      _field('age', '年龄', required: true),
+                    ]),
+                    _row([
+                      _field('gender', '性别', required: true),
+                      _field('height', '身高', required: true, suffix: 'cm'),
+                    ]),
+                    _field('identity', '身份', required: true),
+                    _field('core', '核心人设', required: true, lines: 4),
+                    _field(
+                      'intro',
+                      '角色简介',
+                      lines: 2,
+                      hint: '用于角色资料页公开展示的简短介绍…',
+                    ),
+                  ]),
+                  _section('世界设定', Icons.public, [
+                    _field(
+                      'backgroundStory',
+                      '背景经历',
+                      required: true,
+                      lines: 5,
+                      hint: '成长经历、重要事件、过去的生活等…',
+                    ),
+                    _field(
+                      'worldview',
+                      '世界观',
+                      required: true,
+                      lines: 5,
+                      hint: '所处世界背景、时代设定、世界规则等…',
+                    ),
+                  ]),
+                  _section('角色特点', Icons.star_border_rounded, [
+                    _field('appearance', '外貌', required: true, lines: 4),
+                    _field('personality', '性格', required: true, lines: 4),
+                    _field('clothing', '穿着', lines: 3),
+                    _field('speakingStyle', '说话风格', lines: 3),
+                  ]),
+                  _section('关系与生活', Icons.groups_outlined, [
+                    _field(
+                      'relationships',
+                      '角色关系',
+                      lines: 4,
+                      hint: '好友、家人、宿敌、重要人物等…',
+                    ),
+                    _field('interests', '兴趣爱好', lines: 4),
+                    _field('dislikes', '讨厌的事（东西）', lines: 4),
+                    _field('possessions', '持有物品', lines: 4),
+                  ]),
+                  _section('高级设定', Icons.auto_fix_high, [
+                    _field(
+                      'abilities',
+                      '特殊能力',
+                      lines: 4,
+                      hint: '魔法、异能、修为、技能等特殊能力…',
+                    ),
+                  ]),
+                ],
+              ),
+              Positioned(
+                left: 18,
+                right: 18,
+                bottom: 18,
+                child: SafeArea(
+                  child: SizedBox(
+                    height: 54,
+                    child: FilledButton(
+                      onPressed: _saving
+                          ? null
+                          : (widget.isEditing ? _saveExisting : _create),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF7658DE),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(17),
                         ),
                       ),
+                      child: _saving
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Text(
+                              widget.isEditing ? '✦  保存修改' : '✦  创建角色',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ),
-      ],
-    ),
   );
 
   Widget _section(String title, IconData icon, List<Widget> children) =>

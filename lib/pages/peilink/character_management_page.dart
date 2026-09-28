@@ -30,7 +30,14 @@ class _CharacterManagementPageState extends State<CharacterManagementPage> {
   @override
   void initState() {
     super.initState();
+    CharacterRegistryService.changes.addListener(_load);
     _load();
+  }
+
+  @override
+  void dispose() {
+    CharacterRegistryService.changes.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {

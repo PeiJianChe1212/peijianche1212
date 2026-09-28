@@ -304,7 +304,9 @@ void main() {
     expect(controller.spokenReply, '我没事。');
     expect(tts.texts, ['我没事。']);
     expect(raw, '他顿了顿，声音放轻：“我没事。”');
-    expect(controller.lastSpeechFilterNote, contains('quoted_dialogue_extracted'));
+    // Quoted dialogue is now recovered by the unified speech-safe span
+    // extractor (same guarantee: TTS never receives the raw narration).
+    expect(controller.lastSpeechFilterNote, contains('quote_extracted'));
   });
 
   test('dual-output stores display and sends only spoken to TTS', () async {

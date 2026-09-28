@@ -13,7 +13,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
     expect(find.text('帮助与反馈'), findsNothing);
     expect(find.text('反馈与建议'), findsOneWidget);
-    expect(find.text('前往腾讯问卷提交反馈'), findsOneWidget);
+    expect(find.text('前往飞书表单提交反馈'), findsOneWidget);
     expect(find.text('开发者与测试环境'), findsNothing);
   });
 

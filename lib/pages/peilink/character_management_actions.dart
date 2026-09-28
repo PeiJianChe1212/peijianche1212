@@ -15,7 +15,7 @@ class CharacterManagementActions {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('删除聊天记录？'),
-        content: const Text('只会清除当前角色的聊天记录，Echo、Life、Memory、关系与角色资料都会保留。'),
+        content: const Text('只清除当前角色的聊天记录，长期记忆、Echo、Life、关系与角色资料都会保留。可在 Memory 页面单独管理记忆内容。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),

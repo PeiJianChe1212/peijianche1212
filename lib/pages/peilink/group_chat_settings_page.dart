@@ -10,6 +10,7 @@ import '../../models/user_profile.dart';
 import '../../services/character_registry_service.dart';
 import '../../services/group_chat_storage_service.dart';
 import '../../services/group_message_storage_service.dart';
+import '../../services/group_chat_export_service.dart';
 import '../../services/group_user_profile_storage_service.dart';
 import '../../services/user_profile_storage_service.dart';
 import 'group_user_profile_page.dart';
@@ -206,6 +207,13 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
     setState(() => _group = group);
   }
 
+  Future<void> _exportMessages() async {
+    final g = _group;
+    if (g == null) return;
+    final result = await const GroupChatExportService().exportGroup(groupId: g.id, groupName: g.name);
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
   Future<void> _clearMessages() async {
     final confirmed = await _confirm(
       '清空聊天记录',
@@ -395,6 +403,15 @@ class _GroupChatSettingsPageState extends State<GroupChatSettingsPage> {
                             _save(group.copyWith(isPinned: value)),
                       ),
                     ],
+                  ),
+                ),
+                _SectionCard(
+                  padding: EdgeInsets.zero,
+                  child: _SettingTile(
+                    title: '导出聊天记录',
+                    subtitle: '保存为 .txt 文件',
+                    icon: Icons.download_rounded,
+                    onTap: _exportMessages,
                   ),
                 ),
                 _SectionCard(

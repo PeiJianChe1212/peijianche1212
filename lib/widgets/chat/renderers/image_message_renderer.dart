@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../../models/chat_message.dart';
-import 'text_message_renderer.dart';
+import '../chat_image_preview.dart';
 
 class ImageMessageRenderer extends StatelessWidget {
   const ImageMessageRenderer({super.key, required this.message});
@@ -15,34 +15,28 @@ class ImageMessageRenderer extends StatelessWidget {
     final path = message.metadata['imagePath']?.toString().trim() ?? '';
     final file = path.isEmpty ? null : File(path);
     final hasImage = file != null && file.existsSync();
-    final caption = message.content.trim();
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: hasImage
-              ? ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minWidth: 150,
-                    maxWidth: 230,
-                    maxHeight: 310,
-                  ),
-                  child: Image.file(
-                    file,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const _MissingImage(),
-                  ),
-                )
-              : const _MissingImage(),
-        ),
-        if (caption.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          TextMessageRenderer(message: message),
-        ],
-      ],
+    return GestureDetector(
+      key: const Key('chat-image-preview-trigger'),
+      behavior: HitTestBehavior.opaque,
+      onTap: hasImage ? () => ChatImagePreview.open(context, file.path) : null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: hasImage
+            ? ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minWidth: 150,
+                  minHeight: 120,
+                  maxWidth: 230,
+                  maxHeight: 310,
+                ),
+                child: Image.file(
+                  file,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const _MissingImage(),
+                ),
+              )
+            : const _MissingImage(),
+      ),
     );
   }
 }

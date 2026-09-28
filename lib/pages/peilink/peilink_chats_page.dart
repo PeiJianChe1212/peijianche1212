@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../../conversation/message_content_parser.dart';
@@ -14,12 +12,16 @@ import '../../services/character_settings_storage_service.dart';
 import '../../services/chat_storage_service.dart';
 import '../../services/initiative_service.dart';
 import '../../services/group_chat_storage_service.dart';
+import '../../services/group_user_profile_storage_service.dart';
 import '../../theme/app_dimensions.dart';
 import '../../theme/app_theme_background.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/peilink/relationship_badge.dart';
 import '../../widgets/peilink/role_status_mark.dart';
+import '../../widgets/group/group_avatar.dart';
+import '../../widgets/theme/peilink_theme_scope.dart';
+import '../../widgets/theme/peilink_themed_avatar.dart';
 import '../chat_page.dart';
 import 'group_chat_page.dart';
 
@@ -37,12 +39,20 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
   List<_ConversationPreview> _conversations = const [];
   List<GroupChat> _groups = const [];
   Map<String, AiCharacter> _charactersById = const {};
+  Map<String, String> _userAvatarByGroupId = const {};
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    CharacterRegistryService.changes.addListener(_loadConversationPreviews);
     _loadConversationPreviews();
+  }
+
+  @override
+  void dispose() {
+    CharacterRegistryService.changes.removeListener(_loadConversationPreviews);
+    super.dispose();
   }
 
   Future<void> _loadConversationPreviews() async {
@@ -50,6 +60,12 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
       final characters = await _registry.loadCharacters();
       final previews = <_ConversationPreview>[];
       final groups = await _groupStorage.loadGroups();
+      final userAvatars = <String, String>{};
+      for (final group in groups) {
+        userAvatars[group.id] = (await GroupUserProfileStorageService(
+          groupId: group.id,
+        ).loadResolved()).avatarPath;
+      }
       final statusNow = DateTime.now();
 
       for (final character in characters) {
@@ -99,6 +115,7 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
         _conversations = previews;
         _groups = groups;
         _charactersById = {for (final item in characters) item.id: item};
+        _userAvatarByGroupId = userAvatars;
         _loading = false;
       });
     } catch (error) {
@@ -129,6 +146,7 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
   @override
   Widget build(BuildContext context) {
     return ThemeBackgroundContainer(
+      background: PeiLinkThemeScope.of(context).chatBackground,
       child: SafeArea(
         top: false,
         child: Column(
@@ -182,6 +200,8 @@ class _PeiLinkChatsPageState extends State<PeiLinkChatsPage> {
                               _GroupConversationTile(
                                 group: group,
                                 charactersById: _charactersById,
+                                userAvatarPath:
+                                    _userAvatarByGroupId[group.id] ?? '',
                                 onTap: () => _openGroup(group),
                               ),
                             for (final preview in _conversations)
@@ -395,27 +415,13 @@ class _CharacterAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final path = character.effectiveSocialAvatarPath.trim();
-    if (path.isNotEmpty && File(path).existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(7),
-        child: Image.file(
-          File(path),
-          width: AppDimensions.avatarMedium,
-          height: AppDimensions.avatarMedium,
-          fit: BoxFit.cover,
-        ),
-      );
-    }
-
-    return Container(
-      width: AppDimensions.avatarMedium,
-      height: AppDimensions.avatarMedium,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE5EBEE),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF647C8B)),
+    return PeiLinkThemedAvatar(
+      size: AppDimensions.avatarMedium,
+      role: PeiLinkAvatarRole.character,
+      shape: BoxShape.rectangle,
+      borderRadius: BorderRadius.circular(7),
+      imagePath: character.effectiveSocialAvatarPath,
+      frame: PeiLinkThemeScope.of(context).avatarFrameTheme.character,
     );
   }
 }
@@ -424,11 +430,13 @@ class _GroupConversationTile extends StatelessWidget {
   const _GroupConversationTile({
     required this.group,
     required this.charactersById,
+    required this.userAvatarPath,
     required this.onTap,
   });
 
   final GroupChat group;
   final Map<String, AiCharacter> charactersById;
+  final String userAvatarPath;
   final VoidCallback onTap;
 
   String get _timeText {
@@ -460,7 +468,19 @@ class _GroupConversationTile extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                _GroupAvatar(characters: members),
+                GroupAvatar(
+                  members: groupAvatarMembers(
+                    userAvatarPath: userAvatarPath,
+                    characters: members.map(
+                      (character) => GroupAvatarMember(
+                        id: character.id,
+                        avatarPath: character.effectiveSocialAvatarPath,
+                        isUser: false,
+                      ),
+                    ),
+                  ),
+                  customAvatarPath: group.avatarPath,
+                ),
                 if (group.unreadCount > 0 && !group.isMuted)
                   Positioned(
                     right: -7,
@@ -611,59 +631,6 @@ class _StatusMark extends StatelessWidget {
           fontSize: 9.5,
           fontWeight: FontWeight.w600,
         ),
-      ),
-    );
-  }
-}
-
-class _GroupAvatar extends StatelessWidget {
-  const _GroupAvatar({required this.characters});
-
-  final List<AiCharacter> characters;
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = characters.take(4).toList();
-    return Container(
-      width: AppDimensions.avatarMedium,
-      height: AppDimensions.avatarMedium,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE1E5E7),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: GridView.count(
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: 2,
-        mainAxisSpacing: 2,
-        crossAxisSpacing: 2,
-        children: [
-          for (final character in visible) _MiniAvatar(character: character),
-          for (var i = visible.length; i < 4; i++)
-            Container(color: const Color(0xFFF2F4F5)),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniAvatar extends StatelessWidget {
-  const _MiniAvatar({required this.character});
-
-  final AiCharacter character;
-
-  @override
-  Widget build(BuildContext context) {
-    final path = character.effectiveSocialAvatarPath.trim();
-    if (path.isNotEmpty && File(path).existsSync()) {
-      return Image.file(File(path), fit: BoxFit.cover);
-    }
-    return Container(
-      color: const Color(0xFFEDF1F3),
-      child: const Icon(
-        Icons.auto_awesome_rounded,
-        size: 13,
-        color: Color(0xFF647C8B),
       ),
     );
   }

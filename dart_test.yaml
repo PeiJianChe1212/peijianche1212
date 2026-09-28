@@ -1,0 +1,17 @@
+# PeiLink project-level Dart test configuration.
+#
+# concurrency: 4
+#   Default flutter test concurrency equals the number of logical CPU cores
+#   (12 on the primary Windows build machine).  High concurrency amplifies
+#   file-system contention and race conditions during real file I/O in
+#   widget tests (70+ test files use Directory.systemTemp + runAsync).
+#   Capping at 4 reduces intermittent hangs while keeping good throughput.
+#
+# timeout: 60s
+#   Per-test timeout.  The Dart default is 30s; PeiLink widget tests that
+#   do real file I/O via runAsync occasionally exceed 30s on Windows under
+#   load.  60s gives headroom without masking genuine hangs.  Tests that
+#   legitimately need longer should use a per-test @Timeout annotation.
+
+concurrency: 4
+timeout: 60s

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../../models/api_settings.dart';
+import '../../services/third_party_consent_service.dart';
 
 class VolcengineMultimodalProvider {
   VolcengineMultimodalProvider({
@@ -26,6 +27,11 @@ class VolcengineMultimodalProvider {
       throw StateError('请先在“设置 → 模型与 API”中配置豆包识图模型。');
     }
 
+    await ThirdPartyConsentService.instance.requireConsent(
+      AIProvider.volcengine,
+      settings.multimodalBaseUrl,
+      ConsentPurpose.multimodal,
+    );
     final file = File(imagePath);
     if (!await file.exists()) {
       throw ArgumentError('找不到需要识别的图片：$imagePath');

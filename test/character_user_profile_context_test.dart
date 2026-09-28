@@ -11,6 +11,7 @@ import 'package:peijianche_app/models/activity_status.dart';
 import 'package:peijianche_app/models/ai_character.dart';
 import 'package:peijianche_app/models/api_settings.dart';
 import 'package:peijianche_app/models/character_user_profile.dart';
+import 'package:peijianche_app/models/chat_message.dart';
 import 'package:peijianche_app/services/api_settings_storage_service.dart';
 import 'package:peijianche_app/services/character_registry_service.dart';
 import 'package:peijianche_app/services/character_settings_storage_service.dart';
@@ -72,11 +73,15 @@ void main() {
         final messages = body['messages'] as List;
         systemPrompt = (messages.first as Map)['content'].toString();
         return http.Response.bytes(
-          utf8.encode(jsonEncode({
-            'choices': [
-              {'message': {'content': '这么晚还在写吗？记得休息。'}},
-            ],
-          })),
+          utf8.encode(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {'content': '这么晚还在写吗？记得休息。'},
+                },
+              ],
+            }),
+          ),
           200,
           headers: {'content-type': 'application/json; charset=utf-8'},
         );
@@ -117,11 +122,15 @@ void main() {
         final messages = body['messages'] as List;
         systemPrompt = (messages.first as Map)['content'].toString();
         return http.Response.bytes(
-          utf8.encode(jsonEncode({
-            'choices': [
-              {'message': {'content': '给你画了一只猫。'}},
-            ],
-          })),
+          utf8.encode(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {'content': '给你画了一只猫。'},
+                },
+              ],
+            }),
+          ),
           200,
           headers: {'content-type': 'application/json; charset=utf-8'},
         );
@@ -146,6 +155,47 @@ void main() {
     expect(systemPrompt, contains('这个角色知道用户养了一只橘猫。'));
   });
 
+  test('图片配文明确以当前请求为最高优先级', () async {
+    late String systemPrompt;
+    late String userPrompt;
+    final service = DeepSeekService(
+      client: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map;
+        final messages = body['messages'] as List;
+        systemPrompt = (messages.first as Map)['content'].toString();
+        userPrompt = (messages.last as Map)['content'].toString();
+        return http.Response.bytes(
+          utf8.encode(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {'content': '（拨了拨头发）看吧，我在这。'},
+                },
+              ],
+            }),
+          ),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+    addTearDown(service.dispose);
+
+    final caption = await service.composeImageMessage(
+      userRequest: '给我看看你',
+      characterId: 'role-a',
+      recentMessages: [
+        ChatMessage(role: 'user', content: '给我看看腹肌'),
+        ChatMessage(role: 'assistant', content: '先等着。'),
+      ],
+    );
+
+    expect(caption, '（拨了拨头发）看吧，我在这。');
+    expect(systemPrompt, contains('当前用户请求的优先级高于最近对话'));
+    expect(systemPrompt, contains('不得继续回答上一轮图片请求'));
+    expect(userPrompt, contains('当前这一次图片的用户请求（最高优先级）：给我看看你'));
+  });
+
   test('图片随图消息不传 characterId 时回退到活跃角色', () async {
     late String systemPrompt;
     final service = DeepSeekService(
@@ -154,11 +204,15 @@ void main() {
         final messages = body['messages'] as List;
         systemPrompt = (messages.first as Map)['content'].toString();
         return http.Response.bytes(
-          utf8.encode(jsonEncode({
-            'choices': [
-              {'message': {'content': '给你。'}},
-            ],
-          })),
+          utf8.encode(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {'content': '给你。'},
+                },
+              ],
+            }),
+          ),
           200,
           headers: {'content-type': 'application/json; charset=utf-8'},
         );
